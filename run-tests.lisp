@@ -4,10 +4,10 @@
 ;;;;
 ;;;;     sbcl --script run-tests.lisp
 ;;;;
-;;;; Registers this checkout on ASDF's source registry, inherits the caller's
-;;;; configuration for the sibling dependencies (cl-prolog, cl-tty-kit,
-;;;; cl-cli, cl-weave -- set CL_SOURCE_REGISTRY to the nerima-lisp checkout
-;;;; root so ASDF can find them), and runs the test system. See
+;;;; Registers the nerima-lisp checkout tree on ASDF's source registry and
+;;;; ignores inherited configuration, so sibling dependencies resolve from
+;;;; the same local checkout in every invocation. It then runs the test
+;;;; system. See
 ;;;; PACKAGE_STANDARD.md.
 ;;;;
 ;;;; A bare `sbcl --script`, never `--non-interactive --script`: SBCL acts on
@@ -23,13 +23,9 @@
                                *compile-file-truename*
                                (error "Unable to determine the script location"))))
 
-(defun configure-local-source-registry (root)
-  (asdf:initialize-source-registry
-   `(:source-registry
-     (:tree ,root)
-     :inherit-configuration)))
+(defun configure-local-source-registry (root) (let ((sibling-root (truename (merge-pathnames #p"../" root)))) (asdf:initialize-source-registry `(:source-registry (:tree ,sibling-root) :ignore-inherited-configuration))))
 
-(let ((root (script-directory)))
-  (configure-local-source-registry root)
-  (asdf:test-system "cl-chip8")
-  (uiop:quit 0))
+(let ((root (script-directory))) (configure-local-source-registry root))
+(asdf:load-system "cl-host-kit")
+(asdf:test-system "cl-chip8")
+(host-kit:quit 0)
