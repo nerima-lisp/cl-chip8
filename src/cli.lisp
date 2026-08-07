@@ -15,20 +15,23 @@ built without installed sources."
     (if system (asdf:component-version system) "0.0.0")))
 
 (defun %run-handler (invocation)
-  "The handler RUN-APP dispatches to: run the emulator from INVOCATION's
-parsed ROM path and --clock-hz. RUN's own realtime loop has already stopped
-and the terminal is already restored by the time this checks CHIP8-APP-ERROR
-(see app.lisp's %ADVANCE-CHIP8!, which is what stops the loop cleanly on a
-malformed ROM instead of an uncaught backtrace into a raw-mode terminal): a
-set ERROR is reported to *ERROR-OUTPUT* and this returns 1, otherwise 0, once
-the user quit normally."
-  (let ((app (run :rom-path (positional-value invocation :rom)
-                   :clock-hz (or (option-value invocation :clock-hz) +default-clock-hz+))))
-    (if (chip8-app-error app)
-        (progn
-          (format *error-output* "~&cl-chip8: ~A~%" (chip8-app-error app))
-          1)
-        0)))
+  "Run the emulator selected by INVOCATION and return a shell status code.
+
+All recoverable ROM-loading and runtime errors become a diagnostic on
+*ERROR-OUTPUT* and status 1, including failures that occur before RUN can
+enter its terminal session."
+  (handler-case
+      (let ((app (run :rom-path (positional-value invocation :rom)
+                      :clock-hz (or (option-value invocation :clock-hz)
+                                    +default-clock-hz+))))
+        (if (chip8-app-error app)
+            (progn
+              (format *error-output* "~&cl-chip8: ~A~%" (chip8-app-error app))
+              1)
+            0))
+    (error (condition)
+      (format *error-output* "~&cl-chip8: ~A~%" condition)
+      1)))
 
 (defparameter *app*
   (make-app
@@ -37,7 +40,7 @@ the user quit normally."
    :summary "A CHIP-8 interpreter for the terminal."
    :description "Runs a CHIP-8 ROM live in the terminal. Instruction dispatch
 is driven by genuine Prolog goal resolution over a cl-prolog rulebase, not a
-conventional interpreter loop. Press q or Ctrl-C to quit. The keypad maps a
+conventional interpreter loop. Press Escape or Ctrl-C to quit. The keypad maps a
 standard 4x4 QWERTY block onto the CHIP-8 hex keypad -- see the README."
    :positionals (list (make-positional :name "rom" :required-p t
                                        :description "Path to the CHIP-8 ROM file to run."))
@@ -53,11 +56,11 @@ Timers always run at a fixed 60Hz regardless."
 (defun main ()
   "Entry point for a plain `sbcl --script'/REPL invocation. Parses the
 current process argv against *APP* and exits with its result code."
-  (uiop:quit (run-app *app* :argv (current-process-argv))))
+  (host-kit:quit (run-app *app* :argv (current-process-argv))))
 
 (defun image-entry-point ()
   "Toplevel of the delivered `cl-chip8' executable; named by :ENTRY-POINT in
 cl-chip8.asd. Identical to MAIN -- this application loads no further ASDF
 systems at run time, so it needs no image-relocation bootstrapping beyond
 this thin wrapper."
-  (uiop:quit (run-app *app* :argv (current-process-argv))))
+  (host-kit:quit (run-app *app* :argv (current-process-argv))))

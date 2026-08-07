@@ -20,55 +20,48 @@ precondition every opcode test starts from."
   (memory-reset!)
   (display-reset!))
 
-(defun register-value (index)
-  "Return register INDEX's current value."
-  (solution-binding '?value (first (query-prolog *rulebase* (list 'v index '?value)))))
+(defmacro define-fact-accessor! (name functor)
+  "Define NAME-VALUE to return FUNCTOR's current single-argument value in
+*RULEBASE*, and SET-NAME! to retract that value and assertz VALUE in its
+place. FUNCTOR is a CPU-state fact functor holding exactly one argument --
+I-REGISTER, PC, DELAY-TIMER, or SOUND-TIMER (see state.lisp's fact shapes).
+Every single-value accessor pair below shares this exact retract-then-assertz
+shape, so this is its one declarative definition point instead of four
+hand-copied repetitions of it."
+  (let ((getter (intern (format nil "~A-VALUE" name)))
+        (setter (intern (format nil "SET-~A!" name))))
+    `(progn
+       (defun ,getter ()
+         (solution-binding '?value (first (query-prolog *rulebase* (list ',functor '?value)))))
+       (defun ,setter (value)
+         (let ((current (,getter)))
+           (query-prolog *rulebase* (list 'retract (list ',functor current))))
+         (query-prolog *rulebase* (list 'assertz (list ',functor value)))))))
 
-(defun set-register! (index value)
-  "Set register INDEX to VALUE, retracting whatever it currently holds."
-  (let ((current (register-value index)))
-    (query-prolog *rulebase* (list 'retract (list 'v index current))))
-  (query-prolog *rulebase* (list 'assertz (list 'v index value))))
+(defmacro define-indexed-fact-accessor! (name functor)
+  "Like DEFINE-FACT-ACCESSOR!, but for a FUNCTOR whose fact takes an INDEX
+before its value, like V (the 16 general registers)."
+  (let ((getter (intern (format nil "~A-VALUE" name)))
+        (setter (intern (format nil "SET-~A!" name))))
+    `(progn
+       (defun ,getter (index)
+         (solution-binding '?value (first (query-prolog *rulebase* (list ',functor index '?value)))))
+       (defun ,setter (index value)
+         (let ((current (,getter index)))
+           (query-prolog *rulebase* (list 'retract (list ',functor index current))))
+         (query-prolog *rulebase* (list 'assertz (list ',functor index value)))))))
 
-(defun i-register-value ()
-  "Return the current value of the I register."
-  (solution-binding '?value (first (query-prolog *rulebase* '(i-register ?value)))))
-
-(defun set-i-register! (value)
-  "Set the I register to VALUE."
-  (let ((current (i-register-value)))
-    (query-prolog *rulebase* (list 'retract (list 'i-register current))))
-  (query-prolog *rulebase* (list 'assertz (list 'i-register value))))
-
-(defun pc-value ()
-  "Return the current program counter."
-  (solution-binding '?value (first (query-prolog *rulebase* '(pc ?value)))))
-
-(defun set-pc! (value)
-  "Set the program counter to VALUE."
-  (let ((current (pc-value)))
-    (query-prolog *rulebase* (list 'retract (list 'pc current))))
-  (query-prolog *rulebase* (list 'assertz (list 'pc value))))
+(define-indexed-fact-accessor! register v)
+(define-fact-accessor! i-register i-register)
+(define-fact-accessor! pc pc)
+(define-fact-accessor! delay-timer delay-timer)
+(define-fact-accessor! sound-timer sound-timer)
 
 (defun call-stack-value ()
-  "Return the current call-stack list."
+  "Return the current call-stack list. Read-only: no opcode test needs to
+force a specific call-stack precondition, only CALL/RET's own execution
+mutates it, so this file defines no SET-CALL-STACK! to match."
   (solution-binding '?value (first (query-prolog *rulebase* '(call-stack ?value)))))
-
-(defun delay-timer-value ()
-  (solution-binding '?value (first (query-prolog *rulebase* '(delay-timer ?value)))))
-
-(defun set-delay-timer! (value)
-  (let ((current (delay-timer-value)))
-    (query-prolog *rulebase* (list 'retract (list 'delay-timer current))))
-  (query-prolog *rulebase* (list 'assertz (list 'delay-timer value))))
-
-(defun sound-timer-value ()
-  (solution-binding '?value (first (query-prolog *rulebase* '(sound-timer ?value)))))
-
-(defun set-sound-timer! (value)
-  (let ((current (sound-timer-value)))
-    (query-prolog *rulebase* (list 'retract (list 'sound-timer current))))
-  (query-prolog *rulebase* (list 'assertz (list 'sound-timer value))))
 
 (defun load-instruction! (opcode &optional (address +rom-load-address+))
   "Load the 16-bit OPCODE as two big-endian bytes at ADDRESS (default

@@ -39,6 +39,9 @@ and write them. SBCL only."
                "cl-tty-kit" ; terminal screen/renderer/input, used by stage 2's rendering
                             ; and keypad layers
                "cl-cli"     ; command-line parsing, used by stage 2's entry point
+               "cl-concurrent-kit" ; persistent executor for pure render-row work
+               "cl-date-kit"
+               "cl-host-kit"
                ;; SB-POSIX::STAT/S-ISREG, for ROM.LISP's REGULAR-FILE-P: SBCL-
                ;; bundled, so this does not count as an external or org-internal
                ;; dependency under CODING_STANDARD.md's SBCL-only stance -- it is
@@ -52,15 +55,25 @@ and write them. SBCL only."
   ;; src/ is flat and every defpackage lives in src/package.lisp.
   :components ((:file "package")
                (:file "conditions")
+               (:file "memory-types")
                (:file "memory")
+               (:file "display-types")
                (:file "display")
                (:file "fontset")
+               (:file "state-types")
                (:file "state")
+               (:file "opcode-runtime")
+               (:file "opcode-foreign")
                (:file "opcodes")
+               (:file "keypad-types")
                (:file "keypad")
                (:file "timers")
                (:file "rom")
+               (:file "render-types")
                (:file "render")
+               (:file "concurrent-render-types")
+               (:file "concurrent-render-macros")
+               (:file "concurrent-render") (:file "concurrent-render-rows")
                (:file "app")
                (:file "cli"))
   ;; Delivers the `cl-chip8` executable via `(asdf:operate 'asdf:program-op
@@ -94,7 +107,9 @@ and write them. SBCL only."
   ;; (t/render-test.lisp asserts on painted cells). Both are already the main
   ;; system's own dependency, at the same layer, so this stays within
   ;; DEPENDENCY_POLICY.md's test-only dependency limit.
-  :depends-on ("cl-chip8" "cl-weave" "cl-prolog" "cl-tty-kit")
+  :depends-on ("cl-chip8" "cl-weave" "cl-prolog" "cl-tty-kit"
+               "cl-concurrent-kit"
+               "cl-date-kit")
   :pathname "t"
   :serial t
   :components ((:file "package")
@@ -110,10 +125,11 @@ and write them. SBCL only."
                (:file "keypad-test")
                (:file "timers-test")
                (:file "render-test")
+               (:file "concurrency-test")
                (:file "rom-test")
                (:file "integration-test")
                (:file "cli-test"))
-  ;; ADR-0081: no uiop:symbol-call here. FIND-PACKAGE / FIND-SYMBOL / FUNCALL
+  ;; ADR-0081: no package-qualified helper call here. FIND-PACKAGE / FIND-SYMBOL / FUNCALL
   ;; are all CL symbols, so this clause reads without depending on anything
   ;; :DEPENDS-ON has not loaded yet.
   :perform (test-op (op system)

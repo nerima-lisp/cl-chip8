@@ -76,7 +76,8 @@
                 #:renderer-screen
                 #:renderer-render
                 #:renderer-resize
-                #:screen-put-cell
+                #:screen-write-string
+                #:with-screen-batch
                 #:make-style
                 #:with-raw-mode
                 #:with-terminal-session
@@ -91,6 +92,29 @@
                 #:option-value
                 #:positional-value
                 #:current-process-argv)
+  ;; cl-concurrent-kit (L1): a persistent bounded worker executor and atomic
+  ;; counters for the pure terminal-row rendering stage. CHIP-8 instruction
+  ;; execution remains on the owner thread because its Prolog rulebase is
+  ;; intentionally stateful and sequential.
+  (:import-from #:cl-concurrent-kit
+              #:make-executor
+              #:shutdown-executor
+              #:submit
+              #:make-channel
+              #:make-semaphore
+              #:send
+              #:try-send
+              #:recv
+              #:close-channel
+              #:wait-on-semaphore
+              #:signal-semaphore
+              #:executor-queue-depth
+              #:executor-high-water-mark
+              #:make-atomic-counter
+              #:atomic-counter-value
+              #:atomic-counter-incf
+              #:make-lock
+              #:with-lock-held)
   (:export
    ;; -- Conditions --
    #:chip8-error
@@ -129,6 +153,7 @@
    #:+display-height+
    #:*display*
    #:display-reset!
+   #:display-mark-all-dirty!
    #:display-pixel-value
    #:display-xor-pixel!
    ;; Prolog-callable goal functors (see display.lisp); exported for the same
@@ -210,6 +235,21 @@
    #:render-sound-indicator-into-screen!
    #:render-chip8!
 
+   ;; -- Concurrent rendering: immutable row snapshots and serial screen commit --
+   #:with-chip8-render-pipeline
+   #:chip8-render-pipeline-p
+   #:make-chip8-render-pipeline
+   #:close-chip8-render-pipeline
+   #:render-chip8-concurrently!
+   #:chip8-render-pipeline-parallelism
+   #:chip8-render-pipeline-parallel-threshold
+   #:chip8-render-pipeline-shutdown-timeout
+   #:chip8-render-pipeline-submitted-rows
+   #:chip8-render-pipeline-completed-rows
+   #:chip8-render-pipeline-serial-rows
+   #:chip8-render-pipeline-queue-depth
+   #:chip8-render-pipeline-high-water-mark
+
    ;; -- App: the realtime tick loop --
    #:+default-clock-hz+
    #:chip8-app
@@ -217,6 +257,7 @@
    #:chip8-app-p
    #:chip8-app-renderer
    #:chip8-app-decoder
+   #:chip8-app-render-pipeline
    #:chip8-app-clock-hz
    #:chip8-app-quitp
    #:chip8-app-error

@@ -6,7 +6,7 @@
   "Write BYTES to a fresh file under /tmp, call THUNK with its pathname, and
 delete it afterwards. This target is SBCL-only (see the org's PACKAGE_STANDARD
 and cl-chip8.asd), so a plain /tmp path avoids depending on any particular
-UIOP temporary-file API surface."
+   external temporary-file API surface."
   (let ((path (merge-pathnames
                (format nil "cl-chip8-rom-test-~D-~D.ch8" (get-universal-time) (random 1000000))
                #p"/tmp/")))
@@ -16,7 +16,7 @@ UIOP temporary-file API surface."
                                    :element-type '(unsigned-byte 8))
              (write-sequence bytes stream))
            (funcall thunk path))
-      (ignore-errors (delete-file path)))))
+      (when (probe-file path) (delete-file path)))))
 
 (defmacro with-temp-rom-file ((path-var bytes) &body body)
   `(%call-with-temp-rom-file ,bytes (lambda (,path-var) ,@body)))
@@ -68,4 +68,4 @@ UIOP temporary-file API surface."
            (progn
              (sb-posix:mkfifo (namestring path) #o600)
              (signals chip8-rom-not-regular-file (load-rom-file! path)))
-        (ignore-errors (delete-file path))))))
+        (when (probe-file path) (delete-file path))))))

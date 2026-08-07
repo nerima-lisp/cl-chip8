@@ -7,18 +7,17 @@
     (expect (aref *memory* 100) :to-be 0)))
 
 (describe "memory-read and memory-write (Prolog foreign predicates)"
+  (before-each
+    (memory-reset!))
   (it "writes a byte through the rulebase and reads the same value back"
-    (memory-reset!)
     (query-prolog *rulebase* (list 'memory-write 10 200))
     (let ((solutions (query-prolog *rulebase* (list 'memory-read 10 '?value))))
       (expect (solution-binding '?value (first solutions)) :to-be 200)))
   (it "reaches the last valid address, 4095, the memory-write/memory-read boundary case"
-    (memory-reset!)
     (query-prolog *rulebase* (list 'memory-write 4095 7))
     (let ((solutions (query-prolog *rulebase* (list 'memory-read 4095 '?value))))
       (expect (solution-binding '?value (first solutions)) :to-be 7)))
   (it "agrees with a direct AREF, since both paths hit the same array"
-    (memory-reset!)
     (query-prolog *rulebase* (list 'memory-write 50 99))
     (expect (aref *memory* 50) :to-be 99)))
 

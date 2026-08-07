@@ -14,43 +14,46 @@
 ;;;; is nonzero.
 (in-package #:cl-chip8)
 
-(defconstant +screen-width+ (+ +display-width+ 2)
-  "Terminal screen width: the 64-pixel-wide playfield plus a 1-cell border on
-each side.")
-
-(defconstant +screen-height+ (+ (truncate +display-height+ 2) 2)
-  "Terminal screen height: the 32-pixel-tall playfield, two pixel rows per
-terminal row, plus a 1-cell border on each side.")
-
-(defparameter +playfield-origin-x+ 1
-  "The terminal column the playfield's leftmost pixel column renders at.")
-
-(defparameter +playfield-origin-y+ 1
-  "The terminal row the playfield's topmost pixel-pair renders at.")
-
 (defun half-block-character (top-pixel bottom-pixel)
-  "Return the half-block character combining TOP-PIXEL and BOTTOM-PIXEL (each
-a CHIP-8 display bit, 0 or 1) into one terminal cell: both off is a space,
-top-only is U+2580 (upper half block), bottom-only is U+2584 (lower half
-block), and both on is U+2588 (full block)."
-  (cond
-    ((and (zerop top-pixel) (zerop bottom-pixel)) #\Space)
-    ((zerop bottom-pixel) (code-char #x2580))
-    ((zerop top-pixel) (code-char #x2584))
-    (t (code-char #x2588))))
+  "Return the half-block character for two display bits."
+  (declare (type bit top-pixel bottom-pixel))
+  (aref +half-block-character-table+
+        (logior bottom-pixel (ash top-pixel 1))))
+
+(defun %render-display-row-into-screen!
+    (screen terminal-row &optional reusable-characters)
+  "Blit one display row into SCREEN without acquiring locks or batching SCREEN."
+  (let ((characters
+          (or (and reusable-characters
+                   (aref reusable-characters terminal-row))
+              (make-string +display-width+)))
+        (y0 (* terminal-row 2)))
+    (dotimes (x +display-width+)
+      (setf (char characters x)
+            (half-block-character
+             (%display-pixel-value x y0)
+             (%display-pixel-value x (1+ y0)))))
+    (screen-write-string
+     screen
+     +playfield-origin-x+
+     (+ +playfield-origin-y+ terminal-row)
+     characters)))
+
+(defun %render-display-into-screen!
+    (screen &optional reusable-characters)
+  "Blit *DISPLAY* into SCREEN without acquiring the display lock or batching SCREEN."
+  (dotimes (terminal-row (truncate +display-height+ 2))
+    (%render-display-row-into-screen!
+     screen
+     terminal-row
+     reusable-characters))
+  screen)
 
 (defun render-display-into-screen! (screen)
-  "Blit *DISPLAY* into SCREEN at +PLAYFIELD-ORIGIN-X+/+PLAYFIELD-ORIGIN-Y+
-using the half-block scheme this file's header describes. Returns SCREEN."
-  (dotimes (terminal-row (truncate +display-height+ 2))
-    (dotimes (x +display-width+)
-      (let* ((y0 (* terminal-row 2))
-             (top (display-pixel-value x y0))
-             (bottom (display-pixel-value x (1+ y0))))
-        (screen-put-cell screen
-                          (+ +playfield-origin-x+ x)
-                          (+ +playfield-origin-y+ terminal-row)
-                          (half-block-character top bottom)))))
+  "Blit *DISPLAY* into SCREEN under the display lock. Returns SCREEN."
+  (with-display-lock
+    (with-screen-batch (screen)
+      (%render-display-into-screen! screen nil)))
   screen)
 
 (defun sound-timer-active-p ()
@@ -62,13 +65,18 @@ using the half-block scheme this file's header describes. Returns SCREEN."
   "Style SCREEN's top-left border corner in reverse video while
 SOUND-TIMER-ACTIVE-P, else plain -- the visual stand-in for CHIP-8's beep
 this application has no audio output for. Returns SCREEN."
-  (screen-put-cell screen 0 0 #\Space
-                    :style (and (sound-timer-active-p) (make-style :reverse)))
+  (screen-write-string
+   screen
+   0
+   0
+   " "
+   :style (and (sound-timer-active-p) (make-style :reverse)))
   screen)
 
 (defun render-chip8! (screen)
-  "Render one full application frame -- the display and the sound-timer
-indicator -- into SCREEN. Returns SCREEN."
-  (render-display-into-screen! screen)
-  (render-sound-indicator-into-screen! screen)
+  "Render one full application frame -- the display and the sound-timer indicator -- into SCREEN. Returns SCREEN."
+  (with-display-lock
+    (with-screen-batch (screen)
+      (%render-display-into-screen! screen nil)
+      (render-sound-indicator-into-screen! screen)))
   screen)

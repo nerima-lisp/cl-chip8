@@ -1,11 +1,8 @@
 ;;;; t/cli-test.lisp
 ;;;;
-;;;; Flag/positional parsing only. The handler calls RUN (src/app.lisp),
-;;;; which takes over a real terminal in raw mode on the alternate screen, so
-;;;; these tests never invoke it -- RUN-APP is exercised only with --help or
-;;;; --version, which cl-cli answers before dispatching. This mirrors
-;;;; cl-nyancat/t/cli-test.lisp, whose CLI has the same persistent
-;;;; full-screen shape.
+;;;; Argument parsing and the non-terminal CLI failure boundary. RUN opens a
+;;;; terminal only after loading its ROM, so a missing ROM safely exercises
+;;;; the handler without entering raw mode.
 (in-package #:cl-chip8/test)
 
 (describe "the cl-chip8 app spec: --clock-hz parsing"
@@ -42,6 +39,17 @@
 
   (it "requires the rom positional"
     (signals error (parse-argv *app* '("cl-chip8")))))
+
+(describe "the cl-chip8 CLI failure boundary"
+  (it "reports a missing ROM and returns status 1 before entering the terminal"
+    (let* ((path (format nil "/tmp/cl-chip8-cli-missing-rom-~D-~D.ch8"
+                         (get-universal-time) (random 1000000)))
+           (invocation (parse-argv *app* (list "cl-chip8" path)))
+           (output (with-output-to-string (stream)
+                     (let ((*error-output* stream))
+                       (expect (cl-chip8::%run-handler invocation) :to-be 1)))))
+      (expect (search "cl-chip8:" output) :to-be-truthy)
+      (expect (search path output) :to-be-truthy))))
 
 (describe "the cl-chip8 app spec: --help and --version"
   (it "exits 0 on --help without starting the emulator"

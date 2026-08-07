@@ -1,4 +1,4 @@
-;;;; src/opcodes.lisp -- the instruction rulebase: all 35 CHIP-8 opcodes.
+;;;; src/opcodes.lisp -- the ordered STEP/6 rulebase: all 35 CHIP-8 opcodes.
 ;;;;
 ;;;; Architecture recap (see cl-chip8.asd's :long-description and the README):
 ;;;; instruction dispatch is driven by genuine Prolog goal resolution over
@@ -41,172 +41,37 @@
 ;;;; comes before its unconditional fallback -- see each family's comment
 ;;;; below for why no explicit negation is needed for that fallback.
 ;;;;
-;;;; A handful of small foreign predicates below bridge to Lisp for concerns
-;;;; a pure Prolog clause body cannot express: signaling the CL conditions
-;;;; CALL/RET need on stack overflow/underflow, iterating a sprite's rows and
-;;;; bits (DXYN) or a register block (FX55/FX65), masking a random byte
-;;;; (CXKK), and bitwise OR/AND/XOR (8XY1-8XY3) -- exactly the same
-;;;; memory/display boundary stage 1 already established in memory.lisp and
-;;;; display.lisp, extended to the opcode layer's own Lisp-side needs.
+;;;; The Lisp-side primitives used by these clauses live in
+;;;; OPCODE-RUNTIME.LISP (fetch/decode/execute) and OPCODE-FOREIGN.LISP
+;;;; (stack conditions, bitwise/random operations, sprite drawing, and
+;;;; register transfers). Keeping those forms outside this ordered table
+;;;; makes the rulebase easier to inspect without changing clause order.
 (in-package #:cl-chip8)
-
-;;; --------------------------------------------------------------------------
-;;; Fetch and decode: plain Lisp, no Prolog involved yet.
-;;; --------------------------------------------------------------------------
-
-(defun fetch-opcode ()
-  "Return the 16-bit big-endian opcode at the current PC, read from *MEMORY*."
-  (let* ((solutions (query-prolog *rulebase* '(pc ?value)))
-         (address (solution-binding '?value (first solutions))))
-    (logior (ash (aref *memory* address) 8) (aref *memory* (1+ address)))))
-
-(defun decode-opcode (opcode)
-  "Return (VALUES FAMILY X Y N KK NNN) for the 16-bit OPCODE: the top nibble,
-second nibble, third nibble, fourth nibble, last byte, and last three
-nibbles, respectively."
-  (values (ldb (byte 4 12) opcode)
-          (ldb (byte 4 8) opcode)
-          (ldb (byte 4 4) opcode)
-          (ldb (byte 4 0) opcode)
-          (ldb (byte 8 0) opcode)
-          (ldb (byte 12 0) opcode)))
-
-(defun execute-instruction! ()
-  "Fetch, decode, and execute exactly one CHIP-8 instruction: resolve a single
-`(step Family X Y N Kk Nnn)' goal against *RULEBASE*, letting that clause's
-own body perform every state change, including advancing PC (see this file's
-header comment on PC ownership). Signals CHIP8-INVALID-OPCODE when no STEP
-clause matches the decoded opcode. Returns no values."
-  (let ((opcode (fetch-opcode)))
-    (multiple-value-bind (family x y n kk nnn) (decode-opcode opcode)
-      (unless (prolog-succeeds-p *rulebase* (list 'step family x y n kk nnn))
-        (error 'chip8-invalid-opcode :opcode opcode))))
-  (values))
-
-;;; --------------------------------------------------------------------------
-;;; Foreign predicates: the Lisp-side primitives STEP clause bodies call into.
-;;; --------------------------------------------------------------------------
-
-;; Signal CHIP8-STACK-OVERFLOW for CALL when STACK (the current call-stack
-;; list, already at +CALL-STACK-LIMIT+ entries) has no room for a 17th.
-(define-foreign-predicate (raise-stack-overflow stack) (rulebase environment depth emit)
-  (declare (ignore rulebase depth emit))
-  (let ((resolved-stack (logic-substitute stack environment)))
-    (error 'chip8-stack-overflow :depth (length resolved-stack))))
-
-;; Signal CHIP8-STACK-UNDERFLOW for RET when the call stack is empty.
-(define-foreign-predicate (raise-stack-underflow) (rulebase environment depth emit)
-  (declare (ignore rulebase environment depth emit))
-  (error 'chip8-stack-underflow))
-
-;; Bind RESULT to the bitwise OR/AND/XOR of A and B, selected by OPERATION
-;; (the plain symbol OR, AND, or XOR), for 8XY1/8XY2/8XY3. A dedicated
-;; foreign predicate, rather than a Prolog-level bitwise operator, sidesteps
-;; the backslash-escaped operator spellings ISO Prolog uses for bitwise
-;; OR/AND (`\/', `/\') entirely.
-(define-foreign-predicate (bitwise-op operation a b result)
-    (rulebase environment depth emit)
-  (declare (ignore depth))
-  (let ((resolved-operation (logic-substitute operation environment))
-        (resolved-a (logic-substitute a environment))
-        (resolved-b (logic-substitute b environment)))
-    (let ((computed (ecase resolved-operation
-                      (or (logior resolved-a resolved-b))
-                      (and (logand resolved-a resolved-b))
-                      (xor (logxor resolved-a resolved-b)))))
-      (multiple-value-bind (extended ok) (unify result computed environment)
-        (when ok (funcall emit extended))))))
-
-;; Bind VALUE to a random byte (0-255) bitwise-ANDed with MASK, for CXKK.
-(define-foreign-predicate (random-byte-masked mask value) (rulebase environment depth emit)
-  (declare (ignore rulebase depth))
-  (let* ((resolved-mask (logic-substitute mask environment))
-         (result (logand (random 256) resolved-mask)))
-    (multiple-value-bind (extended ok) (unify value result environment)
-      (when ok (funcall emit extended)))))
-
-;; Draw an N-byte sprite stored at memory address I onto *DISPLAY* at (VX,
-;; VY), XOR-ing each bit via DISPLAY-XOR-PIXEL! as stage 1 intends, with
-;; wraparound off: a pixel that would land outside the 64x32 field is simply
-;; not drawn. Binds COLLISION to 1 if any XOR erased a previously set pixel,
-;; else 0. This is DXYN's sprite-row/bit iteration, the opcode-layer concern
-;; stage 1's own display.lisp explicitly leaves to this stage.
-;;
-;; This function, STORE-REGISTERS, and LOAD-REGISTERS below all read/write
-;; *MEMORY* via direct AREF rather than the MEMORY-READ/MEMORY-WRITE foreign
-;; predicates that back every other memory access in this file: each already
-;; loops over a whole sprite row or register block on the Lisp side (a single
-;; Prolog clause body cannot express that iteration itself), so routing every
-;; byte of it through a foreign-predicate round trip would cost real
-;; performance for no benefit. This is a deliberate bypass, not an oversight
-;; -- and it is exactly why each of the three calls CHECK-MEMORY-ACCESS (see
-;; memory.lisp) once before its loop: that primitive is the chokepoint
-;; MEMORY-READ/MEMORY-WRITE get for free, so these three ask for it
-;; explicitly instead.
-(define-foreign-predicate (draw-sprite i vx vy n collision)
-    (rulebase environment depth emit)
-  (declare (ignore rulebase depth))
-  (let ((resolved-i (logic-substitute i environment))
-        (resolved-vx (logic-substitute vx environment))
-        (resolved-vy (logic-substitute vy environment))
-        (resolved-n (logic-substitute n environment))
-        (collided 0))
-    (check-memory-access resolved-i resolved-n)
-    (dotimes (row resolved-n)
-      (let ((byte (aref *memory* (+ resolved-i row)))
-            (screen-y (+ resolved-vy row)))
-        (when (< screen-y +display-height+)
-          (dotimes (bit 8)
-            (let ((screen-x (+ resolved-vx bit)))
-              (when (and (< screen-x +display-width+) (logbitp (- 7 bit) byte))
-                (when (display-xor-pixel! screen-x screen-y)
-                  (setf collided 1))))))))
-    (multiple-value-bind (extended ok) (unify collision collided environment)
-      (when ok (funcall emit extended)))))
-
-;; Copy registers V0..VX (inclusive) into *MEMORY* starting at address I, for
-;; FX55. I itself is left unchanged by design (the modern quirk this stage
-;; commits to, per the brief).
-(define-foreign-predicate (store-registers i x) (rulebase environment depth emit)
-  (declare (ignore depth))
-  (let ((resolved-i (logic-substitute i environment))
-        (resolved-x (logic-substitute x environment)))
-    (check-memory-access resolved-i (1+ resolved-x))
-    (dotimes (index (1+ resolved-x))
-      (let* ((solutions (query-prolog rulebase (list 'v index '?value)))
-             (value (solution-binding '?value (first solutions))))
-        (setf (aref *memory* (+ resolved-i index)) value)))
-    (funcall emit environment)))
-
-;; Load registers V0..VX (inclusive) from *MEMORY* starting at address I, for
-;; FX65. I itself is left unchanged by design (the modern quirk this stage
-;; commits to, per the brief).
-(define-foreign-predicate (load-registers i x) (rulebase environment depth emit)
-  (declare (ignore depth))
-  (let ((resolved-i (logic-substitute i environment))
-        (resolved-x (logic-substitute x environment)))
-    (check-memory-access resolved-i (1+ resolved-x))
-    (dotimes (index (1+ resolved-x))
-      (let ((value (aref *memory* (+ resolved-i index))))
-        (query-prolog rulebase (list 'retract (list 'v index (fresh-logic-variable))))
-        (query-prolog rulebase (list 'assertz (list 'v index value)))))
-    (funcall emit environment)))
 
 ;;; --------------------------------------------------------------------------
 ;;; The STEP/6 rulebase: all 35 CHIP-8 instructions.
 ;;; --------------------------------------------------------------------------
 ;;;
-;;; A plain top-level SETF, not a DEFVAR/DEFPARAMETER: *RULEBASE* is already
-;;; bound by state.lisp's own DEFVAR by the time this file loads (:SERIAL T
-;;; in cl-chip8.asd), so a DEFVAR here would be a silent no-op (DEFVAR never
-;;; rebinds an already-bound special variable) and these ~35 instructions
-;;; would never actually be added. EXTEND-RULEBASE returns a new rulebase
-;;; value that shadow-extends its base, so this SETF re-points *RULEBASE* at
-;;; that extended value once, at load time, before RESET-CPU-STATE! (which
-;;; only ever touches fact functors -- v, pc, i-register, and friends -- via
-;;; RETRACTALL) has a chance to run.
+;;; *RULEBASE* is already bound by state.lisp's DEFVAR when this file loads
+;;; (:SERIAL T in cl-chip8.asd). EXTEND-RULEBASE returns a new rulebase value
+;;; that shadow-extends its base, so the guarded SETF below installs the
+;;; ordered opcode clauses once and re-points *RULEBASE* at that value.
+;;; Keeping the installation guard separate from RESET-CPU-STATE! is
+;;; intentional: reset retracts dynamic CPU facts, while source reloads must
+;;; not accumulate duplicate opcode clauses in the persistent rulebase.
+(defvar *opcodes-installed-p* nil "True after the ordered opcode rulebase has been installed.")
+
+(defmacro %extend-opcode-rulebase-once (base &body clauses)
+  "Return BASE extended with CLAUSES, but never extend it twice."
+  (let ((base-variable (gensym "BASE-")))
+    `(let ((,base-variable ,base))
+       (if *opcodes-installed-p* ,base-variable
+         (prog1
+           (extend-rulebase ,base-variable ,@clauses)
+           (setf *opcodes-installed-p* t))))))
+
 (setf *rulebase*
-      (extend-rulebase *rulebase*
+      (%extend-opcode-rulebase-once *rulebase*
 
         ;; -- Family 0: 00E0 CLS, 00EE RET, 0NNN SYS (no-op) --
 
@@ -410,13 +275,13 @@ clause matches the decoded opcode. Returns no values."
          (is ?new-pc (+ ?old-pc 2))
          (assertz (pc ?new-pc)))
 
-        ;; 8XY5 SUB Vx, Vy, VF = 1 if Vx > Vy else 0 (NOT borrow). Unlike
-        ;; ADD's carry, "greater than" has no single arithmetic formula here,
-        ;; so this is two guarded clauses, tested before any mutation.
+        ;; 8XY5 SUB Vx, Vy, VF = 1 if Vx >= Vy else 0 (NOT borrow). Unlike
+        ;; ADD's carry, the non-strict comparison is expressed with guarded
+        ;; no-borrow and borrow clauses, tested before any mutation.
         ((step 8 ?x ?y 5 ?kk ?nnn)
          (v ?x ?vx)
          (v ?y ?vy)
-         (:when (> ?vx ?vy))
+         (:when (>= ?vx ?vy))
          (is ?wrapped (mod (- ?vx ?vy) 256))
          (retract (v ?x ?old-vx))
          (assertz (v ?x ?wrapped))
@@ -429,7 +294,7 @@ clause matches the decoded opcode. Returns no values."
         ((step 8 ?x ?y 5 ?kk ?nnn)
          (v ?x ?vx)
          (v ?y ?vy)
-         (:when (<= ?vx ?vy))
+         (:when (< ?vx ?vy))
          (is ?wrapped (mod (- ?vx ?vy) 256))
          (retract (v ?x ?old-vx))
          (assertz (v ?x ?wrapped))
@@ -453,11 +318,11 @@ clause matches the decoded opcode. Returns no values."
          (is ?new-pc (+ ?old-pc 2))
          (assertz (pc ?new-pc)))
 
-        ;; 8XY7 SUBN Vx, Vy, VF = 1 if Vy > Vx else 0; Vx = Vy - Vx.
+        ;; 8XY7 SUBN Vx, Vy, VF = 1 if Vy >= Vx else 0; Vx = Vy - Vx.
         ((step 8 ?x ?y 7 ?kk ?nnn)
          (v ?x ?vx)
          (v ?y ?vy)
-         (:when (> ?vy ?vx))
+         (:when (>= ?vy ?vx))
          (is ?wrapped (mod (- ?vy ?vx) 256))
          (retract (v ?x ?old-vx))
          (assertz (v ?x ?wrapped))
@@ -470,7 +335,7 @@ clause matches the decoded opcode. Returns no values."
         ((step 8 ?x ?y 7 ?kk ?nnn)
          (v ?x ?vx)
          (v ?y ?vy)
-         (:when (<= ?vy ?vx))
+         (:when (< ?vy ?vx))
          (is ?wrapped (mod (- ?vy ?vx) 256))
          (retract (v ?x ?old-vx))
          (assertz (v ?x ?wrapped))
@@ -673,6 +538,7 @@ clause matches the decoded opcode. Returns no values."
         ((step 15 ?x ?y ?n 51 ?nnn)
          (v ?x ?vx)
          (i-register ?i)
+         (ensure-memory-range ?i 3)
          (is ?hundreds (// ?vx 100))
          (is ?tens (mod (// ?vx 10) 10))
          (is ?ones (mod ?vx 10))

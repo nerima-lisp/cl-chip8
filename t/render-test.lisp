@@ -13,8 +13,9 @@
     (expect (half-block-character 1 1) :to-be (code-char #x2588))))
 
 (describe "render-display-into-screen!"
+  (before-each
+    (display-reset!))
   (it "blits a set pixel pair as the full block at the playfield offset"
-    (display-reset!)
     (setf (aref *display* 0 3) 1)
     (setf (aref *display* 1 3) 1)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
@@ -22,22 +23,36 @@
       (expect (cell-char (screen-cell screen (+ +playfield-origin-x+ 3) +playfield-origin-y+))
               :to-be (code-char #x2588))))
   (it "blits a clear pixel pair as a space"
-    (display-reset!)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
       (render-display-into-screen! screen)
       (expect (cell-char (screen-cell screen +playfield-origin-x+ +playfield-origin-y+))
               :to-be #\Space))))
 
 (describe "render-sound-indicator-into-screen!"
+  (before-each
+    (reset-cpu-state!))
   (it "styles the top-left corner in reverse video while the sound timer is nonzero"
-    (reset-cpu-state!)
     (set-sound-timer! 5)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
       (render-sound-indicator-into-screen! screen)
       (expect (cell-style (screen-cell screen 0 0)) :to-equal '(:reverse))))
   (it "leaves the top-left corner unstyled once the sound timer is 0"
-    (reset-cpu-state!)
     (set-sound-timer! 0)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
       (render-sound-indicator-into-screen! screen)
       (expect (cell-style (screen-cell screen 0 0)) :to-be nil))))
+
+(describe "render-chip8!"
+  (before-each
+    (reset-cpu-state!)
+    (display-reset!))
+  (it "composes the display blit and the sound indicator into one frame"
+    (setf (aref *display* 0 3) 1)
+    (setf (aref *display* 1 3) 1)
+    (set-sound-timer! 5)
+    (let ((screen (make-screen +screen-width+ +screen-height+)))
+      (render-chip8! screen)
+      (with-soft-assertions
+        (expect (cell-char (screen-cell screen (+ +playfield-origin-x+ 3) +playfield-origin-y+))
+                :to-be (code-char #x2588))
+        (expect (cell-style (screen-cell screen 0 0)) :to-equal '(:reverse))))))

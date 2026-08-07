@@ -2,9 +2,9 @@
 ;;;; press-and-hold approximation KEYPAD-APPLY-KEY-EVENT!/KEYPAD-STEP! drive.
 (in-package #:cl-chip8/test)
 
-(defun %character-event (char)
-  "Build a plain :CHARACTER, :PRESS cl-tty-kit KEY-EVENT for CHAR."
-  (make-key-event :type :character :code char))
+(defun %character-event (char &key (kind :press))
+  "Build a :CHARACTER cl-tty-kit KEY-EVENT for CHAR, :PRESS by default."
+  (make-key-event :type :character :code char :kind kind))
 
 (describe "key-event->chip8-key"
   (it "maps every key of the standard 4x4 QWERTY layout to its hex key"
@@ -42,20 +42,42 @@
     (reset-cpu-state!)
     (keypad-reset!)
     (keypad-apply-key-event! (%character-event #\g))
-    (expect (pressed-keys) :to-be nil)))
-
-(describe "keypad-step!"
-  (it "retracts key-down after +key-hold-ticks+ ticks without a fresh press"
+    (expect (pressed-keys) :to-be nil))
+  (it "retracts key-down and clears the hold countdown on a :release event"
     (reset-cpu-state!)
     (keypad-reset!)
+    (keypad-apply-key-event! (%character-event #\1))
+    (expect (key-down-p 1) :to-be-truthy)
+    (keypad-apply-key-event! (%character-event #\1 :kind :release))
+    (expect (key-down-p 1) :to-be-falsy))
+  (it "treats a release for an already-up key as idempotent"
+    (reset-cpu-state!)
+    (keypad-reset!)
+    (keypad-apply-key-event! (%character-event #\1 :kind :release))
+    (expect (key-down-p 1) :to-be-falsy)))
+
+(describe "keypad-apply-key-events!"
+  (before-each
+    (reset-cpu-state!)
+    (keypad-reset!))
+  (it "applies every event in order and returns EVENTS"
+    (let ((events (list (%character-event #\1) (%character-event #\2))))
+      (expect (keypad-apply-key-events! events) :to-be events)
+      (with-soft-assertions
+        (expect (key-down-p 1) :to-be-truthy)
+        (expect (key-down-p 2) :to-be-truthy)))))
+
+(describe "keypad-step!"
+  (before-each
+    (reset-cpu-state!)
+    (keypad-reset!))
+  (it "retracts key-down after +key-hold-ticks+ ticks without a fresh press"
     (keypad-apply-key-event! (%character-event #\1))
     (expect (key-down-p 1) :to-be-truthy)
     (dotimes (i +key-hold-ticks+)
       (keypad-step!))
     (expect (key-down-p 1) :to-be-falsy))
   (it "keeps key-down asserted while the key keeps being pressed"
-    (reset-cpu-state!)
-    (keypad-reset!)
     (dotimes (i (* 2 +key-hold-ticks+))
       (keypad-apply-key-event! (%character-event #\1))
       (keypad-step!))

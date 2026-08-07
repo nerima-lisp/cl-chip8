@@ -16,59 +16,99 @@
 ;;;; not about which opcode is running.
 (in-package #:cl-chip8)
 
-(defconstant +display-width+ 64
-  "The framebuffer's width in pixels.")
+(defun display-mark-all-dirty! ()
+  "Mark every pixel row dirty, advance its generation, and return *DISPLAY*."
+  (with-display-lock
+   (dotimes (y +display-height+ *display*)
+     (setf (sbit *display-dirty-rows* y) 1)
+     (incf (aref *display-row-generations* y)))
+   (setf *display-dirty-terminal-row-count* (truncate +display-height+ 2))
+   *display*))
 
-(defconstant +display-height+ 32
-  "The framebuffer's height in pixels.")
+(defun %mark-display-row-dirty! (y)
+  (let* ((terminal-row (truncate y 2))
+         (y0 (* terminal-row 2))
+         (was-dirty
+          (or (plusp (sbit *display-dirty-rows* y0)) (plusp (sbit *display-dirty-rows* (1+ y0))))))
+    (setf (sbit *display-dirty-rows* y) 1)
+    (incf (aref *display-row-generations* y))
+    (unless was-dirty
+      (incf *display-dirty-terminal-row-count*))
+    y))
 
-(defvar *display*
-  (make-array (list +display-height+ +display-width+)
-              :element-type 'bit
-              :initial-element 0)
-  "The 64x32 monochrome framebuffer, indexed (ROW COLUMN) i.e. (Y X) --
-row-major order matches how a later stage blits this to a terminal screen. A
-DEFVAR, not a DEFPARAMETER: reloading this file must not silently wipe the
-screen. Call DISPLAY-RESET! to clear it explicitly.")
+(defun %display-all-terminal-rows-dirty-p ()
+  (= *display-dirty-terminal-row-count* (truncate +display-height+ 2)))
+
+(defun %clear-display-terminal-row-if-unchanged! (terminal-row top-generation bottom-generation)
+  (let ((y0 (* terminal-row 2)))
+    (when (and
+           (= (aref *display-row-generations* y0) top-generation)
+           (= (aref *display-row-generations* (1+ y0)) bottom-generation))
+      (let ((was-dirty
+             (or (plusp (sbit *display-dirty-rows* y0)) (plusp (sbit *display-dirty-rows* (1+ y0))))))
+        (setf (sbit *display-dirty-rows* y0) 0
+              (sbit *display-dirty-rows* (1+ y0)) 0)
+        (when was-dirty
+          (decf *display-dirty-terminal-row-count*)))
+      t)))
 
 (defun display-reset! ()
-  "Clear every pixel of *DISPLAY* to 0 in place and return it."
-  (dotimes (y +display-height+ *display*)
-    (dotimes (x +display-width+)
-      (setf (aref *display* y x) 0))))
+  "Clear every pixel of *DISPLAY* in place and return it."
+  (with-display-lock
+   (dotimes (y +display-height+ *display*)
+     (dotimes (x +display-width+)
+       (setf (aref *display* y x) 0))
+     (setf (sbit *display-dirty-rows* y) 1)
+     (incf (aref *display-row-generations* y)))
+   (setf *display-dirty-terminal-row-count* (truncate +display-height+ 2))
+   *display*))
+
+(defun %display-pixel-value (x y)
+  (aref *display* y x))
 
 (defun display-pixel-value (x y)
   "Return the bit currently stored at column X, row Y."
-  (aref *display* y x))
+  (with-display-lock (%display-pixel-value x y)))
 
 (defun display-xor-pixel! (x y)
   "XOR the pixel at column X, row Y with 1 and return true when that XOR
 erased a previously set pixel (the CHIP-8 sprite-collision condition), false
 otherwise."
-  (let ((was-set (plusp (aref *display* y x))))
-    (setf (aref *display* y x) (logxor (aref *display* y x) 1))
-    (and was-set (zerop (aref *display* y x)))))
+  (with-display-lock
+   (let ((was-set (plusp (%display-pixel-value x y))))
+     (setf (aref *display* y x) (logxor (%display-pixel-value x y) 1))
+     (%mark-display-row-dirty! y)
+     (and was-set (zerop (%display-pixel-value x y))))))
 
 ;;; Prolog-callable primitives.
+(define-foreign-predicate
+ (display-clear)
+ (rulebase environment depth emit)
+ (display-reset!)
+ (funcall emit environment))
 
-(define-foreign-predicate (display-clear) (rulebase environment depth emit)
-  (declare (ignore rulebase depth))
-  (display-reset!)
-  (funcall emit environment))
+(define-foreign-predicate
+ (display-pixel x y value)
+ (rulebase environment depth emit)
+ (let ((resolved-x (logic-substitute x environment))
+       (resolved-y (logic-substitute y environment)))
+   (multiple-value-bind (extended ok) (unify
+                                       value
+                                       (display-pixel-value resolved-x resolved-y)
+                                       environment)
+     (when ok
+       (funcall emit extended)))))
 
-(define-foreign-predicate (display-pixel x y value) (rulebase environment depth emit)
-  (declare (ignore rulebase depth))
-  (let ((resolved-x (logic-substitute x environment))
-        (resolved-y (logic-substitute y environment)))
-    (multiple-value-bind (extended ok)
-        (unify value (display-pixel-value resolved-x resolved-y) environment)
-      (when ok (funcall emit extended)))))
-
-(define-foreign-predicate (display-xor-pixel x y collided) (rulebase environment depth emit)
-  (declare (ignore rulebase depth))
-  (let* ((resolved-x (logic-substitute x environment))
-         (resolved-y (logic-substitute y environment))
-         (collision-p (display-xor-pixel! resolved-x resolved-y)))
-    (multiple-value-bind (extended ok)
-        (unify collided (if collision-p 1 0) environment)
-      (when ok (funcall emit extended)))))
+(define-foreign-predicate
+ (display-xor-pixel x y collided)
+ (rulebase environment depth emit)
+ (let* ((resolved-x (logic-substitute x environment))
+        (resolved-y (logic-substitute y environment))
+        (collision-p (display-xor-pixel! resolved-x resolved-y)))
+   (multiple-value-bind (extended ok) (unify
+                                       collided
+                                       (if collision-p 1
+                                         0)
+                                       environment)
+     (when ok
+       (funcall emit extended)))))

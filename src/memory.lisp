@@ -10,21 +10,6 @@
 ;;;; see the repository README and cl-chip8.asd's :long-description.
 (in-package #:cl-chip8)
 
-(defconstant +memory-size+ 4096
-  "The size, in bytes, of the CHIP-8 address space.")
-
-(defconstant +rom-load-address+ #x200
-  "The conventional CHIP-8 ROM load address. Programs assume their own code
-starts here; addresses below it are reserved for the interpreter, including
-the fontset (see fontset.lisp).")
-
-(defvar *memory* (make-array +memory-size+
-                              :element-type '(unsigned-byte 8)
-                              :initial-element 0)
-  "The full 4096-byte CHIP-8 address space, indexed 0 to 4095. A DEFVAR, not a
-DEFPARAMETER: reloading this file must not silently wipe out a machine's
-memory contents. Call MEMORY-RESET! to clear it explicitly.")
-
 (defun memory-reset! ()
   "Zero every byte of *MEMORY* in place and return it."
   (fill *memory* 0)
@@ -32,15 +17,22 @@ memory contents. Call MEMORY-RESET! to clear it explicitly.")
 
 (defun load-bytes-into-memory (bytes address)
   "Copy the octet vector BYTES into *MEMORY* starting at ADDRESS and return
-BYTES. Signals CHIP8-ROM-TOO-LARGE when BYTES would run past the end of the
-4096-byte address space; this is the check that keeps a too-large ROM (or an
-out-of-range fontset placement) from silently corrupting adjacent memory."
-  (let* ((size (length bytes))
-         (available (- +memory-size+ address)))
-    (when (> size available)
-      (error 'chip8-rom-too-large :size size :available available))
-    (replace *memory* bytes :start1 address)
-    bytes))
+BYTES. Signals CHIP8-MEMORY-ACCESS-OUT-OF-BOUNDS for a negative or beyond-end
+ADDRESS, and CHIP8-ROM-TOO-LARGE when BYTES would run past the end of the
+4096-byte address space."
+  (let ((size (length bytes)))
+    (cond
+      ((or (minusp address) (> address +memory-size+))
+       (error (quote chip8-memory-access-out-of-bounds)
+              :address address
+              :span size))
+      ((> size (- +memory-size+ address))
+       (error (quote chip8-rom-too-large)
+              :size size
+              :available (- +memory-size+ address)))
+      (t
+       (replace *memory* bytes :start1 address)
+       bytes))))
 
 (defun check-memory-access (address span)
   "Signal CHIP8-MEMORY-ACCESS-OUT-OF-BOUNDS unless every byte in
@@ -58,8 +50,12 @@ against *MEMORY* instead of going through those two primitives -- see this
 file's own header comment and opcodes.lisp's DRAW-SPRITE comment for why --
 so each of those three calls this function once before its loop rather than
 repeating the bounds arithmetic at every AREF site."
-  (when (or (minusp address) (> (+ address span) +memory-size+))
-    (error 'chip8-memory-access-out-of-bounds :address address :span span))
+  (when (or (minusp address)
+            (minusp span)
+            (> (+ address span) +memory-size+))
+    (error (quote chip8-memory-access-out-of-bounds)
+           :address address
+           :span span))
   (values))
 
 ;;; Prolog-callable primitives. Opcode goals (a later stage) read and write
@@ -67,7 +63,6 @@ repeating the bounds arithmetic at every AREF site."
 ;;; O(1) AREF path whether it originates from Lisp or from proof search.
 
 (define-foreign-predicate (memory-read address value) (rulebase environment depth emit)
-  (declare (ignore rulebase depth))
   (let ((resolved-address (logic-substitute address environment)))
     (check-memory-access resolved-address 1)
     (multiple-value-bind (extended ok)
@@ -75,9 +70,13 @@ repeating the bounds arithmetic at every AREF site."
       (when ok (funcall emit extended)))))
 
 (define-foreign-predicate (memory-write address value) (rulebase environment depth emit)
-  (declare (ignore rulebase depth))
   (let ((resolved-address (logic-substitute address environment))
         (resolved-value (logic-substitute value environment)))
     (check-memory-access resolved-address 1)
     (setf (aref *memory* resolved-address) resolved-value)
     (funcall emit environment)))
+
+(define-foreign-predicate (ensure-memory-range address span) (rulebase environment depth emit)
+  (check-memory-access (logic-substitute address environment)
+                       (logic-substitute span environment))
+  (funcall emit environment))

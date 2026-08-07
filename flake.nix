@@ -10,7 +10,7 @@
     # this repository's entire required-output table, so none of it is spelled
     # out here and none of it can drift from the other repositories.
     cl-nix-forge = {
-      url = "github:nerima-lisp/cl-nix-forge/v0.4.1";
+      url = "github:nerima-lisp/cl-nix-forge/v0.5.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -21,12 +21,12 @@
     # `lispDerivation` below), never these repos' own flake outputs -- see
     # DEPENDENCY_POLICY.md "姉妹パッケージは flake = false で引きます".
     cl-prolog = {
-      url = "github:nerima-lisp/cl-prolog/v1.4.0";
+      url = "github:nerima-lisp/cl-prolog/v1.4.3";
       flake = false;
     };
 
     cl-tty-kit = {
-      url = "github:nerima-lisp/cl-tty-kit/v1.4.0";
+      url = "github:nerima-lisp/cl-tty-kit/v1.5.0";
       flake = false;
     };
 
@@ -35,35 +35,54 @@
       flake = false;
     };
 
-    # Transitive sibling dependencies of cl-tty-kit and cl-cli above --
-    # cl-tty-kit.asd depends on cl-codec-kit, cl-cli.asd depends on
-    # cl-host-kit. cl-prolog itself has no further org-internal dependency
-    # (DEPENDENCY_POLICY.md's L1 table: depth 0), so it needs no nested list
-    # of its own. Nix builds each lispDerivation as its own sandboxed
-    # derivation, so cl-tty-kit's and cl-cli's OWN :depends-on must be
-    # satisfied by giving THEIR lispDerivation calls a lispDependencies list
-    # (see `lispDependencies` below) -- flattening every sibling into this
-    # repository's own list would not reach a nested build.
+    cl-concurrent-kit = {
+      url = "github:nerima-lisp/cl-concurrent-kit/v0.6.1";
+      flake = false;
+    };
+
+    cl-boundary-kit = {
+      url = "github:nerima-lisp/cl-boundary-kit/v2.3.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
+      inputs.cl-nix-forge.follows = "cl-nix-forge";
+      inputs.treefmt-nix.follows = "treefmt-nix";
+    };
+
+    cl-date-kit = {
+      url = "github:nerima-lisp/cl-date-kit/v1.0.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-nix-forge.follows = "cl-nix-forge";
+      inputs.treefmt-nix.follows = "treefmt-nix";
+    };
+
+    # Transitive sibling dependencies of cl-tty-kit, cl-cli, and
+    # cl-concurrent-kit above. Nix builds each lispDerivation as its own
+    # sandboxed derivation, so every nested ASDF :depends-on must be satisfied
+    # by the owning lispDerivation's lispDependencies list -- flattening every
+    # sibling into this repository's own list would not reach a nested build.
     cl-codec-kit = {
-      url = "github:nerima-lisp/cl-codec-kit/v0.4.0";
+      url = "github:nerima-lisp/cl-codec-kit/v0.5.0";
       flake = false;
     };
 
     cl-host-kit = {
-      url = "github:nerima-lisp/cl-host-kit/v0.3.0";
+      url = "github:nerima-lisp/cl-host-kit/v0.3.1";
       flake = false;
     };
 
     cl-weave = {
-      url = "github:nerima-lisp/cl-weave/v1.2.0";
-      flake = false;
+      url = "github:nerima-lisp/cl-weave/v1.3.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-nix-forge.follows = "cl-nix-forge";
+      inputs.paredit-cli.follows = "paredit-cli";
+      inputs.treefmt-nix.follows = "treefmt-nix";
     };
 
     # Unlike the sibling *packages* above, this is consumed for its `lib`
     # output (`mkLintCheck`), which a `flake = false` source tree cannot
     # provide -- the same reason cl-nix-forge stays a real flake input.
     paredit-cli = {
-      url = "github:nerima-lisp/paredit-cli/v1.4.0";
+      url = "github:nerima-lisp/paredit-cli/v1.5.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -81,6 +100,9 @@
       cl-prolog,
       cl-tty-kit,
       cl-cli,
+      cl-concurrent-kit,
+      cl-boundary-kit,
+      cl-date-kit,
       cl-codec-kit,
       cl-host-kit,
       cl-weave,
@@ -119,11 +141,10 @@
 
       # Runtime dependencies: cl-chip8's own :DEPENDS-ON. These are BUILT
       # DERIVATIONS, not CL_SOURCE_REGISTRY strings -- cl-nix-forge assembles
-      # the registry transitively from them. cl-prolog has no further sibling
-      # of its own; cl-tty-kit and cl-cli each need one (cl-codec-kit,
-      # cl-host-kit respectively), so each of THEIR nested lispDerivation
-      # calls gets its OWN lispDependencies -- see the flake input comment
-      # above.
+      # the registry transitively from them. Each nested ASDF dependency is
+      # represented by a local derivation so the same source/version is shared
+      # across the graph rather than importing a sibling flake's prebuilt
+      # output (which can introduce duplicate source identities).
       lispDependencies =
         ctx:
         let
@@ -138,6 +159,26 @@
             version = ctx.cl.fromAsdSystem "${cl-host-kit}/cl-host-kit.asd";
             src = cl-host-kit;
             lispSystem = "cl-host-kit";
+          };
+          boundaryKit = ctx.cl.lispDerivation {
+            pname = "cl-boundary-kit";
+            version = ctx.cl.fromAsdSystem "${cl-boundary-kit}/cl-boundary-kit.asd";
+            src = cl-boundary-kit;
+            lispSystem = "cl-boundary-kit";
+            lispDependencies = [ hostKit ];
+          };
+          dateKit = ctx.cl.lispDerivation {
+            pname = "cl-date-kit";
+            version = ctx.cl.fromAsdSystem "${cl-date-kit}/cl-date-kit.asd";
+            src = cl-date-kit;
+            lispSystem = "cl-date-kit";
+          };
+          concurrentKit = ctx.cl.lispDerivation {
+            pname = "cl-concurrent-kit";
+            version = ctx.cl.fromAsdSystem "${cl-concurrent-kit}/cl-concurrent-kit.asd";
+            src = cl-concurrent-kit;
+            lispSystem = "cl-concurrent-kit";
+            lispDependencies = [ boundaryKit dateKit ];
           };
         in
         [
@@ -161,6 +202,8 @@
             lispSystem = "cl-cli";
             lispDependencies = [ hostKit ];
           })
+          dateKit
+          concurrentKit
         ];
 
       # Test-only: cl-weave, the org's test framework.
