@@ -1,0 +1,44 @@
+site_name: cl-chip8
+site_description: A CHIP-8 (1977 COSMAC VIP instruction set) interpreter for the terminal.
+site_url: https://nerima-lisp.github.io/cl-chip8/
+repo_url: https://github.com/nerima-lisp/cl-chip8
+repo_name: nerima-lisp/cl-chip8
+edit_uri: edit/main/docs/src/
+
+docs_dir: src
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
