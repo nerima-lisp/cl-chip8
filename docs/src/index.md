@@ -22,7 +22,7 @@ call stack, and both timers) lives as ordinary Prolog facts in a
 [cl-prolog](https://github.com/nerima-lisp/cl-prolog) rulebase
 (`*RULEBASE*`, built in `src/state.lisp`), asserted and retracted at runtime
 via cl-prolog's `ASSERTZ`/`RETRACT`/`RETRACTALL` builtins. Executing one
-instruction (`EXECUTE-INSTRUCTION!` in `src/opcodes.lisp`) fetches and decodes
+instruction (`EXECUTE-INSTRUCTION!` in `src/opcode-runtime.lisp`) fetches and decodes
 a 16-bit opcode into six plain integers -- `(FAMILY X Y N KK NNN)` -- and
 resolves exactly one `(step Family X Y N Kk Nnn)` goal against a roughly
 35-clause `STEP/6` predicate. Which clause fires is decided by genuine
@@ -50,7 +50,9 @@ thousands of clauses. Foreign predicates keep those two structures at O(1)
 access while still letting Prolog goals read and write them as if they were
 ordinary facts.
 
-See [src/opcodes.lisp](https://github.com/nerima-lisp/cl-chip8/blob/main/src/opcodes.lisp)
+See [src/opcode-runtime.lisp](https://github.com/nerima-lisp/cl-chip8/blob/main/src/opcode-runtime.lisp)
+for fetch/decode/execute, and
+[src/opcodes.lisp](https://github.com/nerima-lisp/cl-chip8/blob/main/src/opcodes.lisp)
 for the full instruction semantics: every one of the 35 opcode families,
 grouped and commented in the same order the file defines them (families 0
 through 9, then A through F by their conventional hex names), including the
@@ -79,11 +81,12 @@ per-ROM or command-line switch to select the other behavior.
 
 CHIP-8's sound timer counts down from whatever an `FX18` instruction loads
 into it, at a fixed 60Hz, and the original hardware beeps for as long as it
-is nonzero. cl-chip8 has **no audio output at all**. Instead, the terminal's
+is nonzero. cl-chip8 emits the terminal-bell control character at most ten
+times per second while the timer is active. It also renders the terminal's
 top-left border corner (the single cell that sits outside the 64x32
-playfield) renders in reverse video for as long as the sound timer is
-nonzero, and plain otherwise. This is a visual stand-in for the beep, not an
-attempt to play one through the terminal bell or any other mechanism.
+playfield) in reverse video for as long as the sound timer is nonzero, and
+plain otherwise. Terminal settings may mute the bell, so the visual indicator
+is retained as a reliable fallback.
 
 ## Display
 
@@ -96,6 +99,49 @@ for a cell with neither pixel set. The result is a 64-column by 16-row
 terminal playfield at close to the correct aspect ratio, inset by a 1-cell
 border on every side -- the same border whose top-left corner carries the
 sound indicator described above.
+
+## Rendering performance
+
+The realtime renderer tracks dirty terminal rows and owns one persistent,
+bounded [cl-concurrent-kit](https://github.com/nerima-lisp/cl-concurrent-kit)
+executor. It snapshots framebuffer rows on the caller thread, maps a pure
+pixel-to-character conversion over those immutable snapshots, then commits
+the resulting cells sequentially. Worker tasks never access cl-prolog facts,
+the live framebuffer, or terminal renderer state. Tiny dirty batches use serial
+fast paths when scheduling them would cost more than the conversion itself. On
+the fixed 16-row terminal display, partial batches with 1-8 dirty rows stay
+serial, while batches with 9-15 rows can use persistent CCK when the configured
+threshold allows it. The production default is 13: measured scheduling
+overhead keeps 1-12 row batches on the direct path, while 13-15 row batches
+remain eligible for CCK. Full 16-row frames remain serial because scheduling a
+complete frame costs more than direct rendering.
+
+Run `sbcl --script bench/render.lisp` to compare the baseline and concurrent
+renderers over `SPARSE`, `MEDIUM`, `LARGE-PARTIAL`, and `DENSE` workloads. The
+benchmark checks every final screen character and style for equality and
+reports submitted/completed/serial counters as deltas for the measured window.
+The fixed display's public fixtures contain at most 12 dirty rows: 1-8 stay
+serial, while the 12-row `LARGE-PARTIAL` fixture crosses the public CCK lower
+bound and exercises persistent submission with
+`CL_CHIP8_BENCH_PARALLEL_THRESHOLD=9`. The production default of 13 keeps that
+small workload on the direct path because repeated measurements show CCK
+scheduling overhead; `DENSE` remains direct serial because scheduling a full
+frame is slower. Output equality and worker lifecycle are covered by dedicated
+regression tests. Set `CL_CHIP8_BENCH_WARMUP` and
+`CL_CHIP8_BENCH_ITERATIONS` to control runtime.
+
+Run `sbcl --script tools/coverage.lisp` to execute the complete test suite and
+write `coverage/cover-index.html`. The gate requires at least 99% expression
+and 100% branch coverage across runtime source. It explicitly excludes the
+interactive/bootstrap files, static `*-types` modules, the ordered
+declarative rulebase `src/opcodes.lisp`, and `src/package.lisp`; the complete
+list is kept in the coverage script. The latest local run passed 176 tests and
+measured 1362/1375 selected expressions (99.05%) and 66/66 measured branches
+(100.00%). The remaining expression misses are SB-COVER load-time
+`in-package`/constant forms and optional constructor keyword-default forms;
+relevant no-argument paths are tested, but SB-COVER does not mark every default
+form as selected at that instrumentation boundary. All measured branches are
+covered.
 
 ## Keypad mapping
 
@@ -131,7 +177,7 @@ timers always step at a fixed 60Hz regardless of this setting. `--help`
 prints the full option and positional list, and `--version` prints the
 running build's version, read from `cl-chip8.asd` at runtime rather than
 copied into the source as a literal, so it cannot drift from the `.asd`.
-Press `q`, `Q`, or Ctrl-C at any time to quit and restore the terminal.
+Press Escape or Ctrl-C at any time to quit and restore the terminal.
 
 See the [README](https://github.com/nerima-lisp/cl-chip8#readme) for how to
 build the `cl-chip8` executable and for the Lisp-level API
