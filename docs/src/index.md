@@ -143,6 +143,48 @@ relevant no-argument paths are tested, but SB-COVER does not mark every default
 form as selected at that instrumentation boundary. All measured branches are
 covered.
 
+## ROM corpus smoke test
+
+The repository does not vendor ROM files. For a broad external smoke test, use
+[John Earnest's chip8Archive](https://github.com/JohnEarnest/chip8Archive/tree/0a41cc23ad5c9abbb764d041c11ea8c5b77b2bbf)
+at commit `0a41cc23ad5c9abbb764d041c11ea8c5b77b2bbf`. The archive contains 101
+compiled `.ch8` files and metadata for 48 `chip8`, 25 `schip`, and 28 `xochip`
+programs. Its [README](https://github.com/JohnEarnest/chip8Archive/blob/0a41cc23ad5c9abbb764d041c11ea8c5b77b2bbf/README.md)
+documents the repository's CC0 policy and attribution caveat; do not add the
+ROMs to this repository or redistribute individual programs without checking
+their provenance.
+
+Keep the checkout outside the project tree and record a checksum manifest:
+
+```sh
+git clone https://github.com/JohnEarnest/chip8Archive /tmp/chip8Archive
+git -C /tmp/chip8Archive checkout --detach 0a41cc23ad5c9abbb764d041c11ea8c5b77b2bbf
+find /tmp/chip8Archive/roms -type f -name '*.ch8' -exec shasum -a 256 {} + \
+  | sort > /tmp/chip8-rom-sha256.txt
+shasum -a 256 -c /tmp/chip8-rom-sha256.txt
+```
+
+For headless execution, initialize each ROM with
+`RESET-CPU-STATE!`, `MEMORY-RESET!`, `DISPLAY-RESET!`,
+`LOAD-FONTSET-INTO-MEMORY!`, `LOAD-ROM-FILE!`, and `KEYPAD-RESET!`, then call
+`EXECUTE-INSTRUCTION!` a fixed number of times. This is a CPU smoke test: it
+does not provide input, advance timers, or render a terminal frame.
+
+The corpus smoke test produced these results:
+
+- All 48 `chip8` ROMs completed 2,000 instructions, and all 48 also completed
+  an extended 10,000-instruction run.
+- 23 of 25 `schip` ROMs completed 2,000 instructions; 2 stopped at an
+  unsupported opcode.
+- 1 of 28 `xochip` ROMs completed 2,000 instructions; 5 stopped at an
+  unsupported opcode and 22 were rejected because they exceed the current
+  3,584-byte ROM capacity (`4096 - 0x200`).
+- No memory-access or stack errors occurred in the 101-ROM run.
+
+The `schip` and `xochip` results are expected compatibility limits, not full
+gameplay compatibility claims: cl-chip8 currently implements the original
+CHIP-8 instruction set and does not implement SUPER-CHIP or XO-CHIP.
+
 ## Keypad mapping
 
 CHIP-8 programs address a 16-key hexadecimal keypad (0-9 and A-F), originally
