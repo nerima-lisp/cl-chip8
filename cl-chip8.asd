@@ -107,9 +107,17 @@ and write them. SBCL only."
   ;; (t/render-test.lisp asserts on painted cells). Both are already the main
   ;; system's own dependency, at the same layer, so this stays within
   ;; DEPENDENCY_POLICY.md's test-only dependency limit.
+  ;; cl-host-kit is named here because t/corpus-test.lisp calls HOST-KIT:GETENV
+  ;; and the directory-tree walker directly, and run-tests.lisp LOADs the
+  ;; system by name before running the suite. Inheriting it through cl-chip8
+  ;; happens to work under a flat (:tree ../) source registry, which is why a
+  ;; local run never complained -- but each Nix lispDerivation builds in its
+  ;; own sandbox containing only its declared dependencies, so the omission
+  ;; failed CI with `Component "cl-host-kit" not found`.
   :depends-on ("cl-chip8" "cl-weave" "cl-prolog" "cl-tty-kit"
                "cl-concurrent-kit"
-               "cl-date-kit")
+               "cl-date-kit"
+               "cl-host-kit")
   :pathname "t"
   :serial t
   :components ((:file "package")

@@ -226,13 +226,24 @@
           hostKit
         ];
 
-      # Test-only: cl-weave, the org's test framework.
+      # Test-only: cl-weave, the org's test framework, plus cl-host-kit, which
+      # t/corpus-test.lisp calls directly and run-tests.lisp LOADs by name.
+      # This block is a separate `ctx:` lambda from lispDependencies above, so
+      # its `hostKit` binding is not in scope here and the derivation is spelled
+      # out again; identical inputs resolve to the identical store path, so this
+      # is a second reference rather than a second build.
       lispCheckDependencies = ctx: [
         (ctx.cl.lispDerivation {
           pname = "cl-weave";
           version = ctx.cl.fromAsdSystem "${cl-weave}/cl-weave.asd";
           src = cl-weave;
           lispSystem = "cl-weave";
+        })
+        (ctx.cl.lispDerivation {
+          pname = "cl-host-kit";
+          version = ctx.cl.fromAsdSystem "${cl-host-kit}/cl-host-kit.asd";
+          src = cl-host-kit;
+          lispSystem = "cl-host-kit";
         })
       ];
 
