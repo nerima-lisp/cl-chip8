@@ -38,9 +38,35 @@ before loading a ROM:
 (cl-chip8:keypad-reset!)
 ```
 
-Call `execute-instruction!` for CPU steps, `step-timers!` at 60 Hz, and the
-keypad functions when input events arrive. The [API reference](../reference/api.md)
-lists the lower-level functions and their conditions.
+Call `execute-instruction!` for CPU steps and `step-timers!` at 60 Hz.
+
+There is no exported function for delivering input. Key-event decoding belongs
+to the terminal layer, so a headless embedding drives the keypad by asserting
+and retracting `key-down` facts directly against `*rulebase*`. The query
+builtins come from `cl-prolog`, which `cl-chip8` imports but does not
+re-export, so name that package explicitly:
+
+```lisp
+;; Press CHIP-8 key 5.
+(cl-prolog:query-prolog cl-chip8:*rulebase*
+                        '(cl-prolog:assertz (cl-chip8:key-down 5)))
+
+;; The interpreter now sees it: EX9E/EXA1/FX0A all read this fact.
+(cl-chip8:key-down-p 5)   ; => true
+(cl-chip8:pressed-keys)   ; => (5)
+
+;; Release it.
+(cl-prolog:query-prolog cl-chip8:*rulebase*
+                        '(cl-prolog:retract (cl-chip8:key-down 5)))
+```
+
+Both the functor `cl-chip8:key-down` and the builtins `cl-prolog:assertz` and
+`cl-prolog:retract` must be those exact symbols: the engine dispatches on
+symbol identity, so a same-named symbol interned in another package will not
+match. Do not call the internal key-hold countdown machinery; it belongs to
+the terminal layer, and a fact you asserted yourself has no countdown entry to
+advance. The [API reference](../reference/api.md) lists the lower-level
+functions and their conditions.
 
 ## Declarative opcode semantics
 

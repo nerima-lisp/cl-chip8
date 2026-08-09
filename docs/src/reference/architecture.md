@@ -13,8 +13,16 @@ declarative instruction rules and those arrays.
 
 `run` owns the interactive lifecycle: it resets the machine, loads the
 fontset and ROM, configures raw terminal input, executes instructions, steps
-timers, and renders frames. An embedding can instead call the lower-level
-reset, input, execution, timer, and rendering functions independently.
+timers, and renders frames. An embedding can instead drive those steps itself
+through the exported reset operators (`reset-cpu-state!`, `memory-reset!`,
+`display-reset!`, `keypad-reset!`), the loaders (`load-fontset-into-memory!`,
+`load-rom-file!`), `execute-instruction!`, `step-timers!`, and `render-chip8!`
+or `render-chip8-concurrently!`.
+
+There is no exported input operator. Key-event decoding belongs to the
+terminal layer, so a headless embedding presses a key by asserting a
+`key-down` fact against `*rulebase*` and releases it by retracting that fact.
+[Core Concepts](../guide/core-concepts.md) shows the call.
 
 ## Rendering pipeline
 
@@ -28,9 +36,11 @@ reset, input, execution, timer, and rendering functions independently.
 Small partial updates use a serial path. With the default settings, partial
 frames become eligible for workers at a threshold of 13 dirty rows, and the
 implementation requires at least 9 partial snapshots before submitting work.
-Full dirty frames remain serial. The pipeline exposes counters for submitted,
-completed, and serial rows, plus queue depth and high-water mark, so an
-embedding can observe the selected path.
+Full dirty frames remain serial. The pipeline does maintain counters for
+submitted, completed, and serial rows, plus executor queue depth and
+high-water mark, but none of them is exported: they are telemetry over the
+batching strategy and carry no compatibility promise. An embedding cannot
+observe which path a frame took through the public API.
 
 Use `with-chip8-render-pipeline` for exception-safe lifecycle management. A
 pipeline must be closed before its owning application or terminal resources
