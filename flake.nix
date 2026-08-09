@@ -196,7 +196,18 @@
             version = ctx.cl.fromAsdSystem "${cl-tty-kit}/cl-tty-kit.asd";
             src = cl-tty-kit;
             lispSystem = "cl-tty-kit";
-            lispDependencies = [ codecKit ];
+            # cl-tty-kit v1.5.0 declares :depends-on ("cl-codec-kit"
+            # "cl-concurrent-kit"); the concurrent-kit entry is newer than the
+            # pin this list was written against. Each lispDerivation builds in
+            # its own sandbox, so a nested :depends-on that is missing here is
+            # simply absent at build time -- and the local
+            # `sbcl --script run-tests.lisp` cannot catch it, because that
+            # registers a flat (:tree ../) registry in which every sibling
+            # resolves regardless of what this list says.
+            lispDependencies = [
+              codecKit
+              concurrentKit
+            ];
           })
           (ctx.cl.lispDerivation {
             pname = "cl-cli";
