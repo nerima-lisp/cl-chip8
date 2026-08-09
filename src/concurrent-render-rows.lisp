@@ -69,6 +69,52 @@
              (sbit (render-row-snapshot-bottom-pixels snapshot) x))))
     characters))
 
+(defun %render-batch-deadline (shutdown-timeout)
+  "Return the absolute internal-time deadline for a render batch."
+  (+ (get-internal-real-time)
+     (round (* (duration-to-seconds shutdown-timeout)
+               internal-time-units-per-second))))
+
+(defun %submit-render-batch-jobs
+    (snapshots results job-buffer jobs-channel worker-count chunk-size)
+  "Fill reusable jobs and submit the batches to JOBS-CHANNEL."
+  (loop for job-index below worker-count
+        for start = (* job-index chunk-size)
+        for end = (min (length snapshots) (+ start chunk-size))
+        do (let ((job (aref job-buffer job-index)))
+             (setf (render-batch-job-snapshots job) snapshots
+                   (render-batch-job-results job) results
+                   (render-batch-job-start job) start
+                   (render-batch-job-end job) end
+                   (render-batch-job-caught-condition job) nil)
+             (unless (try-send jobs-channel job)
+               (error "Render job channel is unexpectedly full or closed.")))))
+
+(defun %wait-for-render-batch-jobs
+    (completion-semaphore worker-count deadline shutdown-timeout)
+  "Wait for all workers, failing when the shared deadline is exhausted."
+  (loop repeat worker-count
+        unless
+            (wait-on-semaphore
+             completion-semaphore
+             :timeout
+             (max
+              0.0d0
+              (/ (- deadline (get-internal-real-time))
+                 (float internal-time-units-per-second 0.0d0))))
+        do (error "Render worker completion timed out after ~A."
+                  shutdown-timeout)))
+
+(defun %first-render-batch-condition (job-buffer worker-count)
+  "Return the first condition captured by a completed render batch."
+  (loop with first-condition = nil
+        for job-index below worker-count
+        for condition =
+          (render-batch-job-caught-condition (aref job-buffer job-index))
+        when (and condition (null first-condition))
+          do (setf first-condition condition)
+        finally (return first-condition)))
+
 (defun %commit-render-row! (screen terminal-row characters)
   (screen-write-string
    screen
@@ -89,47 +135,20 @@
            (chip8-render-pipeline-completion-semaphore pipeline))
          (shutdown-timeout
            (chip8-render-pipeline-shutdown-timeout pipeline))
-         (timeout-seconds
-           (cl-date-kit:duration-to-seconds shutdown-timeout))
          (deadline
-           (+ (get-internal-real-time)
-              (round (* timeout-seconds
-                        internal-time-units-per-second))))
-         (first-condition nil))
+           (%render-batch-deadline shutdown-timeout)))
     (setf (fill-pointer results) snapshot-count)
     (atomic-counter-incf
      (chip8-render-pipeline-submitted-counter pipeline)
      snapshot-count)
-    (loop for job-index below worker-count
-          for start = (* job-index chunk-size)
-          for end = (min snapshot-count (+ start chunk-size))
-          do (let ((job (aref job-buffer job-index)))
-               (setf (render-batch-job-snapshots job) snapshots
-                     (render-batch-job-results job) results
-                     (render-batch-job-start job) start
-                     (render-batch-job-end job) end
-                     (render-batch-job-caught-condition job) nil)
-               (unless (try-send jobs-channel job)
-                 (error "Render job channel is unexpectedly full or closed."))))
-    (loop repeat worker-count
-          unless
-              (wait-on-semaphore
-               completion-semaphore
-               :timeout
-               (max
-                0.0d0
-                (/ (- deadline (get-internal-real-time))
-                   (float internal-time-units-per-second 0.0d0))))
-            do (error "Render worker completion timed out after ~A."
-                      shutdown-timeout))
-    (loop for job-index below worker-count
-          for condition =
-            (render-batch-job-caught-condition
-             (aref job-buffer job-index))
-          when (and condition (null first-condition))
-            do (setf first-condition condition))
-    (when first-condition
-      (error first-condition))
+    (%submit-render-batch-jobs
+     snapshots results job-buffer jobs-channel worker-count chunk-size)
+    (%wait-for-render-batch-jobs
+     completion-semaphore worker-count deadline shutdown-timeout)
+    (let ((first-condition
+            (%first-render-batch-condition job-buffer worker-count)))
+      (when first-condition
+        (error first-condition)))
     results))
 
 (defun %render-full-frame-serially-under-lock (screen pipeline)

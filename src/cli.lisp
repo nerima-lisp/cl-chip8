@@ -41,7 +41,8 @@ enter its terminal session."
    :description "Runs a CHIP-8 ROM live in the terminal. Instruction dispatch
 is driven by genuine Prolog goal resolution over a cl-prolog rulebase, not a
 conventional interpreter loop. Press Escape or Ctrl-C to quit. The keypad maps a
-standard 4x4 QWERTY block onto the CHIP-8 hex keypad -- see the README."
+standard 4x4 QWERTY block onto the CHIP-8 hex keypad -- see the Terminal guide
+at https://nerima-lisp.github.io/cl-chip8/guide/terminal/ for the full table."
    :positionals (list (make-positional :name "rom" :required-p t
                                        :description "Path to the CHIP-8 ROM file to run."))
    :global-options
@@ -56,11 +57,11 @@ Timers always run at a fixed 60Hz regardless."
 (defun main ()
   "Entry point for a plain `sbcl --script'/REPL invocation. Parses the
 current process argv against *APP* and exits with its result code."
-  (host-kit:quit (run-app *app* :argv (current-process-argv))))
+  (quit (run-app *app* :argv (current-process-argv))))
 
 (defun image-entry-point ()
   "Toplevel of the delivered `cl-chip8' executable; named by :ENTRY-POINT in
 cl-chip8.asd. Identical to MAIN -- this application loads no further ASDF
 systems at run time, so it needs no image-relocation bootstrapping beyond
 this thin wrapper."
-  (host-kit:quit (run-app *app* :argv (current-process-argv))))
+  (quit (run-app *app* :argv (current-process-argv))))

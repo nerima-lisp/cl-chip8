@@ -27,16 +27,38 @@ jobs:
       # Enforces the org invariant "git tag == .asd :version" at the only point
       # where it can still be corrected cheaply. Without this gate the two drift
       # silently.
+      #
+      # EVERY :version form must agree with the tag, not just the first one.
+      # cl-chip8.asd declares one for the `cl-chip8` system and another for
+      # `cl-chip8/test`; the earlier `head -n1` extraction checked only the
+      # former, so bumping one and forgetting the other passed this gate while
+      # leaving the two systems on different versions.
       - name: Verify tag matches .asd version
         env:
           PACKAGE: cl-chip8
         run: |
           set -euo pipefail
-          asd_version="$(sed -n 's/^[[:space:]]*:version "\([^"]*\)".*/\1/p' "$PACKAGE.asd" | head -n1)"
+          asd_versions="$(sed -n 's/^[[:space:]]*:version "\([^"]*\)".*/\1/p' "$PACKAGE.asd")"
           tag_version="${GITHUB_REF_NAME#v}"
-          echo "asd=$asd_version tag=$tag_version"
-          if [[ "$asd_version" != "$tag_version" ]]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match $PACKAGE.asd version $asd_version" >&2
+          version_count="$(printf '%s\n' "$asd_versions" | grep -c . || true)"
+          distinct_count="$(printf '%s\n' "$asd_versions" | sort -u | grep -c . || true)"
+          echo "asd=$(printf '%s' "$asd_versions" | tr '\n' ' ')tag=$tag_version"
+
+          # An extraction that matched nothing would otherwise satisfy every
+          # comparison below and pass this gate vacuously.
+          if [[ "$version_count" -eq 0 ]]; then
+            echo "::error::No :version form found in $PACKAGE.asd" >&2
+            exit 1
+          fi
+
+          if [[ "$distinct_count" -ne 1 ]]; then
+            echo "::error::$PACKAGE.asd declares $version_count :version forms that disagree with each other" >&2
+            exit 1
+          fi
+
+          # Safe to take the first only now that all of them are proven identical.
+          if [[ "$(printf '%s\n' "$asd_versions" | head -n1)" != "$tag_version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match $PACKAGE.asd version" >&2
             exit 1
           fi
 

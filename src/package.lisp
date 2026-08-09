@@ -115,12 +115,51 @@
               #:atomic-counter-incf
               #:make-lock
               #:with-lock-held)
+  ;; cl-date-kit supplies the native timeout type used by the persistent
+  ;; render pipeline. Importing the type and conversion functions keeps the
+  ;; package boundary explicit in the same way as the other sibling systems.
+  (:import-from #:cl-date-kit
+                #:duration
+                #:duration-of-seconds
+                #:duration-to-seconds)
+  ;; cl-host-kit owns process termination for both the CLI entry point and
+  ;; the script runners.
+  (:import-from #:host-kit
+                #:quit)
+  ;; THE EXPORT RULE. A symbol is exported if and only if it is one of:
+  ;;
+  ;;   (a) an entry point that runs the emulator;
+  ;;   (b) a condition, or a reader on one, that a caller must handle;
+  ;;   (c) a machine-state primitive needed to drive the interpreter
+  ;;       headlessly -- reset, load, step, read a pixel, read a fact;
+  ;;   (d) a whole-frame render operator, a render-pipeline lifecycle
+  ;;       operator, or a type named by a kept operator's CHECK-TYPE or
+  ;;       returned by one.
+  ;;
+  ;; Everything else stays internal: Prolog goal functors, DEFSTRUCT
+  ;; accessors, telemetry counters, tuning knobs, sub-step renderers,
+  ;; internal bounds checks, and helpers with no CHIP-8 semantics.
+  ;;
+  ;; Why goal functors are internal: a functor is an implementation detail of
+  ;; a rulebase whose shape this system has not committed to. The proof that
+  ;; exporting them was never required is ENSURE-MEMORY-RANGE -- a
+  ;; DEFINE-FOREIGN-PREDICATE at memory.lisp:79 that is NOT exported and is
+  ;; called as a goal from an opcodes.lisp clause body without trouble,
+  ;; because a term read inside CL-CHIP8 interns the identical symbol.
+  ;; Dispatch needs symbol IDENTITY, and :IMPORT-FROM supplies identity for
+  ;; an internal symbol just as well as :EXPORT does -- t/package.lisp does
+  ;; exactly that, as it already did for cl-prolog's ASSERTZ and RETRACT.
+  ;; :EXPORT additionally supplies a semver commitment, which is the part
+  ;; that was being paid for and not used.
   (:export
    ;; -- Conditions --
    #:chip8-error
    #:chip8-rom-too-large
    #:chip8-rom-too-large-size
    #:chip8-rom-too-large-available
+   #:chip8-rom-short-read
+   #:chip8-rom-short-read-actual-size
+   #:chip8-rom-short-read-expected-size
    #:chip8-invalid-opcode
    #:chip8-invalid-opcode-opcode
    #:chip8-stack-overflow
@@ -138,29 +177,26 @@
    #:*memory*
    #:memory-reset!
    #:load-bytes-into-memory
-   ;; Prolog-callable goal functors (see memory.lisp). Exported, not just
-   ;; documented, because DEFINE-FOREIGN-PREDICATE dispatches on the exact
-   ;; symbol object used at both definition and call time (EQL on the
-   ;; predicate name) -- a caller in another package needs the real,
-   ;; interned CL-CHIP8:MEMORY-READ/CL-CHIP8:MEMORY-WRITE, not a same-named
-   ;; symbol of its own that would silently miss every dispatch.
-   #:memory-read
-   #:memory-write
-   #:check-memory-access
 
    ;; -- Display: the 64x32 monochrome framebuffer --
+   ;; *DISPLAY* itself is NOT exported, unlike *MEMORY*, and the asymmetry is
+   ;; deliberate. *MEMORY* is an (UNSIGNED-BYTE 8) array whose every invariant
+   ;; the array type and AREF's own bounds check already enforce, so handing it
+   ;; out is safe. *DISPLAY* has invariants that live OUTSIDE the array --
+   ;; *DISPLAY-DIRTY-ROWS*, *DISPLAY-ROW-GENERATIONS* and *DISPLAY-LOCK* in
+   ;; display-types.lisp -- and the concurrent renderer only repaints rows the
+   ;; dirty set names. A caller doing (SETF (AREF *DISPLAY* Y X) 1) therefore
+   ;; gets a pixel that DISPLAY-PIXEL-VALUE reports as set, RENDER-CHIP8!
+   ;; paints, and RENDER-CHIP8-CONCURRENTLY! silently omits -- two exported
+   ;; renderers disagreeing about identical state, with no exported way to
+   ;; reconcile them. Export the self-validating primitive; withhold the one
+   ;; whose invariants are external. DISPLAY-PIXEL-VALUE reads and
+   ;; DISPLAY-XOR-PIXEL! writes, and the latter maintains the dirty set.
    #:+display-width+
    #:+display-height+
-   #:*display*
    #:display-reset!
-   #:display-mark-all-dirty!
    #:display-pixel-value
    #:display-xor-pixel!
-   ;; Prolog-callable goal functors (see display.lisp); exported for the same
-   ;; EQL-dispatch reason as MEMORY-READ/MEMORY-WRITE above.
-   #:display-clear
-   #:display-pixel
-   #:display-xor-pixel
 
    ;; -- Fontset: the 16 built-in hex-digit glyphs --
    #:+fontset-address+
@@ -191,77 +227,67 @@
    #:sound-timer
    #:key-down
 
-   ;; -- Opcodes: the instruction rulebase and its fetch/decode/execute glue --
+   ;; -- Opcodes: the instruction rulebase's execute entry point --
+   ;; FETCH-OPCODE/DECODE-OPCODE are sub-steps of EXECUTE-INSTRUCTION!, and
+   ;; the STEP rulebase's goal functors are internal per the rule above.
    #:execute-instruction!
-   #:fetch-opcode
-   #:decode-opcode
-   ;; Prolog-callable goal functors the STEP rulebase calls into (see
-   ;; opcodes.lisp); exported for the same EQL-dispatch reason as
-   ;; MEMORY-READ/DISPLAY-XOR-PIXEL above.
-   #:raise-stack-overflow
-   #:raise-stack-underflow
-   #:draw-sprite
-   #:random-byte-masked
-   #:bitwise-op
-   #:store-registers
-   #:load-registers
 
-   ;; -- Keypad: cl-tty-kit KEY-EVENTs to CHIP-8 hex keys --
-   #:+keypad-mapping+
-   #:+key-hold-ticks+
-   #:key-event->chip8-key
+   ;; -- Keypad --
+   ;; KEY-EVENT->CHIP8-KEY and the KEYPAD-APPLY-* pair take a cl-tty-kit
+   ;; KEY-EVENT, so they belong to the terminal layer rather than the
+   ;; headless machine interface. A headless driver presses a key by
+   ;; asserting a KEY-DOWN fact against *RULEBASE* and retracting it again.
+   ;;
+   ;; KEYPAD-STEP! is internal for a sharper reason: it is the expiry half of
+   ;; a hold approximation whose arming half (KEYPAD-APPLY-KEY-EVENT! and the
+   ;; *KEY-HOLD-COUNTDOWNS* table) is internal. A directly-asserted KEY-DOWN
+   ;; fact has no countdown entry, so keypad.lisp's (GETHASH KEY ... 0) yields
+   ;; 0, 1- takes it negative, and the very first KEYPAD-STEP! retracts the
+   ;; key. Exporting the expiry without the arming would publish a pairing
+   ;; that silently drops every headless keypress on its first tick.
    #:keypad-reset!
-   #:keypad-apply-key-event!
-   #:keypad-apply-key-events!
-   #:keypad-step!
 
    ;; -- Timers: 60Hz delay/sound timer stepping --
    #:step-timers!
 
    ;; -- ROM loading --
-   #:read-file-bytes
+   ;; LOAD-ROM-FILE! calls CHECK-REGULAR-ROM-FILE unconditionally, so
+   ;; unexporting that predicate removes a name and not the guard.
    #:load-rom-file!
-   #:regular-file-p
-   #:check-regular-rom-file
 
    ;; -- Rendering: half-block blit of *DISPLAY* into a cl-tty-kit SCREEN --
+   ;; The two screen dimensions stay public because a caller must size the
+   ;; SCREEN it hands to RENDER-CHIP8! / RENDER-CHIP8-CONCURRENTLY!, and a
+   ;; wrong-sized screen clips silently rather than signalling.
    #:+screen-width+
    #:+screen-height+
-   #:+playfield-origin-x+
-   #:+playfield-origin-y+
-   #:half-block-character
-   #:render-display-into-screen!
    #:sound-timer-active-p
-   #:render-sound-indicator-into-screen!
    #:render-chip8!
 
    ;; -- Concurrent rendering: immutable row snapshots and serial screen commit --
-   #:with-chip8-render-pipeline
+   ;; CHIP8-RENDER-PIPELINE is exported because concurrent-render.lisp
+   ;; CHECK-TYPEs against it; without the name, a caller cannot write a
+   ;; HANDLER-CASE clause for the TYPE-ERROR they can provoke.
+   ;; The tuning knobs and the five telemetry counters stay internal: they
+   ;; expose the batching strategy, and PARALLEL-THRESHOLD cannot even
+   ;; determine behavior alone -- it is ANDed with the internal constant
+   ;; +CONCURRENT-RENDER-MINIMUM-SNAPSHOTS+.
+   #:chip8-render-pipeline
    #:chip8-render-pipeline-p
+   #:with-chip8-render-pipeline
    #:make-chip8-render-pipeline
    #:close-chip8-render-pipeline
    #:render-chip8-concurrently!
-   #:chip8-render-pipeline-parallelism
-   #:chip8-render-pipeline-parallel-threshold
-   #:chip8-render-pipeline-shutdown-timeout
-   #:chip8-render-pipeline-submitted-rows
-   #:chip8-render-pipeline-completed-rows
-   #:chip8-render-pipeline-serial-rows
-   #:chip8-render-pipeline-queue-depth
-   #:chip8-render-pipeline-high-water-mark
 
    ;; -- App: the realtime tick loop --
-   #:+default-clock-hz+
+   ;; RUN returns a CHIP8-APP and stores a mid-run failure on it rather than
+   ;; signalling, so the type, its predicate, and the two slots that carry
+   ;; the outcome are part of RUN's contract. The remaining slots are
+   ;; internal wiring.
    #:chip8-app
-   #:make-chip8-app
    #:chip8-app-p
-   #:chip8-app-renderer
-   #:chip8-app-decoder
-   #:chip8-app-render-pipeline
-   #:chip8-app-clock-hz
    #:chip8-app-quitp
    #:chip8-app-error
-   #:quit-key-event-p
    #:run
 
    ;; -- CLI: the `cl-chip8' command --

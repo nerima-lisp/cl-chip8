@@ -49,17 +49,17 @@
   (dotimes (y cl-chip8:+display-height+)
     (dotimes (x cl-chip8:+display-width+)
       (when (zerop (mod (+ (* x 3) y) 11))
-        (setf (aref cl-chip8:*display* y x) 1)))))
+        (setf (aref cl-chip8::*display* y x) 1)))))
 
 (defun prepare-fixture! (dense-p)
   (cl-chip8:reset-cpu-state!)
   (cl-chip8:display-reset!)
   (when dense-p
     (paint-dense-fixture!))
-  (cl-chip8:display-mark-all-dirty!))
+  (cl-chip8::display-mark-all-dirty!))
 
 (defun advance-fixture! (frame dirty-row-count)
-  (if (= dirty-row-count (truncate cl-chip8:+display-height+ 2)) (cl-chip8:display-mark-all-dirty!)
+  (if (= dirty-row-count (truncate cl-chip8:+display-height+ 2)) (cl-chip8::display-mark-all-dirty!)
     (dotimes (offset dirty-row-count)
       (let ((terminal-row (mod (+ frame offset) (truncate cl-chip8:+display-height+ 2))))
         (cl-chip8:display-xor-pixel!
@@ -79,15 +79,15 @@
     (render-frame! mode screen pipeline frame dirty-row-count))
   (let* ((submitted-before
            (if pipeline
-               (cl-chip8:chip8-render-pipeline-submitted-rows pipeline)
+               (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
                0))
          (completed-before
            (if pipeline
-               (cl-chip8:chip8-render-pipeline-completed-rows pipeline)
+               (cl-chip8::chip8-render-pipeline-completed-rows pipeline)
                0))
          (serial-before
            (if pipeline
-               (cl-chip8:chip8-render-pipeline-serial-rows pipeline)
+               (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
                0))
          (started-at (monotonic-seconds)))
     (dotimes (frame iterations)
@@ -104,22 +104,22 @@
      screen
      :submitted
      (- (if pipeline
-            (cl-chip8:chip8-render-pipeline-submitted-rows pipeline)
+            (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
             0)
         submitted-before)
      :completed
      (- (if pipeline
-            (cl-chip8:chip8-render-pipeline-completed-rows pipeline)
+            (cl-chip8::chip8-render-pipeline-completed-rows pipeline)
             0)
         completed-before)
      :serial
      (- (if pipeline
-            (cl-chip8:chip8-render-pipeline-serial-rows pipeline)
+            (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
             0)
         serial-before)
      :high-water-mark
      (if pipeline
-         (cl-chip8:chip8-render-pipeline-high-water-mark pipeline)
+         (cl-chip8::chip8-render-pipeline-high-water-mark pipeline)
          0))))
 
 (defun run-mode (mode dense-p dirty-row-count warmup iterations parallel-threshold parallelism)

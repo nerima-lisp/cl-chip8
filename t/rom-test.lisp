@@ -21,10 +21,56 @@ and cl-chip8.asd), so a plain /tmp path avoids depending on any particular
 (defmacro with-temp-rom-file ((path-var bytes) &body body)
   `(%call-with-temp-rom-file ,bytes (lambda (,path-var) ,@body)))
 
+(defclass %chunked-binary-input-stream (sb-gray:fundamental-binary-input-stream)
+  ((bytes :initarg :bytes :reader %chunked-stream-bytes)
+   (position :initform 0 :accessor %chunked-stream-position)
+   (chunk-size :initarg :chunk-size :reader %chunked-stream-chunk-size)))
+
+(defmethod sb-gray:stream-read-byte ((stream %chunked-binary-input-stream))
+  (let ((position (%chunked-stream-position stream))
+        (bytes (%chunked-stream-bytes stream)))
+    (if (< position (length bytes))
+        (prog1
+            (aref bytes position)
+          (incf (%chunked-stream-position stream)))
+        :eof)))
+
+(defmethod sb-gray:stream-read-sequence
+    ((stream %chunked-binary-input-stream) sequence &optional start end)
+  (let* ((start (or start 0))
+         (end (or end (length sequence)))
+         (position (%chunked-stream-position stream))
+         (bytes (%chunked-stream-bytes stream))
+         (count (min (%chunked-stream-chunk-size stream)
+                     (- end start)
+                     (- (length bytes) position))))
+    (if (plusp count)
+        (progn
+          (replace sequence bytes
+                   :start1 start
+                   :end1 (+ start count)
+                   :start2 position
+                   :end2 (+ position count))
+          (incf (%chunked-stream-position stream) count)
+          (+ start count))
+        start)))
+
 (describe "read-file-bytes"
   (it "reads the exact bytes written to the file"
     (with-temp-rom-file (path #(1 2 3 4))
-      (expect (coerce (read-file-bytes path) 'list) :to-equal '(1 2 3 4)))))
+      (expect (coerce (read-file-bytes path) 'list) :to-equal '(1 2 3 4))))
+  (it "continues after a short binary-stream read"
+    (let ((stream (make-instance '%chunked-binary-input-stream
+                                  :bytes #(9 8 7 6)
+                                  :chunk-size 1)))
+      (expect (coerce (cl-chip8::%read-file-bytes-from-stream stream 4) 'list)
+              :to-equal '(9 8 7 6))))
+  (it "signals chip8-rom-short-read when EOF arrives early"
+    (let ((stream (make-instance '%chunked-binary-input-stream
+                                  :bytes #(9 8)
+                                  :chunk-size 1)))
+      (signals chip8-rom-short-read
+        (cl-chip8::%read-file-bytes-from-stream stream 4)))))
 
 (describe "load-rom-file!"
   (it "loads the file's bytes into memory at +rom-load-address+"

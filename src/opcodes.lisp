@@ -62,12 +62,28 @@
 (defvar *opcodes-installed-p* nil "True after the ordered opcode rulebase has been installed.")
 
 (defmacro %extend-opcode-rulebase-once (base &body clauses)
-  "Return BASE extended with CLAUSES, but never extend it twice."
-  (let ((base-variable (gensym "BASE-")))
+  "Return BASE extended with CLAUSES, but never extend it twice.
+
+The cl-prolog DSL quotes clause bodies before compiling them, so a constant
+used by a `:WHEN' guard or by an `IS' arithmetic goal must be substituted
+while this macro still owns the source forms -- a symbolic reference left in
+place would reach the DSL as an ordinary unbound Prolog atom. Each marker
+listed below is replaced by its SYMBOL-VALUE here, which is what lets the
+clauses name +CALL-STACK-LIMIT+, +FONTSET-ADDRESS+, and +MEMORY-SIZE+
+instead of repeating 16, 80, and 4096 as bare literals. Every marker must
+name a constant already defined when this file loads: :SERIAL T in
+cl-chip8.asd puts state-types, fontset, and memory-types all ahead of
+opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
+  (let ((base-variable (gensym "BASE-"))
+        (expanded-clauses
+          (reduce (lambda (forms marker)
+                    (subst (symbol-value marker) marker forms))
+                  '(+call-stack-limit+ +fontset-address+ +memory-size+)
+                  :initial-value clauses)))
     `(let ((,base-variable ,base))
        (if *opcodes-installed-p* ,base-variable
          (prog1
-           (extend-rulebase ,base-variable ,@clauses)
+           (extend-rulebase ,base-variable ,@expanded-clauses)
            (setf *opcodes-installed-p* t))))))
 
 (setf *rulebase*
@@ -120,15 +136,13 @@
         ;; non-destructive fact read plus a pure :WHEN predicate) before any
         ;; mutation, so a guard failure here never leaves a half-applied CALL
         ;; behind for the overflow clause below to inherit.
-        ;; The literal 16 below is +CALL-STACK-LIMIT+'s value (state.lisp):
-        ;; cl-prolog's clause DSL quotes this body literally at
-        ;; EXTEND-RULEBASE macro-expansion time (see cl-prolog's
-        ;; dsl-compiler.lisp), so a symbolic reference to the Lisp constant
-        ;; cannot be spliced in here -- the same constraint FX29's own
-        ;; comment documents for +FONTSET-ADDRESS+.
+        ;; %EXTEND-OPCODE-RULEBASE-ONCE substitutes +CALL-STACK-LIMIT+ before
+        ;; cl-prolog's clause DSL quotes this body at EXTEND-RULEBASE
+        ;; macro-expansion time. Keeping the marker here makes the guard and
+        ;; the public state constant share one source of truth.
         ((step 2 ?x ?y ?n ?kk ?nnn)
          (call-stack ?stack)
-         (:when (< (length ?stack) 16))
+         (:when (< (length ?stack) +call-stack-limit+))
          (pc ?old-pc)
          (is ?return-address (+ ?old-pc 2))
          (retract (call-stack ?stack))
@@ -136,12 +150,11 @@
          (retract (pc ?old-pc))
          (assertz (pc ?nnn)))
 
-        ;; No room: overflow. 16 is +CALL-STACK-LIMIT+'s value -- see the
-        ;; comment on the guard clause just above for why it cannot be
-        ;; spliced in symbolically.
+        ;; No room: overflow. The same marker is expanded before the DSL
+        ;; receives this clause; see the guard clause just above.
         ((step 2 ?x ?y ?n ?kk ?nnn)
          (call-stack ?stack)
-         (:when (>= (length ?stack) 16))
+         (:when (>= (length ?stack) +call-stack-limit+))
          (raise-stack-overflow ?stack))
 
         ;; -- Family 3: 3XKK SE Vx, byte --
@@ -305,8 +318,8 @@
          (assertz (pc ?new-pc)))
 
         ;; 8XY6 SHR Vx {, Vy}: VF = LSB of Vx before the shift, Vx >>= 1. VY
-        ;; is read nowhere in this clause's body: the modern quirk this stage
-        ;; commits to (VIP-authentic VY-as-source is out of scope).
+        ;; is read nowhere in this clause's body: this is the modern shift
+        ;; quirk, not the VIP-authentic VY-as-source form.
         ((step 8 ?x ?y 6 ?kk ?nnn)
          (retract (v ?x ?vx))
          (is ?lsb (mod ?vx 2))
@@ -382,10 +395,27 @@
          (assertz (pc ?new-pc)))
 
         ;; -- Family 11 (B): BNNN JP V0, addr --
-
+        ;;
+        ;; NNN is capped to 12 bits by the opcode encoding, but V0 is a full
+        ;; runtime byte, so NNN + V0 reaches 0xFFF + 0xFF = 4350 -- past the
+        ;; 4096-byte address space. Left unmasked, the fault does not surface
+        ;; here at all: PC is simply set out of range and the NEXT fetch
+        ;; signals CHIP8-MEMORY-ACCESS-OUT-OF-BOUNDS, blaming an instruction
+        ;; that never ran. Masking the sum to 12 bits puts PC back inside the
+        ;; address space, which is also what the wraparound behavior of the
+        ;; original interpreter's 12-bit program counter produced.
+        ;;
+        ;; This bounds PC; it does not make the next fetch infallible. PC =
+        ;; 4095 is in range and still signals, because FETCH-OPCODE reads two
+        ;; bytes (CHECK-MEMORY-ACCESS ADDRESS 2 in opcode-runtime.lisp). Note
+        ;; the behavior change this buys: a ROM that used to fault on an
+        ;; out-of-range jump now wraps and keeps running, so the corpus smoke
+        ;; test loses that fault as a signal.
+        ;; +MEMORY-SIZE+ is substituted for its value before the DSL quotes
+        ;; this body; see %EXTEND-OPCODE-RULEBASE-ONCE above.
         ((step 11 ?x ?y ?n ?kk ?nnn)
          (v 0 ?v0)
-         (is ?target (+ ?nnn ?v0))
+         (is ?target (mod (+ ?nnn ?v0) +memory-size+))
          (retract (pc ?old-pc))
          (assertz (pc ?target)))
 
@@ -502,8 +532,8 @@
         ;; review this comment documents. 16 bits (not 12) is the deliberate
         ;; choice: some ROMs rely on I temporarily exceeding 0xFFF as an
         ;; overflow-detection trick (the "spaceflight" quirk), so masking to
-        ;; 12 bits here would silently break a real ROM behavior this stage
-        ;; has no other reason to reject. This does NOT reopen finding #1: I
+        ;; 12 bits here would silently break a real ROM behavior there is no
+        ;; other reason to reject. This does NOT reopen finding #1: I
         ;; being a 16-bit integer only bounds the register's own storage --
         ;; FX33/FX55/FX65/DXYN each still call CHECK-MEMORY-ACCESS (see
         ;; memory.lisp) before touching *MEMORY* through I, and that is what
@@ -519,13 +549,22 @@
          (assertz (pc ?new-pc)))
 
         ;; FX29 LD F, Vx: I = fontset glyph address for the hex digit in Vx,
-        ;; i.e. +FONTSET-ADDRESS+ (0x50 = 80) + 5 * Vx. The literal 80 below
-        ;; is +FONTSET-ADDRESS+'s value: cl-prolog's clause DSL quotes this
-        ;; body literally (see cl-prolog's dsl-compiler.lisp), so a symbolic
-        ;; reference to the Lisp constant cannot be spliced in here.
+        ;; i.e. +FONTSET-ADDRESS+ (0x50 = 80) + 5 * (Vx & 0xF).
+        ;;
+        ;; The low-nibble mask is load-bearing, not defensive. Vx is a full
+        ;; byte but the fontset holds exactly 16 five-byte glyphs, so only
+        ;; 0-15 names one: unmasked, Vx=16 points one byte past the fontset's
+        ;; 80-byte block and Vx=255 points at 1355, arbitrary RAM that a
+        ;; following DXYN would then happily render as a glyph. MOD by 16
+        ;; keeps every FX29 result inside [80, 155], the fontset's own span.
+        ;;
+        ;; +FONTSET-ADDRESS+ is substituted for its value before cl-prolog's
+        ;; clause DSL quotes this body; see %EXTEND-OPCODE-RULEBASE-ONCE
+        ;; above, which is the same mechanism family 2's guard uses for
+        ;; +CALL-STACK-LIMIT+.
         ((step 15 ?x ?y ?n 41 ?nnn)
          (v ?x ?vx)
-         (is ?addr (+ 80 (* 5 ?vx)))
+         (is ?addr (+ +fontset-address+ (* 5 (mod ?vx 16))))
          (retract (i-register ?old-i))
          (assertz (i-register ?addr))
          (retract (pc ?old-pc))
@@ -533,7 +572,7 @@
          (assertz (pc ?new-pc)))
 
         ;; FX33 LD B, Vx: store the 3 BCD digits of Vx at memory[I],
-        ;; memory[I+1], memory[I+2], reusing stage 1's MEMORY-WRITE
+        ;; memory[I+1], memory[I+2], reusing memory.lisp's MEMORY-WRITE
         ;; primitive for every byte written.
         ((step 15 ?x ?y ?n 51 ?nnn)
          (v ?x ?vx)

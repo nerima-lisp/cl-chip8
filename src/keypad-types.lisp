@@ -9,7 +9,8 @@
     (#\a . 7) (#\s . 8) (#\d . 9) (#\f . #xE)
     (#\z . #xA) (#\x . 0) (#\c . #xB) (#\v . #xF))
   "Maps a lowercase keyboard character to its CHIP-8 hex key (0-15), the
-standard 4x4 QWERTY layout documented in the README and this file's header.")
+standard 4x4 QWERTY layout. The reader-facing table is in the Terminal guide,
+docs/src/guide/terminal.md.")
 
 (defparameter +key-hold-ticks+ 5
   "The number of 60Hz ticks a KEY-DOWN fact survives after its most recent

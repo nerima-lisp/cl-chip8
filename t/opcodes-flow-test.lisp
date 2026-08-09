@@ -105,7 +105,17 @@
   (it "sets PC to NNN + V0"
     (set-register! 0 #x10)
     (run-instruction! #xB300)
-    (expect (pc-value) :to-be (+ #x300 #x10))))
+    (expect (pc-value) :to-be (+ #x300 #x10)))
+  (it "masks NNN + V0 to 12 bits when the sum runs past the address space"
+    ;; NNN maxes at #xFFF and V0 at #xFF, so the raw sum reaches 4350 --
+    ;; outside the 4096-byte space. Unmasked, BNNN itself succeeds and the
+    ;; fault only surfaces on the NEXT fetch, reported against an instruction
+    ;; that never ran; masking keeps PC addressable and blames nothing.
+    (set-register! 0 #x10)
+    (run-instruction! #xBFFF)
+    (with-soft-assertions
+      (expect (pc-value) :to-be (mod (+ #xFFF #x10) +memory-size+))
+      (expect (< (pc-value) +memory-size+) :to-be-truthy))))
 
 (describe "opcode fetch memory bounds"
   (before-each (reset-machine!))
@@ -132,7 +142,28 @@
       (when condition
         (with-soft-assertions
           (expect (chip8-invalid-opcode-opcode condition) :to-be #x5011)
-          (expect (pc-value) :to-be +rom-load-address+))))))
+          (expect (pc-value) :to-be +rom-load-address+)))))
+  (it "names the offending opcode in its printed representation"
+    ;; The reader assertion above proves the OPCODE slot is populated; it does
+    ;; not run the :REPORT closure that turns the condition into the text a
+    ;; user actually sees. Formatting the condition is the only thing that
+    ;; does, so this asserts on the printed string rather than on the slot.
+    (let ((condition
+            (handler-case
+                (progn (run-instruction! #x5011) nil)
+              (chip8-invalid-opcode (c) c))))
+      (expect condition :to-be-truthy)
+      (when condition
+        (let ((report (princ-to-string condition)))
+          (with-soft-assertions
+            ;; The control string pads to four hex digits (see the
+            ;; DEFINE-CHIP8-CONDITION for CHIP8-INVALID-OPCODE in
+            ;; src/conditions.lisp), so the opcode reads as "5011" and not
+            ;; as its decimal value.
+            (expect (search "5011" report) :to-be-truthy)
+            (expect (search "is not a recognized or implemented CHIP-8 opcode"
+                            report)
+                    :to-be-truthy)))))))
 (describe "opcode rulebase installation"
   (before-each (reset-machine!))
   (it "does not duplicate clauses when the opcode source is reloaded"

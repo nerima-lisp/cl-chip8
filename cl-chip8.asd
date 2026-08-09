@@ -127,6 +127,7 @@ and write them. SBCL only."
                (:file "render-test")
                (:file "concurrency-test")
                (:file "rom-test")
+               (:file "corpus-test")
                (:file "integration-test")
                (:file "cli-test"))
   ;; ADR-0081: no package-qualified helper call here. FIND-PACKAGE / FIND-SYMBOL / FUNCALL

@@ -82,7 +82,7 @@
     # output (`mkLintCheck`), which a `flake = false` source tree cannot
     # provide -- the same reason cl-nix-forge stays a real flake input.
     paredit-cli = {
-      url = "github:nerima-lisp/paredit-cli/v1.5.0";
+      url = "github:nerima-lisp/paredit-cli/v1.6.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

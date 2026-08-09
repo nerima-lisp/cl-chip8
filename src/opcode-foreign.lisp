@@ -39,11 +39,23 @@
       (when ok (funcall emit extended)))))
 
 ;; Draw an N-byte sprite stored at memory address I onto *DISPLAY* at (VX,
-;; VY), XOR-ing each bit via DISPLAY-XOR-PIXEL! as stage 1 intends, with
-;; wraparound off: a pixel that would land outside the 64x32 field is simply
-;; not drawn. Binds COLLISION to 1 if any XOR erased a previously set pixel,
-;; else 0. This is DXYN's sprite-row/bit iteration, the opcode-layer concern
-;; stage 1's own display.lisp explicitly leaves to this stage.
+;; VY), XOR-ing each bit via DISPLAY-XOR-PIXEL!. Binds COLLISION to 1 if any
+;; XOR erased a previously set pixel, else 0. This is DXYN's sprite-row/bit
+;; iteration; display.lisp owns only the single-pixel XOR primitive.
+;;
+;; Wrapping is the mainstream CHIP-8 / COSMAC VIP split, and the two halves
+;; are deliberately different. The sprite ORIGIN wraps modulo the display
+;; (VX=70 draws at column 6, VY=40 at row 8, VX=64 at column 0), so MOD is
+;; applied once to the resolved VX/VY below, before any row/bit offset is
+;; added. The sprite BODY then CLIPS: a wrapped origin at column 60 draws
+;; columns 60-63 and drops what would be 64-67 rather than folding them back
+;; to columns 0-3. Applying MOD to the final coordinate instead would wrap
+;; the body too, which is the behavior real ROMs do not expect.
+;;
+;; Because MOD's result is non-negative for a positive divisor, ORIGIN-X and
+;; ORIGIN-Y are already in range and the row/bit offsets only ever push them
+;; upward, so the lower-bound half of the old range test is unreachable and
+;; is gone; only the upper-bound clip remains.
 ;;
 ;; This function, STORE-REGISTERS, and LOAD-REGISTERS below all read/write
 ;; *MEMORY* via direct AREF rather than the MEMORY-READ/MEMORY-WRITE foreign
@@ -59,20 +71,21 @@
 (define-foreign-predicate
  (draw-sprite i vx vy n collision)
  (rulebase environment depth emit)
- (let ((resolved-i (logic-substitute i environment))
-       (resolved-vx (logic-substitute vx environment))
-       (resolved-vy (logic-substitute vy environment))
-       (resolved-n (logic-substitute n environment))
-       (collided 0))
+ (let* ((resolved-i (logic-substitute i environment))
+        (resolved-vx (logic-substitute vx environment))
+        (resolved-vy (logic-substitute vy environment))
+        (resolved-n (logic-substitute n environment))
+        (origin-x (mod resolved-vx +display-width+))
+        (origin-y (mod resolved-vy +display-height+))
+        (collided 0))
    (check-memory-access resolved-i resolved-n)
    (dotimes (row resolved-n)
      (let ((byte (aref *memory* (+ resolved-i row)))
-           (screen-y (+ resolved-vy row)))
-       (when (and (<= 0 screen-y) (< screen-y +display-height+))
+           (screen-y (+ origin-y row)))
+       (when (< screen-y +display-height+)
          (dotimes (bit 8)
-           (let ((screen-x (+ resolved-vx bit)))
+           (let ((screen-x (+ origin-x bit)))
              (when (and
-                    (<= 0 screen-x)
                     (< screen-x +display-width+)
                     (logbitp (- 7 bit) byte)
                     (display-xor-pixel! screen-x screen-y))
@@ -82,8 +95,8 @@
        (funcall emit extended)))))
 
 ;; Copy registers V0..VX (inclusive) into *MEMORY* starting at address I, for
-;; FX55. I itself is left unchanged by design (the modern quirk this stage
-;; commits to, per the brief).
+;; FX55. I itself is left unchanged by design (the modern quirk, not the
+;; VIP-authentic I += X + 1).
 (define-foreign-predicate (store-registers i x) (rulebase environment depth emit)
   (let ((resolved-i (logic-substitute i environment))
         (resolved-x (logic-substitute x environment)))
@@ -95,8 +108,8 @@
     (funcall emit environment)))
 
 ;; Load registers V0..VX (inclusive) from *MEMORY* starting at address I, for
-;; FX65. I itself is left unchanged by design (the modern quirk this stage
-;; commits to, per the brief).
+;; FX65. I itself is left unchanged by design (the modern quirk, not the
+;; VIP-authentic I += X + 1).
 (define-foreign-predicate (load-registers i x) (rulebase environment depth emit)
   (let ((resolved-i (logic-substitute i environment))
         (resolved-x (logic-substitute x environment)))

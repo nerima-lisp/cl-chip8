@@ -30,11 +30,74 @@ timeout before propagating the original condition."
        shutdown-timeout)
       (error condition))))
 
+(defun %make-render-snapshot-buffer ()
+  "Allocate the reusable row-snapshot buffer for a render pipeline."
+  (let* ((row-count (truncate +display-height+ 2))
+         (buffer (make-array row-count :fill-pointer row-count)))
+    (dotimes (index row-count buffer)
+      (setf (aref buffer index)
+            (%make-render-row-snapshot
+             0
+             (make-array +display-width+ :element-type 'bit)
+             (make-array +display-width+ :element-type 'bit)
+             0
+             0)))))
+
+(defun %make-render-result-buffer ()
+  "Allocate the reusable string buffer for rendered rows."
+  (let* ((row-count (truncate +display-height+ 2))
+         (buffer (make-array row-count :fill-pointer row-count)))
+    (dotimes (index row-count buffer)
+      (setf (aref buffer index)
+            (make-string +display-width+)))))
+
+(defun %make-render-job-buffer (parallelism)
+  "Allocate reusable batch-job records for PARALLELISM workers."
+  (let ((buffer (make-array parallelism)))
+    (dotimes (index parallelism buffer)
+      (setf (aref buffer index)
+            (%make-render-batch-job nil nil 0 0)))))
+
+(defun %render-batch-job (job pipeline)
+  "Render the rows assigned to JOB and signal its completion."
+  (let* ((snapshots (render-batch-job-snapshots job))
+         (results (render-batch-job-results job))
+         (start (render-batch-job-start job))
+         (end (render-batch-job-end job))
+         (completed 0)
+         (caught-condition nil))
+    (handler-case
+        (loop for snapshot-index from start below end
+              do (setf (aref results snapshot-index)
+                       (prog1
+                           (%render-row-snapshot
+                            (aref snapshots snapshot-index)
+                            (aref results snapshot-index))
+                         (incf completed))))
+      (error (condition)
+        (setf caught-condition condition)))
+    (setf (render-batch-job-caught-condition job) caught-condition)
+    (atomic-counter-incf
+     (chip8-render-pipeline-completed-counter pipeline)
+     completed)
+    (signal-semaphore
+     (chip8-render-pipeline-completion-semaphore pipeline))))
+
+(defun %render-worker-loop (jobs-channel ready-channel pipeline)
+  "Announce readiness, then render jobs until the job channel closes."
+  (send ready-channel t)
+  (loop
+    (multiple-value-bind (job received-p) (recv jobs-channel)
+      (unless received-p (return))
+      (%render-batch-job job pipeline))))
+
 (defun make-chip8-render-pipeline
     (&key
-      (parallelism 4)
-      (parallel-threshold 13)
-      (shutdown-timeout (cl-date-kit:duration-of-seconds 1)))
+      ;; Keep defaulting in the body so an explicitly supplied NIL reaches
+      ;; the same type check as every other invalid value.
+      (parallelism (values) parallelism-supplied-p)
+      (parallel-threshold (values) parallel-threshold-supplied-p)
+      (shutdown-timeout (duration-of-seconds 1)))
   "Create a persistent bounded executor for terminal-row rendering.
 The pipeline snapshots rows on the caller thread, maps pure conversions
 over immutable row batches through persistent channel workers, and writes
@@ -46,9 +109,13 @@ allocate or shuttle one result payload through a second channel.
 SHUTDOWN-TIMEOUT is passed directly to the native cl-concurrent-kit
 executor shutdown operation."
 
+  (unless parallelism-supplied-p
+    (setf parallelism 4))
+  (unless parallel-threshold-supplied-p
+    (setf parallel-threshold 13))
   (check-type parallelism (integer 1 *))
   (check-type parallel-threshold (integer 1 *))
-  (check-type shutdown-timeout cl-date-kit:duration)
+  (check-type shutdown-timeout duration)
   (let* ((executor
            (make-executor
             :size parallelism
@@ -58,35 +125,9 @@ executor shutdown operation."
          (completion-semaphore (make-semaphore
                                 :name "cl-chip8 render completions"))
          (ready-channel (make-channel :buffer-size parallelism))
-         (snapshot-buffer
-           (let* ((row-count (truncate +display-height+ 2))
-                  (buffer (make-array row-count :fill-pointer row-count)))
-             (dotimes (index row-count)
-               (setf (aref buffer index)
-                     (%make-render-row-snapshot
-                      0
-                      (make-array
-                       +display-width+
-                       :element-type (quote bit))
-                      (make-array
-                       +display-width+
-                       :element-type (quote bit))
-                      0
-                      0)))
-             buffer))
-         (result-buffer
-           (let* ((row-count (truncate +display-height+ 2))
-                  (buffer (make-array row-count :fill-pointer row-count)))
-             (dotimes (index row-count)
-               (setf (aref buffer index)
-                     (make-string +display-width+)))
-             buffer))
-         (job-buffer
-           (let ((buffer (make-array parallelism)))
-             (dotimes (index parallelism)
-               (setf (aref buffer index)
-                     (%make-render-batch-job nil nil 0 0)))
-             buffer))
+         (snapshot-buffer (%make-render-snapshot-buffer))
+         (result-buffer (%make-render-result-buffer))
+         (job-buffer (%make-render-job-buffer parallelism))
          (pipeline
            (%make-chip8-render-pipeline
             executor
@@ -103,47 +144,15 @@ executor shutdown operation."
             snapshot-buffer
             result-buffer
             job-buffer)))
-    (labels
-        ((render-job (job)
-           (let* ((snapshots (render-batch-job-snapshots job))
-                  (results (render-batch-job-results job))
-                  (start (render-batch-job-start job))
-                  (end (render-batch-job-end job))
-                  (completed 0)
-                  (caught-condition nil))
-             (handler-case
-                 (loop for snapshot-index from start below end
-                       do (setf (aref results snapshot-index)
-                                (prog1
-                                    (%render-row-snapshot
-                                     (aref snapshots snapshot-index)
-                                     (aref results snapshot-index))
-                                  (incf completed))))
-               (error (condition)
-                 (setf caught-condition condition)))
-             (setf (render-batch-job-caught-condition job)
-                   caught-condition)
-             (atomic-counter-incf
-              (chip8-render-pipeline-completed-counter pipeline)
-              completed)
-             (signal-semaphore
-              (chip8-render-pipeline-completion-semaphore pipeline))))
-         (worker-loop ()
-           (send ready-channel t)
-           (loop
-             (multiple-value-bind (job received-p)
-                 (recv jobs-channel)
-               (unless received-p
-                 (return))
-               (render-job job)))))
-      (%start-render-workers
-       executor
-       jobs-channel
-       ready-channel
-       parallelism
-       shutdown-timeout
-       (function worker-loop))
-      (close-channel ready-channel))
+    (%start-render-workers
+     executor
+     jobs-channel
+     ready-channel
+     parallelism
+     shutdown-timeout
+     (lambda ()
+       (%render-worker-loop jobs-channel ready-channel pipeline)))
+    (close-channel ready-channel)
     pipeline))
 
 (defun close-chip8-render-pipeline
@@ -154,7 +163,7 @@ executor shutdown operation."
 TIMEOUT is passed directly to cl-concurrent-kit native executor shutdown.
 Closing is idempotent and serialized with rendering."
   (check-type pipeline chip8-render-pipeline)
-  (check-type timeout cl-date-kit:duration)
+  (check-type timeout duration)
   (with-lock-held
       ((chip8-render-pipeline-lock pipeline))
     (unless (chip8-render-pipeline-closed-p pipeline)

@@ -23,9 +23,14 @@
                                *compile-file-truename*
                                (error "Unable to determine the script location"))))
 
-(defun configure-local-source-registry (root) (let ((sibling-root (truename (merge-pathnames #p"../" root)))) (asdf:initialize-source-registry `(:source-registry (:tree ,sibling-root) :ignore-inherited-configuration))))
+(defun configure-local-source-registry (root)
+  (let ((sibling-root (truename (merge-pathnames #p"../" root))))
+    (asdf:initialize-source-registry
+     `(:source-registry (:tree ,sibling-root)
+       :ignore-inherited-configuration))))
 
-(let ((root (script-directory))) (configure-local-source-registry root))
+(let ((root (script-directory)))
+  (configure-local-source-registry root))
 (asdf:load-system "cl-host-kit")
 (asdf:test-system "cl-chip8")
 (host-kit:quit 0)

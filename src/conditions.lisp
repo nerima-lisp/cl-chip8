@@ -20,7 +20,7 @@ READER) entry of SLOTS and a :REPORT that applies REPORT-CONTROL, a FORMAT
 control string, to every slot's READER in SLOTS' own order. DOCUMENTATION, if
 given, becomes NAME's :DOCUMENTATION.
 
-Both this package's public conditions share that exact shape -- an
+All seven of this package's public conditions share that exact shape -- an
 :INITARG/:READER pair per offending value, plus a report built only from
 those readers -- so this macro is the declarative definition form for it, per
 the nerima-lisp API standard's rule that a macro needs a reason beyond what
@@ -74,13 +74,27 @@ fit in the AVAILABLE space between the load address and the end of the
 4096-byte address space.")
 
 (define-chip8-condition
+ chip8-rom-short-read
+ ((actual-size chip8-rom-short-read-actual-size)
+  (expected-size chip8-rom-short-read-expected-size))
+ "ROM ended after ~D byte(s); expected ~D."
+ :documentation
+ "Signaled by READ-FILE-BYTES when the stream reaches EOF before
+the size reported by FILE-LENGTH has been read. This protects the returned
+byte vector from silently containing its initial zero fill when a file is
+truncated while it is being read.")
+
+(define-chip8-condition
  chip8-invalid-opcode
  ((opcode chip8-invalid-opcode-opcode))
  "~4,'0X is not a recognized or implemented CHIP-8 opcode."
  :documentation
  "Signaled when the opcode decoder is given a 16-bit value
-that does not match any known or implemented CHIP-8 instruction. Raised by
-the opcode dispatch this stage does not yet implement.")
+that does not match any known or implemented CHIP-8 instruction. cl-chip8
+implements the original CHIP-8 set only, so SUPER-CHIP and XO-CHIP opcodes
+reach this condition -- except those absorbed by the 0NNN SYS catch-all,
+which are silently ignored instead. See docs/src/reference/compatibility.md
+for the opcode-by-opcode split.")
 
 (define-chip8-condition
  chip8-stack-overflow

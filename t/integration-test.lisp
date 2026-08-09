@@ -51,6 +51,16 @@
           (quit-key-event-p (make-key-event :type :special :code :escape))
           :to-be
           t)
+        ;; Guards the :CONTROL-C member of QUIT-KEY-EVENT-P's list at
+        ;; src/app.lisp:52. Without this assertion that member can be deleted
+        ;; and the suite stays green, yet Ctrl-C stops quitting: raw mode
+        ;; clears ISIG (see the docstring at src/app.lisp:49-50), so Ctrl-C
+        ;; arrives as a decoded :SPECIAL key event rather than as SIGINT, and
+        ;; this predicate is the only thing that acts on it.
+        (expect
+          (quit-key-event-p (make-key-event :type :special :code :control-c))
+          :to-be
+          t)
         (expect
           (quit-key-event-p (make-key-event :type :character :code (code-char 113)))
           :to-be
