@@ -218,6 +218,12 @@
           })
           dateKit
           concurrentKit
+          # cl-chip8.asd names "cl-host-kit" in its own :depends-on, so it
+          # belongs at THIS level and not only nested inside cl-cli's
+          # derivation above. A nested entry satisfies cl-cli's sandbox, not
+          # cl-chip8's, and run-tests.lisp additionally loads the system by
+          # name before it runs the suite.
+          hostKit
         ];
 
       # Test-only: cl-weave, the org's test framework.
