@@ -178,7 +178,10 @@
             version = ctx.cl.fromAsdSystem "${cl-concurrent-kit}/cl-concurrent-kit.asd";
             src = cl-concurrent-kit;
             lispSystem = "cl-concurrent-kit";
-            lispDependencies = [ boundaryKit dateKit ];
+            lispDependencies = [
+              boundaryKit
+              dateKit
+            ];
           };
         in
         [
