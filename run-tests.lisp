@@ -23,9 +23,31 @@
                                *compile-file-truename*
                                (error "Unable to determine the script location"))))
 
-(defun configure-local-source-registry (root) (let ((sibling-root (truename (merge-pathnames #p"../" root)))) (asdf:initialize-source-registry `(:source-registry (:tree ,sibling-root) :ignore-inherited-configuration))))
+(defun configure-local-source-registry (root)
+  "Register the sibling checkout tree, unless a registry was supplied for us.
 
-(let ((root (script-directory))) (configure-local-source-registry root))
+`:IGNORE-INHERITED-CONFIGURATION' is what makes a developer's run reproducible:
+it pins resolution to the sibling checkouts and ignores whatever ASDF
+configuration happens to be on the machine.
+
+Under Nix it does the opposite. Each dependency is its own /nix/store path and
+the builder exports CL_SOURCE_REGISTRY naming them; ../ is /build, which holds
+only the unpacked source. Replacing the registry there discards exactly the
+paths the derivation provided, and the run fails with `Component ... not
+found' for a dependency that was present the whole time -- which is how this
+was found, after three correct-but-insufficient dependency declarations.
+
+So: honour an explicitly supplied registry, and otherwise behave as before.
+No CL_SOURCE_REGISTRY is set for a local `sbcl --script run-tests.lisp', so
+the developer path is unchanged."
+  (unless (sb-ext:posix-getenv "CL_SOURCE_REGISTRY")
+    (let ((sibling-root (truename (merge-pathnames #p"../" root))))
+      (asdf:initialize-source-registry
+       `(:source-registry (:tree ,sibling-root)
+         :ignore-inherited-configuration)))))
+
+(let ((root (script-directory)))
+  (configure-local-source-registry root))
 (asdf:load-system "cl-host-kit")
 (asdf:test-system "cl-chip8")
 (host-kit:quit 0)

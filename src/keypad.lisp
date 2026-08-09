@@ -1,7 +1,7 @@
 ;;;; src/keypad.lisp -- cl-tty-kit KEY-EVENTs to CHIP-8 hex keys.
 ;;;;
-;;;; The standard 4x4 QWERTY layout this file maps against (see the README's
-;;;; own copy of this table):
+;;;; The standard 4x4 QWERTY layout this file maps against (see
+;;;; docs/src/guide/terminal.md for the published copy of this table):
 ;;;;
 ;;;;   1 2 3 4      1 2 3 C
 ;;;;   q w e r  ->  4 5 6 D

@@ -82,7 +82,7 @@
     # output (`mkLintCheck`), which a `flake = false` source tree cannot
     # provide -- the same reason cl-nix-forge stays a real flake input.
     paredit-cli = {
-      url = "github:nerima-lisp/paredit-cli/v1.5.0";
+      url = "github:nerima-lisp/paredit-cli/v1.6.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -178,7 +178,10 @@
             version = ctx.cl.fromAsdSystem "${cl-concurrent-kit}/cl-concurrent-kit.asd";
             src = cl-concurrent-kit;
             lispSystem = "cl-concurrent-kit";
-            lispDependencies = [ boundaryKit dateKit ];
+            lispDependencies = [
+              boundaryKit
+              dateKit
+            ];
           };
         in
         [
@@ -193,7 +196,18 @@
             version = ctx.cl.fromAsdSystem "${cl-tty-kit}/cl-tty-kit.asd";
             src = cl-tty-kit;
             lispSystem = "cl-tty-kit";
-            lispDependencies = [ codecKit ];
+            # cl-tty-kit v1.5.0 declares :depends-on ("cl-codec-kit"
+            # "cl-concurrent-kit"); the concurrent-kit entry is newer than the
+            # pin this list was written against. Each lispDerivation builds in
+            # its own sandbox, so a nested :depends-on that is missing here is
+            # simply absent at build time -- and the local
+            # `sbcl --script run-tests.lisp` cannot catch it, because that
+            # registers a flat (:tree ../) registry in which every sibling
+            # resolves regardless of what this list says.
+            lispDependencies = [
+              codecKit
+              concurrentKit
+            ];
           })
           (ctx.cl.lispDerivation {
             pname = "cl-cli";
@@ -204,9 +218,20 @@
           })
           dateKit
           concurrentKit
+          # cl-chip8.asd names "cl-host-kit" in its own :depends-on, so it
+          # belongs at THIS level and not only nested inside cl-cli's
+          # derivation above. A nested entry satisfies cl-cli's sandbox, not
+          # cl-chip8's, and run-tests.lisp additionally loads the system by
+          # name before it runs the suite.
+          hostKit
         ];
 
-      # Test-only: cl-weave, the org's test framework.
+      # Test-only: cl-weave, the org's test framework, plus cl-host-kit, which
+      # t/corpus-test.lisp calls directly and run-tests.lisp LOADs by name.
+      # This block is a separate `ctx:` lambda from lispDependencies above, so
+      # its `hostKit` binding is not in scope here and the derivation is spelled
+      # out again; identical inputs resolve to the identical store path, so this
+      # is a second reference rather than a second build.
       lispCheckDependencies = ctx: [
         (ctx.cl.lispDerivation {
           pname = "cl-weave";
@@ -214,24 +239,38 @@
           src = cl-weave;
           lispSystem = "cl-weave";
         })
+        (ctx.cl.lispDerivation {
+          pname = "cl-host-kit";
+          version = ctx.cl.fromAsdSystem "${cl-host-kit}/cl-host-kit.asd";
+          src = cl-host-kit;
+          lispSystem = "cl-host-kit";
+        })
       ];
 
       # The delivered `cl-chip8` binary: `packages.default`, `apps.default`
       # and `apps.cl-chip8`, all built from the `:build-operation` /
       # `:build-pathname` / `:entry-point` already declared in cl-chip8.asd --
-      # nothing here repeats them. `programPath` is left at its default (the
-      # ASDF system name): cl-chip8.asd combines `:pathname "src"` with
-      # `:build-pathname "cl-chip8"` exactly the way cl-nyancat.asd does, and
-      # cl-nyancat's own flake.nix needs no explicit `programPath` either, so
-      # this repository does not need one spelled out here -- see
-      # cl-nix-forge's lib/batteries/app.nix, whose `mkExecutable` places the
-      # built program directly under `$out/<lispSystem>` regardless of the
-      # system's own `:pathname`. installSource lets the delivered binary
-      # find its own installed ASDF sources when it needs to re-resolve
-      # itself, which is what makes `cl-chip8 --version` report the .asd's
-      # :version rather than the 0.0.0 fallback in src/cli.lisp.
+      # nothing here repeats them.
+      #
+      # `programPath` IS needed, contrary to what this comment used to claim.
+      # The old reasoning was that cl-nix-forge places the program directly
+      # under `$out/<lispSystem>` regardless of the system's own `:pathname`,
+      # citing cl-nyancat as precedent. That is not what happens:
+      # app.nix's `resolvedProgramPath = if programPath == null then
+      # lispSystem else programPath` looks for `$out/cl-chip8`, while ASDF
+      # honours `:pathname "src"` and writes `$out/src/cl-chip8`. The build
+      # therefore succeeded and then failed its own existence check with
+      # "ASDF program-op did not create executable cl-chip8", with the binary
+      # sitting one directory away. Reasoning from a sibling repository's
+      # config is not verification; this value came from the build log.
+      #
+      # installSource lets the delivered binary find its own installed ASDF
+      # sources when it needs to re-resolve itself, which is what makes
+      # `cl-chip8 --version` report the .asd's :version rather than the
+      # 0.0.0 fallback in src/cli.lisp.
       executable = {
         installSource = true;
+        programPath = "src/cl-chip8";
       };
 
       docs.root = ./docs;

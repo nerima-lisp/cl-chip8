@@ -1,0 +1,38 @@
+# Architecture
+
+The public runtime separates machine state, terminal rendering, and process
+lifecycle so that applications can embed the CPU without adopting the
+interactive terminal loop.
+
+## State ownership
+
+CPU registers, timers, the program counter, the call stack, and keypad facts
+are stored in the cl-prolog rulebase. The memory and display framebuffer are
+direct Lisp arrays. Opcode foreign predicates are the boundary between the
+declarative instruction rules and those arrays.
+
+`run` owns the interactive lifecycle: it resets the machine, loads the
+fontset and ROM, configures raw terminal input, executes instructions, steps
+timers, and renders frames. An embedding can instead call the lower-level
+reset, input, execution, timer, and rendering functions independently.
+
+## Rendering pipeline
+
+`make-chip8-render-pipeline` creates a persistent bounded worker pipeline.
+`render-chip8-concurrently!` follows these rules:
+
+1. The caller thread reads the display and takes immutable row snapshots.
+2. Worker tasks convert snapshots into terminal characters only.
+3. The caller thread commits characters to the terminal screen.
+
+Small partial updates use a serial path. With the default settings, partial
+frames become eligible for workers at a threshold of 13 dirty rows, and the
+implementation requires at least 9 partial snapshots before submitting work.
+Full dirty frames remain serial. The pipeline exposes counters for submitted,
+completed, and serial rows, plus queue depth and high-water mark, so an
+embedding can observe the selected path.
+
+Use `with-chip8-render-pipeline` for exception-safe lifecycle management. A
+pipeline must be closed before its owning application or terminal resources
+are discarded; `close-chip8-render-pipeline` accepts a timeout for bounded
+shutdown.

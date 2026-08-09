@@ -4,7 +4,7 @@
 ;;;; raw-mode I/O, so that integration boundary is covered by real-TTY smoke tests.
 ;;;;
 ;;;; Unlike cl-nyancat's WORLD, this application's actual CPU/display state
-;;;; lives entirely in *RULEBASE*/*MEMORY*/*DISPLAY* (stage 1's globals), not
+;;;; lives entirely in the *RULEBASE*/*MEMORY*/*DISPLAY* globals, not
 ;;;; in the per-tick STATE value TICK-LOOP-RUN-REALTIME threads through
 ;;;; ADVANCE/RENDER/STOP. CHIP8-APP below only carries what the realtime loop
 ;;;; itself needs: the renderer, the input decoder, the configured clock
@@ -22,7 +22,18 @@
 Timers always step at 60Hz regardless of this value -- see STEP-TIMERS! and
 %INSTRUCTIONS-PER-TICK below.")
 
-(defstruct (chip8-app (:constructor make-chip8-app)) "Runtime state for the realtime tick loop. The actual CHIP-8 machine state (registers, memory, display, timers, keys) lives in *RULEBASE*/*MEMORY*/ *DISPLAY*, not here -- this struct only carries what the loop itself needs. INSTRUCTION-REMAINDER accumulates CPU work between 60Hz ticks so the total scheduled work is exactly CLOCK-HZ per 60 ticks. ERROR is nil for a normal run; %ADVANCE-CHIP8! sets it (and QUITP) when EXECUTE-INSTRUCTION! signals mid-run, for example for a malformed ROM. Its handler case and cli.lisp %RUN-HANDLER report the error after RUN returns and the terminal is restored. SOUND-PULSE-REMAINDER limits terminal bell output while the CHIP-8 sound timer is active."
+(defstruct (chip8-app (:constructor make-chip8-app))
+  "Runtime state for the realtime tick loop.
+
+The actual CHIP-8 machine state (registers, memory, display, timers, keys)
+lives in *RULEBASE*/*MEMORY*/*DISPLAY*, not here. This struct only carries what
+the loop itself needs. INSTRUCTION-REMAINDER accumulates CPU work between 60Hz
+ticks so the total scheduled work is exactly CLOCK-HZ per 60 ticks. ERROR is
+nil for a normal run; %ADVANCE-CHIP8! sets it (and QUITP) when
+EXECUTE-INSTRUCTION! signals mid-run, for example for a malformed ROM. Its
+handler case and cli.lisp %RUN-HANDLER report the error after RUN returns and
+the terminal is restored. SOUND-PULSE-REMAINDER limits terminal bell output
+while the CHIP-8 sound timer is active."
   renderer
   decoder
   render-pipeline
@@ -33,7 +44,10 @@ Timers always step at 60Hz regardless of this value -- see STEP-TIMERS! and
   (error nil :type (or null condition)))
 
 (defun quit-key-event-p (event)
-  "True when the decoded cl-tty-kit KEY-EVENT EVENT should stop the emulator: the :SPECIAL :ESCAPE event, or :CONTROL-C, which Ctrl-C decodes to under raw mode (ISIG is cleared, so Ctrl-C arrives as input rather than SIGINT)."
+  "True when EVENT should stop the emulator.
+
+EVENT is a decoded cl-tty-kit KEY-EVENT. Ctrl-C decodes to :CONTROL-C under
+raw mode because ISIG is cleared, so it arrives as input rather than SIGINT."
   (and (eq (key-event-type event) :special)
        (not (null (member (key-event-code event) (list :escape :control-c))))))
 
@@ -56,8 +70,15 @@ tool here rather than cl-tty-kit's fd-level reader."
         (cl-tty-kit:flush-input-decoder decoder))))
 
 (defun %instructions-per-tick (app)
-  "Return the CPU work for one 1/60-second tick from APP. Retaining the integer remainder schedules exactly CLOCK-HZ instructions over every 60 consecutive ticks, including clock rates below 60Hz."
-  (multiple-value-bind (instructions remainder) (floor (+ (chip8-app-instruction-remainder app) (chip8-app-clock-hz app)) 60)
+  "Return the CPU work for one 1/60-second tick from APP.
+
+Retaining the integer remainder schedules exactly CLOCK-HZ instructions over
+every 60 consecutive ticks, including clock rates below 60Hz."
+  (multiple-value-bind
+        (instructions remainder)
+      (floor (+ (chip8-app-instruction-remainder app)
+                (chip8-app-clock-hz app))
+             60)
     (setf (chip8-app-instruction-remainder app) remainder)
     instructions))
 
@@ -77,14 +98,20 @@ APP."
     (%apply-key-event! app event)))
 
 (defun %advance-chip8! (app)
-  "One tick: poll input, step timers, run scheduled CPU instructions unless input requested exit, then step keypad hold countdowns. Returns APP, mutated in place. Execution errors are saved on APP and end the loop after terminal cleanup."
+  "Advance APP by one tick, mutating it in place.
+
+Poll input, step timers, run scheduled CPU instructions unless input requested
+exit, and then step keypad hold countdowns. Execution errors are saved on APP
+and end the loop after terminal cleanup."
   (%apply-key-events!
     app
     (%poll-input-events (chip8-app-decoder app) *standard-input*))
   ;; A timer value written by FX15/FX18 must remain visible for this frame.
   (step-timers!)
   (unless (chip8-app-quitp app)
-    (handler-case (loop repeat (%instructions-per-tick app) do (execute-instruction!))
+    (handler-case
+        (loop repeat (%instructions-per-tick app)
+              do (execute-instruction!))
       (error (condition)
         (setf (chip8-app-error app) condition)
         (setf (chip8-app-quitp app) t))))
@@ -105,7 +132,12 @@ APP."
   (chip8-app-quitp app))
 
 (defun run (&key rom-path (clock-hz +default-clock-hz+) (stream *standard-output*))
-  "Load the ROM at ROM-PATH, reset the machine, and run it live in the terminal until Escape or Ctrl-C. CLOCK-HZ is the target CPU instructions per second; timers always step at a fixed 60Hz regardless. The terminal is put in raw mode on the alternate screen with the cursor hidden, and restored on the way out. Returns the final CHIP8-APP."
+  "Load ROM-PATH, reset the machine, and run it until Escape or Ctrl-C.
+
+CLOCK-HZ is the target CPU instructions per second; timers always step at a
+fixed 60Hz regardless. The terminal is put in raw mode on the alternate
+screen with the cursor hidden, and restored on the way out. Return the final
+CHIP8-APP."
   (reset-cpu-state!)
   (memory-reset!)
   (display-reset!)

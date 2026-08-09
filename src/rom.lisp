@@ -28,30 +28,54 @@ file-kind predicate of their own that would cover this without one."
     (error 'chip8-rom-not-regular-file :path path))
   (values))
 
+(defun %read-file-bytes-from-stream (stream size)
+  "Read SIZE bytes from STREAM into a fresh unsigned-byte vector.
+
+READ-SEQUENCE is allowed to return before the requested end position, so a
+single call is not enough to establish that a file was read completely. Keep
+reading after a short read and signal CHIP8-ROM-SHORT-READ if EOF arrives
+before SIZE bytes are available."
+  (let ((bytes (make-array size :element-type '(unsigned-byte 8))))
+    (loop with position = 0
+          while (< position size)
+          for next-position = (read-sequence bytes stream :start position)
+          do (if (<= next-position position)
+                 (error 'chip8-rom-short-read
+                        :actual-size position
+                        :expected-size size)
+                 (setf position next-position)))
+    bytes))
+
 (defun read-file-bytes (path &key max-size)
   "Return the contents of the file at PATH as a fresh (UNSIGNED-BYTE 8)
 vector. When MAX-SIZE is given, PATH's length is checked against it (via
 FILE-LENGTH, before any byte array is allocated or any byte read) and
 CHIP8-ROM-TOO-LARGE is signaled immediately if it is exceeded -- this is a
 local CLI tool, so a user accidentally pointing it at an arbitrarily large
-file must not have the whole thing read into memory before being told no."
+file must not have the whole thing read into memory before being told no.
+
+Also signals CHIP8-ROM-SHORT-READ, from %READ-FILE-BYTES-FROM-STREAM, when
+the stream reaches EOF before FILE-LENGTH's byte count has been read."
   (with-open-file (stream path :element-type '(unsigned-byte 8))
     (let ((size (file-length stream)))
       (when (and max-size (> size max-size))
         (error 'chip8-rom-too-large :size size :available max-size))
-      (let ((bytes (make-array size :element-type '(unsigned-byte 8))))
-        (read-sequence bytes stream)
-        bytes))))
+      (%read-file-bytes-from-stream stream size))))
 
 (defun load-rom-file! (path)
   "Read the ROM file at PATH and load it into *MEMORY* at +ROM-LOAD-ADDRESS+
-via stage 1's LOAD-BYTES-INTO-MEMORY. CHECK-REGULAR-ROM-FILE runs first, so a
+via LOAD-BYTES-INTO-MEMORY. CHECK-REGULAR-ROM-FILE runs first, so a
 FIFO or device path is rejected before any read is attempted; READ-FILE-
 BYTES is then given the same budget LOAD-BYTES-INTO-MEMORY itself enforces
 (+MEMORY-SIZE+ - +ROM-LOAD-ADDRESS+, 3584 bytes), so an oversized file is
 rejected via CHIP8-ROM-TOO-LARGE before its bytes are ever read into memory,
 not after -- LOAD-BYTES-INTO-MEMORY's own check remains as defense in depth
-for any other caller of it. Returns the byte vector."
+for any other caller of it. Returns the byte vector.
+
+Signals CHIP8-ROM-NOT-REGULAR-FILE for a resolvable non-regular path, and
+propagates CHIP8-ROM-TOO-LARGE and CHIP8-ROM-SHORT-READ from READ-FILE-BYTES.
+A path that does not resolve at all raises the ordinary FILE-ERROR from the
+eventual OPEN."
   (check-regular-rom-file path)
   (load-bytes-into-memory
    (read-file-bytes path :max-size (- +memory-size+ +rom-load-address+))

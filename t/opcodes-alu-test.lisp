@@ -1,5 +1,19 @@
 ;;;; t/opcodes-alu-test.lisp -- 6XKK, 7XKK, and the 8XY* ALU family.
+;;;;
+;;;; On VF assertions: RESET-MACHINE! zeroes all 16 registers, VF included
+;;;; (src/state.lisp:61-62 asserts `(v index 0)` for every index). An
+;;;; expectation that VF is 0 after an opcode is therefore satisfied by the
+;;;; fixture alone -- it would still pass if the opcode never wrote VF, or
+;;;; wrote the wrong value and something else zeroed it. Every such test below
+;;;; seeds VF with +VF-SENTINEL+ before acting, so only a write performed by
+;;;; the opcode under test can produce the expected 0. Assertions that expect
+;;;; VF to be 1 need no sentinel: 0 is already the pre-act value, so 1 can only
+;;;; come from the opcode.
 (in-package #:cl-chip8/test)
+
+(defparameter +vf-sentinel+ #xAA
+  "A nonzero VF seed distinct from every VF value an ALU opcode can produce
+(only 0 and 1), so an assertion on VF fails unless the opcode wrote it.")
 
 (describe "6XKK LD Vx, byte"
   (before-each (reset-machine!))
@@ -15,12 +29,17 @@
     (set-register! 0 5)
     (run-instruction! #x7003)
     (expect (register-value 0) :to-be 8))
-  (it "wraps mod 256 and sets no flag"
+  (it "wraps mod 256 and leaves VF untouched"
     (set-register! 0 250)
+    ;; 7XKK's clause (src/opcodes.lisp:225-232) asserts no `(v 15 ...)` fact at
+    ;; all, so the contract is "VF is unchanged", not "VF is 0". Seeding the
+    ;; sentinel is what distinguishes the two: without it the assertion holds
+    ;; even for an implementation that clobbers VF with 0.
+    (set-register! 15 +vf-sentinel+)
     (run-instruction! #x700A)
     (with-soft-assertions
       (expect (register-value 0) :to-be 4)
-      (expect (register-value 15) :to-be 0))))
+      (expect (register-value 15) :to-be +vf-sentinel+))))
 
 (describe "8XY0 LD Vx, Vy"
   (before-each (reset-machine!))
@@ -58,6 +77,9 @@
   (it "sets VF to 0 and the sum when it fits in a byte"
     (set-register! 0 10)
     (set-register! 1 20)
+    ;; The carry write is src/opcodes.lisp:285-286; the sentinel is what makes
+    ;; that write, rather than the fixture, responsible for the expected 0.
+    (set-register! 15 +vf-sentinel+)
     (run-instruction! #x8014)
     (with-soft-assertions
       (expect (register-value 0) :to-be 30)
@@ -89,6 +111,8 @@
   (it "sets VF to 0 and wraps mod 256 when Vx < Vy"
     (set-register! 0 3)
     (set-register! 1 10)
+    ;; Borrow clause src/opcodes.lisp:307-318 writes `(v 15 0)`.
+    (set-register! 15 +vf-sentinel+)
     (run-instruction! #x8015)
     (with-soft-assertions
       (expect (register-value 0) :to-be 249)
@@ -104,6 +128,8 @@
       (expect (register-value 15) :to-be 1)))
   (it "sets VF to 0 and halves Vx (even case)"
     (set-register! 0 180)
+    ;; SHR writes the pre-shift LSB into VF (src/opcodes.lisp:328-329).
+    (set-register! 15 +vf-sentinel+)
     (run-instruction! #x8016)
     (with-soft-assertions
       (expect (register-value 0) :to-be 90)
@@ -133,6 +159,8 @@
   (it "sets VF to 0 and wraps mod 256 when Vy < Vx"
     (set-register! 0 10)
     (set-register! 1 3)
+    ;; Borrow clause src/opcodes.lisp:348-359 writes `(v 15 0)`.
+    (set-register! 15 +vf-sentinel+)
     (run-instruction! #x8017)
     (with-soft-assertions
       (expect (register-value 0) :to-be 249)
@@ -148,6 +176,8 @@
       (expect (register-value 15) :to-be 1)))
   (it "sets VF to 0 when the most-significant bit is clear"
     (set-register! 0 64)
+    ;; SHL writes the pre-shift MSB into VF (src/opcodes.lisp:368-369).
+    (set-register! 15 +vf-sentinel+)
     (run-instruction! #x801E)
     (with-soft-assertions
       (expect (register-value 0) :to-be 128)

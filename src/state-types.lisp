@@ -19,6 +19,6 @@ CHIP-8 ROM load address.")
 
 (defconstant +call-stack-limit+ 16
   "The maximum number of nested CALLs the call stack holds before CALL must
-signal CHIP8-STACK-OVERFLOW. Not enforced here -- CALL is an opcode a later
-stage implements -- but declared alongside the state it bounds so that
-stage's condition and this stage's fact shape agree on the same number.")
+signal CHIP8-STACK-OVERFLOW. Declared alongside the state it bounds so that
+the opcode guard, its condition, and this stage's fact shape agree on the same
+number.")
