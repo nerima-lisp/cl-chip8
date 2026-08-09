@@ -250,19 +250,27 @@
       # The delivered `cl-chip8` binary: `packages.default`, `apps.default`
       # and `apps.cl-chip8`, all built from the `:build-operation` /
       # `:build-pathname` / `:entry-point` already declared in cl-chip8.asd --
-      # nothing here repeats them. `programPath` is left at its default (the
-      # ASDF system name): cl-chip8.asd combines `:pathname "src"` with
-      # `:build-pathname "cl-chip8"` exactly the way cl-nyancat.asd does, and
-      # cl-nyancat's own flake.nix needs no explicit `programPath` either, so
-      # this repository does not need one spelled out here -- see
-      # cl-nix-forge's lib/batteries/app.nix, whose `mkExecutable` places the
-      # built program directly under `$out/<lispSystem>` regardless of the
-      # system's own `:pathname`. installSource lets the delivered binary
-      # find its own installed ASDF sources when it needs to re-resolve
-      # itself, which is what makes `cl-chip8 --version` report the .asd's
-      # :version rather than the 0.0.0 fallback in src/cli.lisp.
+      # nothing here repeats them.
+      #
+      # `programPath` IS needed, contrary to what this comment used to claim.
+      # The old reasoning was that cl-nix-forge places the program directly
+      # under `$out/<lispSystem>` regardless of the system's own `:pathname`,
+      # citing cl-nyancat as precedent. That is not what happens:
+      # app.nix's `resolvedProgramPath = if programPath == null then
+      # lispSystem else programPath` looks for `$out/cl-chip8`, while ASDF
+      # honours `:pathname "src"` and writes `$out/src/cl-chip8`. The build
+      # therefore succeeded and then failed its own existence check with
+      # "ASDF program-op did not create executable cl-chip8", with the binary
+      # sitting one directory away. Reasoning from a sibling repository's
+      # config is not verification; this value came from the build log.
+      #
+      # installSource lets the delivered binary find its own installed ASDF
+      # sources when it needs to re-resolve itself, which is what makes
+      # `cl-chip8 --version` report the .asd's :version rather than the
+      # 0.0.0 fallback in src/cli.lisp.
       executable = {
         installSource = true;
+        programPath = "src/cl-chip8";
       };
 
       docs.root = ./docs;
