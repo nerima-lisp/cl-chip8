@@ -56,3 +56,35 @@
         (expect (cell-char (screen-cell screen (+ +playfield-origin-x+ 3) +playfield-origin-y+))
                 :to-be (code-char #x2588))
         (expect (cell-style (screen-cell screen 0 0)) :to-equal '(:reverse))))))
+
+;;; Every other assertion in this file locates its expected cell with
+;;; +PLAYFIELD-ORIGIN-X+ / +PLAYFIELD-ORIGIN-Y+ -- the same two values
+;;; RENDER-DISPLAY-INTO-SCREEN! uses to place the pixel. Both sides therefore
+;;; move together, and shifting either constant leaves the whole suite green
+;;; while the playfield visibly overwrites the border. Verified by mutation:
+;;; changing +PLAYFIELD-ORIGIN-X+ from 1 to 2 broke nothing.
+;;;
+;;; These assertions use literal screen coordinates instead, so they are
+;;; anchored to the layout rather than to the constants that define it. If the
+;;; playfield is ever meant to move, this is the test that should have to
+;;; change, deliberately.
+(describe "playfield placement (literal coordinates, not the origin constants)"
+  (before-each
+    (reset-cpu-state!)
+    (display-reset!))
+  (it "puts display pixel (0,0) at screen cell (1,1), one row and column inside the border"
+    (display-xor-pixel! 0 0)
+    (let ((screen (make-screen +screen-width+ +screen-height+)))
+      (render-chip8! screen)
+      (with-soft-assertions
+        ;; upper half block: top pixel of the pair set, bottom clear
+        (expect (cell-char (screen-cell screen 1 1)) :to-be (code-char #x2580))
+        ;; the border column and row the playfield must not encroach on
+        (expect (cell-char (screen-cell screen 0 1)) :to-be #\Space)
+        (expect (cell-char (screen-cell screen 1 0)) :to-be #\Space))))
+  (it "puts the bottom-right display pixel (63,31) at screen cell (64,16)"
+    (display-xor-pixel! 63 31)
+    (let ((screen (make-screen +screen-width+ +screen-height+)))
+      (render-chip8! screen)
+      ;; lower half block: bottom pixel of the pair set, top clear
+      (expect (cell-char (screen-cell screen 64 16)) :to-be (code-char #x2584)))))
