@@ -12,6 +12,21 @@ sound timers continue to tick at 60 Hz. `--help` prints the command-line
 interface and `--version` reads the version from the ASDF system definition.
 Press <kbd>Escape</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> to leave the program.
 
+## Exit codes
+
+| Code | Meaning |
+|---:|---|
+| `0` | The ROM ran and the program left the terminal normally. `--help` and `--version` also exit `0`. |
+| `1` | The ROM could not be loaded, or the run ended with an error. The diagnostic goes to standard error, prefixed `cl-chip8: `. |
+| `64` | Usage error -- a missing ROM path, an unknown option, or an invalid `--clock-hz` value. Usage text goes to standard error. |
+| `70` | Any other unhandled error. |
+
+`64` and `70` are the BSD `sysexits` values `EX_USAGE` and `EX_SOFTWARE`, which
+the command inherits from `cl-cli` rather than setting itself. In practice `70`
+is close to unreachable: the run handler catches `error` broadly and converts
+it to a diagnostic and `1`, so a failure has to escape that handler entirely to
+reach `70`.
+
 ## Keyboard
 
 The sixteen CHIP-8 keys use the following case-insensitive keyboard layout:

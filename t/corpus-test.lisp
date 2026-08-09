@@ -205,6 +205,22 @@ last ROM's memory image."
     (memory-reset!)
     (display-reset!)))
 
+(defun %printable-corpus-name (path)
+  "Return PATH's filename with control characters replaced by `.'.
+
+The corpus is a third-party tree the operator points us at, so a filename is
+untrusted text that this suite prints straight to the terminal. A ROM named
+with embedded ANSI escapes would otherwise rewrite the reporter's output --
+recolouring it, erasing lines, or hiding the very failure being reported.
+Replacing rather than stripping keeps the length honest, so two names that
+differ only in control characters do not collapse into one."
+  (map 'string
+       (lambda (character)
+         (if (or (char< character #\Space) (char= character (code-char 127)))
+             #\.
+             character))
+       (file-namestring path)))
+
 (defun %corpus-faults (outcomes)
   "Return one report string per entry of OUTCOMES whose outcome is a fault.
 An empty list is the corpus spec's pass condition, so this is what an
@@ -212,7 +228,10 @@ assertion failure prints: each string names the ROM, its outcome class, and the
 condition's own report."
   (loop for (path outcome condition) in outcomes
         when (member outcome *rom-corpus-fault-outcomes*)
-          collect (format nil "~A: ~(~A~): ~A" (file-namestring path) outcome condition)))
+          collect (format nil "~A: ~(~A~): ~A"
+                          (%printable-corpus-name path)
+                          outcome
+                          condition)))
 
 (defun %corpus-tally (outcomes)
   "Return an alist of (OUTCOME . COUNT) covering *ROM-CORPUS-OUTCOME-ORDER*.
@@ -382,6 +401,28 @@ temporary-file API."
     ;; more than decoration.
     (with-temp-corpus (root)
       (expect (%corpus-rom-files root) :to-equal '()))))
+
+(describe "ROM corpus fault-report sanitisation"
+  ;; A corpus is a third-party tree, so a ROM filename is untrusted text that
+  ;; this suite prints to the terminal. These exercise the function directly
+  ;; rather than through the filesystem: a control character in a real
+  ;; filename is awkward to create portably, and the property under test
+  ;; belongs to the formatting, not to discovery.
+  (it "replaces an escape sequence in a ROM name so it cannot rewrite the report"
+    (let ((sanitised (%printable-corpus-name
+                      (make-pathname :name (format nil "evil~C[2K" (code-char 27))
+                                     :type "ch8"))))
+      (with-soft-assertions
+        (expect (find (code-char 27) sanitised) :to-be nil)
+        (expect (search "evil" sanitised) :to-be 0))))
+  (it "replaces rather than strips, so names differing only in control characters stay distinct"
+    (let ((a (%printable-corpus-name
+              (make-pathname :name (format nil "rom~C" (code-char 7)) :type "ch8")))
+          (b (%printable-corpus-name
+              (make-pathname :name "rom" :type "ch8"))))
+      (expect (string= a b) :to-be nil)))
+  (it "leaves an ordinary ROM name untouched"
+    (expect (%printable-corpus-name #p"/tmp/pong.ch8") :to-equal "pong.ch8")))
 
 (describe "ROM corpus outcome classification"
   (it "reports a ROM that runs its whole budget as completed"

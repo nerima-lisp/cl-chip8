@@ -18,6 +18,19 @@ runs before LOAD-ROM-FILE! ever opens PATH for reading. A PATH that PROBE-
 FILE cannot resolve is left alone here -- READ-FILE-BYTES' own OPEN raises
 the ordinary, more specific FILE-ERROR for a plain missing-file case.
 
+This is an early rejection, NOT a guarantee about the object eventually
+read. The check resolves PATH by name -- PROBE-FILE, then STAT, then
+READ-FILE-BYTES' own OPEN, four separate resolutions -- so anyone who can
+write to the containing directory can replace a regular file with a FIFO in
+between, and the subsequent OPEN/FILE-LENGTH then blocks on it. Closing that
+window means holding the object rather than the name: open once with
+SB-POSIX:OPEN, FSTAT the descriptor, test S-ISREG against THAT, and only
+then wrap the descriptor in a stream. Deliberately not done here, because
+the obvious O_NOFOLLOW spelling would also reject a symlink to a perfectly
+good ROM, which is a behavior change this release has not evaluated. The
+practical exposure is a local user racing a directory they can already
+write; it is a real defect, and it is stated here rather than implied away.
+
 SB-POSIX is used directly rather than adding cl-host-kit (which has an
 equivalent FILE-METADATA-KIND predicate) as a new formal dependency:
 CODING_STANDARD.md's SBCL-only stance already treats sb-posix as free (SBCL-

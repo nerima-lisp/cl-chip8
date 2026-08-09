@@ -346,8 +346,10 @@ Copy an octet sequence into memory beginning at `address`.
 
 **Returns**: The supplied octet sequence.
 
-**Signals**: `chip8-memory-access-out-of-bounds` for a negative address and
-`chip8-rom-too-large` when the sequence does not fit.
+**Signals**: `chip8-memory-access-out-of-bounds` for an address outside
+`[0, +memory-size+]` -- negative, or past the end of the address space -- and
+`chip8-rom-too-large` when `address` is itself in range but the sequence would
+run past the end from there.
 
 **Example**:
 
@@ -357,9 +359,14 @@ Copy an octet sequence into memory beginning at `address`.
 
 ## Display
 
-The exported display interface covers the framebuffer array, its dimensions,
-and the three operations a headless driver needs: reset it, read a pixel, and
-XOR a pixel. Dirty-row bookkeeping is internal; `display-reset!` and
+The exported display interface covers the framebuffer's dimensions and the
+three operations a headless driver needs: reset it, read a pixel, and XOR a
+pixel. The framebuffer array itself is *not* exported, unlike `*memory*`: its
+dirty-row and locking invariants live outside the array, so a caller writing
+pixels into it directly would produce state that `render-chip8!` paints and
+`render-chip8-concurrently!` silently omits. Read pixels with
+`display-pixel-value` and write them with `display-xor-pixel!`.
+Dirty-row bookkeeping is internal; `display-reset!` and
 `display-xor-pixel!` maintain it themselves, so a caller never marks rows by
 hand. Pixel access from inside instruction execution goes through the Prolog
 rulebase rather than through these functions.
@@ -562,7 +569,11 @@ Test whether a hexadecimal CHIP-8 key is currently pressed.
 
 **Returns**: True when `key` has a `key-down` fact.
 
-**Signals**: `none` for a hexadecimal key value.
+**Signals**: `none` for a hexadecimal key value, once `reset-cpu-state!` has
+run. Against a rulebase that has never been reset, `key-down/1` is undeclared
+and the query signals a `cl-prolog` existence error rather than reporting an
+unpressed key. `reset-cpu-state!` declares the predicate specifically so that
+"no keys held down" reads as an empty result.
 
 ### `pressed-keys`
 
@@ -574,11 +585,14 @@ Return all currently pressed hexadecimal keys.
 
 **Returns**: A list of key numbers.
 
-**Signals**: `none`.
+**Signals**: `none` once `reset-cpu-state!` has run. Against a rulebase that
+has never been reset, `key-down/1` is undeclared and the query signals a
+`cl-prolog` existence error rather than returning the empty list.
 
 **Example**:
 
 ```lisp
+(cl-chip8:reset-cpu-state!)
 (cl-chip8:pressed-keys)
 ```
 
@@ -702,10 +716,18 @@ instruction requires them.
 
 ## Keypad
 
-The exported keypad interface is the pair a headless driver needs: clear the
-pending hold countdowns, and advance them one tick. Everything that translates
-a `cl-tty-kit` key event into a CHIP-8 key belongs to the terminal layer and is
-internal, along with the host-key mapping table and the hold duration.
+The exported keypad interface is a single operator, `keypad-reset!`, which
+clears the pending hold countdowns. Everything that translates a `cl-tty-kit`
+key event into a CHIP-8 key belongs to the terminal layer and is internal,
+along with the host-key mapping table and the hold duration.
+
+The hold countdowns themselves are terminal-layer machinery, and a headless
+driver never advances them. A key event arms that key's countdown; a separate
+internal step expires it, retracting the `key-down` fact once it runs out.
+Both halves are internal, and deliberately so: a `key-down` fact asserted
+directly has no countdown entry, so the first expiry tick would retract it and
+the keypress would vanish. Advancing the countdowns is not part of the headless
+contract.
 
 A headless driver does not synthesize key events. It presses a key by
 asserting a `key-down` fact against `*rulebase*` and releases it by retracting
@@ -744,11 +766,18 @@ calls this once per 60 Hz tick, independently of the CPU clock.
 
 **Returns**: No values.
 
-**Signals**: `none`.
+**Signals**: `none` once `reset-cpu-state!` has run, which asserts the
+`delay-timer` and `sound-timer` facts this reads. Against a rulebase that has
+never been reset, `delay-timer/1` is undeclared and the query signals a
+`cl-prolog` existence error. If a caller retracts a timer fact without
+asserting a replacement, the lookup yields `nil` instead of a number and the
+zero test signals a `type-error`; each timer is expected to have exactly one
+fact at all times.
 
 **Example**:
 
 ```lisp
+(cl-chip8:reset-cpu-state!)
 (cl-chip8:step-timers!)
 ```
 
@@ -848,11 +877,14 @@ The concurrent renderer parallelizes only pure row-to-character conversion.
 Display reads and all screen mutations remain on the caller thread. Use the
 pipeline macro for normal lifecycle management.
 
-The exported surface is the pipeline type, its predicate, and the three
-lifecycle operators that create, use, and close it. The tuning knobs and the
-telemetry counters are internal: they expose the batching strategy, and the
-parallel threshold cannot determine behavior on its own -- it is combined with
-an internal minimum batch size.
+The exported surface is the pipeline type `chip8-render-pipeline`, its
+predicate `chip8-render-pipeline-p`, and the four operators that create, scope,
+use, and close a pipeline: `make-chip8-render-pipeline`,
+`with-chip8-render-pipeline`, `render-chip8-concurrently!`, and
+`close-chip8-render-pipeline`. The tuning knobs and the telemetry counters are
+internal: they expose the batching strategy, and the parallel threshold cannot
+determine behavior on its own -- it is combined with an internal minimum batch
+size.
 
 ### `chip8-render-pipeline`
 
@@ -956,7 +988,9 @@ created with, which is itself `(duration-of-seconds 1)` unless overridden.
 
 **Returns**: `pipeline`.
 
-**Signals**: An error if the native worker shutdown cannot complete within the
+**Signals**: `type-error` when `pipeline` is not a `chip8-render-pipeline` or
+`timeout` is not a `duration`; both are checked before any shutdown work
+begins. An error if the native worker shutdown cannot complete within the
 requested duration.
 
 **Example**:
