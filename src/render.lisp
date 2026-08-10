@@ -19,6 +19,7 @@
   (declare (type bit top-pixel bottom-pixel))
   (aref +half-block-character-table+
         (logior bottom-pixel (ash top-pixel 1))))
+(defvar *render-row-buffer* nil)
 
 (defun %render-display-row-into-screen!
     (screen terminal-row &optional reusable-characters)
@@ -48,12 +49,21 @@
      terminal-row
      reusable-characters))
   screen)
+(defun %ensure-render-row-buffer ()
+  (or *render-row-buffer*
+      (setf *render-row-buffer*
+            (let ((buffer (make-array (truncate +display-height+ 2))))
+              (dotimes (terminal-row (length buffer) buffer)
+                (setf (aref buffer terminal-row)
+                      (make-string +display-width+)))))))
 
 (defun render-display-into-screen! (screen)
   "Blit *DISPLAY* into SCREEN under the display lock. Returns SCREEN."
   (with-display-lock
     (with-screen-batch (screen)
-      (%render-display-into-screen! screen nil)))
+      (%render-display-into-screen!
+       screen
+       (%ensure-render-row-buffer))))
   screen)
 
 (defun sound-timer-active-p ()
@@ -77,6 +87,8 @@ this application has no audio output for. Returns SCREEN."
   "Render one full application frame -- the display and the sound-timer indicator -- into SCREEN. Returns SCREEN."
   (with-display-lock
     (with-screen-batch (screen)
-      (%render-display-into-screen! screen nil)
+      (%render-display-into-screen!
+       screen
+       (%ensure-render-row-buffer))
       (render-sound-indicator-into-screen! screen)))
   screen)

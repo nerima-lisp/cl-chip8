@@ -16,22 +16,36 @@
 (defun project-root ()
   (truename (merge-pathnames #p"../" (script-directory))))
 
-(defun local-source-directories (root)
-  (let ((organization-root (truename (merge-pathnames #p"../" root))))
-    (loop for name in (list
-                       "cl-chip8"
-                       "cl-prolog"
-                       "cl-tty-kit"
-                       "cl-cli"
-                       "cl-concurrent-kit"
-                       "cl-boundary-kit"
-                       "cl-date-kit"
-                       "cl-host-kit"
-                       "cl-codec-kit"
-                       "cl-weave")
-          for directory = (merge-pathnames (format nil "~A/" name) organization-root)
-          when (probe-file directory)
-            collect (truename directory))))
+(defun local-source-directories
+    (root)
+  (let ((organization-roots
+          (remove-duplicates
+           (list
+            (truename (merge-pathnames #p"../" root))
+            (truename (merge-pathnames #p"../../" root))
+            (truename (merge-pathnames #p"../../../" root)))
+           :test #'equal)))
+    (cons
+     (truename root)
+     (loop for name in (list
+                        "cl-prolog"
+                        "cl-tty-kit"
+                        "cl-cli"
+                        "cl-concurrent-kit"
+                        "cl-boundary-kit"
+                        "cl-date-kit"
+                        "cl-host-kit"
+                        "cl-codec-kit"
+                        "cl-weave")
+           for directory =
+             (loop for organization-root in organization-roots
+                   for candidate =
+                     (merge-pathnames (format nil "~A/" name)
+                                      organization-root)
+                   when (probe-file candidate)
+                     return (truename candidate))
+           when directory
+             collect directory))))
 
 (defun configure-local-source-registry (root) (asdf:initialize-source-registry `(:source-registry ,@(mapcar (lambda (directory) `(:directory ,directory)) (local-source-directories root)) :ignore-inherited-configuration)))
 

@@ -40,6 +40,7 @@
   (:import-from #:cl-prolog
                 #:make-rulebase
                 #:query-prolog
+                #:query-prolog-first
                 #:prolog-succeeds-p
                 #:solution-binding
                 #:assertz

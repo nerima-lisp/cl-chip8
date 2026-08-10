@@ -70,15 +70,20 @@
   "Return the bit currently stored at column X, row Y."
   (with-display-lock (%display-pixel-value x y)))
 
+(defun %display-xor-pixel-under-lock! (x y &optional (mark-dirty-p t))
+  (let* ((old-value (aref *display* y x))
+         (new-value (logxor old-value 1)))
+    (setf (aref *display* y x) new-value)
+    (when mark-dirty-p
+      (%mark-display-row-dirty! y))
+    (and (plusp old-value) (zerop new-value))))
+
 (defun display-xor-pixel! (x y)
   "XOR the pixel at column X, row Y with 1 and return true when that XOR
 erased a previously set pixel (the CHIP-8 sprite-collision condition), false
 otherwise."
   (with-display-lock
-   (let ((was-set (plusp (%display-pixel-value x y))))
-     (setf (aref *display* y x) (logxor (%display-pixel-value x y) 1))
-     (%mark-display-row-dirty! y)
-     (and was-set (zerop (%display-pixel-value x y))))))
+   (%display-xor-pixel-under-lock! x y)))
 
 ;;; Prolog-callable primitives.
 (define-foreign-predicate
