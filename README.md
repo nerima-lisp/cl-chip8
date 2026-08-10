@@ -34,7 +34,7 @@ Consume the released tag, following the consumer's own `nixpkgs` input:
 
 ```nix
 inputs.cl-chip8 = {
-  url = "github:nerima-lisp/cl-chip8/v0.1.0";
+  url = "github:nerima-lisp/cl-chip8/v0.1.2";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```

@@ -33,7 +33,7 @@ From a consuming flake, point at the released tag:
 
 ```nix
 inputs.cl-chip8 = {
-  url = "github:nerima-lisp/cl-chip8/v0.1.0";
+  url = "github:nerima-lisp/cl-chip8/v0.1.2";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
