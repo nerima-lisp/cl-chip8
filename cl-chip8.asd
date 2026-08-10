@@ -30,7 +30,7 @@ and write them. SBCL only."
   :license "MIT"
   ;; Single source of truth for the version. flake.nix reads this form, and
   ;; release.yml refuses to publish a tag that disagrees with it.
-  :version "0.1.1"
+  :version "0.1.2"
   :homepage "https://github.com/nerima-lisp/cl-chip8"
   :bug-tracker "https://github.com/nerima-lisp/cl-chip8/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
@@ -93,7 +93,7 @@ and write them. SBCL only."
   :author "takeokunn <bararararatty@gmail.com>"
   :maintainer "takeokunn <bararararatty@gmail.com>"
   :license "MIT"
-  :version "0.1.1"
+  :version "0.1.2"
   :homepage "https://github.com/nerima-lisp/cl-chip8"
   :bug-tracker "https://github.com/nerima-lisp/cl-chip8/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
