@@ -42,6 +42,13 @@ high-water mark, but none of them is exported: they are telemetry over the
 batching strategy and carry no compatibility promise. An embedding cannot
 observe which path a frame took through the public API.
 
+The serial full-frame renderer reuses its row-character buffer between calls.
+Concurrent rendering keeps its snapshot and result buffers on the persistent
+pipeline, so worker jobs never share the serial renderer's mutable buffer.
+`DXYN` holds the display lock for the whole sprite operation and marks each
+touched display row after its bit loop; this keeps pixel, collision, and
+dirty-row state changes atomic without acquiring the lock for every pixel.
+
 Use `with-chip8-render-pipeline` for exception-safe lifecycle management. A
 pipeline must be closed before its owning application or terminal resources
 are discarded; `close-chip8-render-pipeline` accepts a timeout for bounded

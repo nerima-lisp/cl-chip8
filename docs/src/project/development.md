@@ -75,6 +75,19 @@ depends on the host, its core count, and the load on it at the time, so a
 number from one machine does not carry to another. Run the benchmark before and
 after a change on the same machine and compare those two runs.
 
+The benchmark also compares every selected renderer's screen with the
+baseline, so a timing improvement is useful only when the output comparison
+passes. `submitted=0` is a valid result: full dirty frames and partial frames
+below the eligibility gates intentionally use the serial path. For a change
+to display or rendering code, inspect both the equality checks and the
+`submitted`/`completed`/`serial` counters instead of treating a reported
+speedup as universal.
+
+When run from a linked Git worktree, the benchmark resolves that checkout
+first and searches nearby sibling checkout roots for the pinned Lisp
+dependencies. Set `CL_SOURCE_REGISTRY` explicitly when the dependencies live
+elsewhere.
+
 ## Documentation checks
 
 Build the site through the flake with:
