@@ -170,11 +170,11 @@
     (let* ((before-rulebase *rulebase*)
            (before-clause-count
              (length
-               (cl-prolog:rulebase-visible-clauses before-rulebase))))
+               (cl-prolog-kit:rulebase-visible-clauses before-rulebase))))
       (load (asdf:system-relative-pathname "cl-chip8" "src/opcodes.lisp"))
       (let ((after-clause-count
               (length
-                (cl-prolog:rulebase-visible-clauses *rulebase*))))
+                (cl-prolog-kit:rulebase-visible-clauses *rulebase*))))
         (with-soft-assertions
           (expect (eq *rulebase* before-rulebase) :to-be t)
           (expect after-clause-count :to-be before-clause-count))))))

@@ -13,7 +13,7 @@ if and only if it is one of:
 - a whole-frame render operator, a render-pipeline lifecycle operator, or a
   type named by a kept operator's `check-type` or returned by one.
 
-Everything else is internal: `cl-prolog` foreign-predicate goal functors,
+Everything else is internal: `cl-prolog-kit` foreign-predicate goal functors,
 `defstruct` accessors, telemetry counters, tuning knobs, sub-step renderers,
 internal bounds checks, and helpers with no CHIP-8 semantics. Internal symbols
 are reachable only through the double-colon `cl-chip8::` syntax, carry no
@@ -511,7 +511,7 @@ Copy the built-in fontset into memory at `+fontset-address+`.
 cl-chip8:*rulebase* => rulebase
 ```
 
-The mutable `cl-prolog` rulebase holding registers, timers, keys, and control
+The mutable `cl-prolog-kit` rulebase holding registers, timers, keys, and control
 state as dynamic facts.
 
 **Returns**: The current rulebase when read as a variable.
@@ -571,7 +571,7 @@ Test whether a hexadecimal CHIP-8 key is currently pressed.
 
 **Signals**: `none` for a hexadecimal key value, once `reset-cpu-state!` has
 run. Against a rulebase that has never been reset, `key-down/1` is undeclared
-and the query signals a `cl-prolog` existence error rather than reporting an
+and the query signals a `cl-prolog-kit` existence error rather than reporting an
 unpressed key. `reset-cpu-state!` declares the predicate specifically so that
 "no keys held down" reads as an empty result.
 
@@ -587,7 +587,7 @@ Return all currently pressed hexadecimal keys.
 
 **Signals**: `none` once `reset-cpu-state!` has run. Against a rulebase that
 has never been reset, `key-down/1` is undeclared and the query signals a
-`cl-prolog` existence error rather than returning the empty list.
+`cl-prolog-kit` existence error rather than returning the empty list.
 
 **Example**:
 
@@ -769,7 +769,7 @@ calls this once per 60 Hz tick, independently of the CPU clock.
 **Signals**: `none` once `reset-cpu-state!` has run, which asserts the
 `delay-timer` and `sound-timer` facts this reads. Against a rulebase that has
 never been reset, `delay-timer/1` is undeclared and the query signals a
-`cl-prolog` existence error. If a caller retracts a timer fact without
+`cl-prolog-kit` existence error. If a caller retracts a timer fact without
 asserting a replacement, the lookup yields `nil` instead of a number and the
 zero test signals a `type-error`; each timer is expected to have exactly one
 fact at all times.

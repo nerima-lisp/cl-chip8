@@ -7,7 +7,7 @@ interactive terminal loop.
 ## State ownership
 
 CPU registers, timers, the program counter, the call stack, and keypad facts
-are stored in the cl-prolog rulebase. The memory and display framebuffer are
+are stored in the cl-prolog-kit rulebase. The memory and display framebuffer are
 direct Lisp arrays. Opcode foreign predicates are the boundary between the
 declarative instruction rules and those arrays.
 

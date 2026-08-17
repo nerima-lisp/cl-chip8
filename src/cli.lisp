@@ -39,7 +39,7 @@ enter its terminal session."
    :version (%chip8-version)
    :summary "A CHIP-8 interpreter for the terminal."
    :description "Runs a CHIP-8 ROM live in the terminal. Instruction dispatch
-is driven by genuine Prolog goal resolution over a cl-prolog rulebase, not a
+is driven by genuine Prolog goal resolution over a cl-prolog-kit rulebase, not a
 conventional interpreter loop. Press Escape or Ctrl-C to quit. The keypad maps a
 standard 4x4 QWERTY block onto the CHIP-8 hex keypad -- see the Terminal guide
 at https://nerima-lisp.github.io/cl-chip8/guide/terminal/ for the full table."

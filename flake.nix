@@ -20,8 +20,8 @@
     # main. `flake = false`: only the source tree is needed (to build a
     # `lispDerivation` below), never these repos' own flake outputs -- see
     # DEPENDENCY_POLICY.md "姉妹パッケージは flake = false で引きます".
-    cl-prolog = {
-      url = "github:nerima-lisp/cl-prolog/v1.4.3";
+    cl-prolog-kit = {
+      url = "github:nerima-lisp/cl-prolog-kit/v1.5.0";
       flake = false;
     };
 
@@ -97,7 +97,7 @@
       self,
       nixpkgs,
       cl-nix-forge,
-      cl-prolog,
+      cl-prolog-kit,
       cl-tty-kit,
       cl-cli,
       cl-concurrent-kit,
@@ -186,10 +186,10 @@
         in
         [
           (ctx.cl.lispDerivation {
-            pname = "cl-prolog";
-            version = ctx.cl.fromAsdSystem "${cl-prolog}/cl-prolog.asd";
-            src = cl-prolog;
-            lispSystem = "cl-prolog";
+            pname = "cl-prolog-kit";
+            version = ctx.cl.fromAsdSystem "${cl-prolog-kit}/cl-prolog-kit.asd";
+            src = cl-prolog-kit;
+            lispSystem = "cl-prolog-kit";
           })
           (ctx.cl.lispDerivation {
             pname = "cl-tty-kit";

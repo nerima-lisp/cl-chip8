@@ -28,7 +28,7 @@
     (cons
      (truename root)
      (loop for name in (list
-                        "cl-prolog"
+                        "cl-prolog-kit"
                         "cl-tty-kit"
                         "cl-cli"
                         "cl-concurrent-kit"

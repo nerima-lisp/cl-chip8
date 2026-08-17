@@ -3,8 +3,8 @@
 ;;;; This is the architecture's central, deliberate choice: registers, the I
 ;;;; register, the program counter, the call stack, and both timers are not a
 ;;;; Lisp struct mutated in place. They are facts in *RULEBASE*, asserted and
-;;;; retracted via cl-prolog's ASSERTZ/RETRACTALL builtins, which mutate the
-;;;; rulebase destructively (see cl-prolog's src/builtins/dynamic.lisp) -- so
+;;;; retracted via cl-prolog-kit's ASSERTZ/RETRACTALL builtins, which mutate the
+;;;; rulebase destructively (see cl-prolog-kit's src/builtins/dynamic.lisp) -- so
 ;;;; one rulebase instance, built once with MAKE-RULEBASE below, is the
 ;;;; machine's state for its entire lifetime. A later stage drives opcode
 ;;;; execution by resolving Prolog goals against this same rulebase; nothing
@@ -46,7 +46,7 @@ application and tests call this to start from a clean machine. Returns
   (query-prolog *rulebase* '(retractall (sound-timer ?value)))
   (query-prolog *rulebase* '(retractall (key-down ?key)))
   ;; RETRACTALL never marks a predicate dynamic -- only ASSERTA/ASSERTZ do
-  ;; (see cl-prolog's src/builtins/dynamic.lisp) -- and every other fact
+  ;; (see cl-prolog-kit's src/builtins/dynamic.lisp) -- and every other fact
   ;; functor above gets at least one ASSERTZ a few lines down, which marks
   ;; it dynamic as a side effect. KEY-DOWN/1 is different: "no keys held
   ;; down" is its normal post-reset state, so it would otherwise stay
