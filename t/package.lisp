@@ -18,7 +18,7 @@
   (:import-from #:cl-weave
                 #:it #:expect #:signals #:run-all #:with-soft-assertions #:before-each
                 #:skip)
-  ;; Test-only cl-prolog primitives. cl-chip8 imports these into its own
+  ;; Test-only cl-prolog-kit primitives. cl-chip8 imports these into its own
   ;; package already (src/package.lisp) but does not re-export them as part
   ;; of its own public API -- an application does not forward its logic
   ;; engine's primitives -- so tests that assert/retract/query facts directly
@@ -26,10 +26,10 @@
   ;; RETRACT are plain symbols used as goal functors inside a quoted query
   ;; term (e.g. `(list 'assertz clause)` passed to QUERY-PROLOG), not
   ;; functions callable on their own -- importing them is what makes the
-  ;; bare token `assertz` read as the same symbol cl-prolog's builtin
-  ;; dispatch expects, per cl-prolog's own "builtin goal names" export
+  ;; bare token `assertz` read as the same symbol cl-prolog-kit's builtin
+  ;; dispatch expects, per cl-prolog-kit's own "builtin goal names" export
   ;; section.
-  (:import-from #:cl-prolog
+  (:import-from #:cl-prolog-kit
                 #:query-prolog
                 #:assertz
                 #:retract
@@ -38,7 +38,7 @@
   ;; exported -- see the export rule at the top of src/package.lisp -- so
   ;; (:use #:cl-chip8) above does not inherit them and they are named here
   ;; instead. This is the same manoeuvre, for the same reason, as the
-  ;; cl-prolog ASSERTZ/RETRACT clause directly above: :IMPORT-FROM gives the
+  ;; cl-prolog-kit ASSERTZ/RETRACT clause directly above: :IMPORT-FROM gives the
   ;; test package the identical symbol object without committing the name to
   ;; the public API.
   ;;

@@ -8,14 +8,14 @@
 ;;;; fourth nibble, last byte, and last three nibbles -- and EXECUTE-
 ;;;; INSTRUCTION! resolves exactly one `(step Family X Y N Kk Nnn)' goal
 ;;;; against the ~35-clause STEP/6 rulebase below. Which clause fires is
-;;;; decided by real unification: FAMILY gives cl-prolog's first-argument
+;;;; decided by real unification: FAMILY gives cl-prolog-kit's first-argument
 ;;;; indexing its top-level split, and within a family, N or KK (already
 ;;;; bound to a concrete integer by the caller) unifies against a literal in
 ;;;; the clause head to pick the sub-opcode -- e.g. `8XY6' and `8XY7' are two
 ;;;; different STEP clauses distinguished purely by N unifying with 6 or 7,
-;;;; not by an if/case reading N in Lisp. `:when' guards (a cl-prolog DSL
+;;;; not by an if/case reading N in Lisp. `:when' guards (a cl-prolog-kit DSL
 ;;;; feature that compiles to a plain Lisp closure over already-bound
-;;;; variables -- see cl-prolog's rule-dsl.md) cover the handful of branches
+;;;; variables -- see cl-prolog-kit's rule-dsl.md) cover the handful of branches
 ;;;; that depend on a runtime VALUE rather than the static opcode pattern:
 ;;;; CALL's stack-depth check and SUB/SUBN's borrow flag.
 ;;;;
@@ -32,10 +32,10 @@
 ;;;; ignorant of which opcode ran: it fetches, decodes, resolves STEP once,
 ;;;; and never touches PC itself.
 ;;;;
-;;;; Ordering matters within a family: cl-prolog's first-argument indexing on
+;;;; Ordering matters within a family: cl-prolog-kit's first-argument indexing on
 ;;;; FAMILY is purely an optimization -- clauses of the same predicate are
 ;;;; still tried in the definition order this file lists them, per
-;;;; cl-prolog's semantics.md. Family 0's three specific-NNN-value clauses
+;;;; cl-prolog-kit's semantics.md. Family 0's three specific-NNN-value clauses
 ;;;; (00E0, 00EE non-empty stack, 00EE empty stack) are therefore listed
 ;;;; before its catch-all 0NNN/SYS clause, and EX9E/EXA1's guarded clause
 ;;;; comes before its unconditional fallback -- see each family's comment
@@ -64,7 +64,7 @@
 (defmacro %extend-opcode-rulebase-once (base &body clauses)
   "Return BASE extended with CLAUSES, but never extend it twice.
 
-The cl-prolog DSL quotes clause bodies before compiling them, so a constant
+The cl-prolog-kit DSL quotes clause bodies before compiling them, so a constant
 used by a `:WHEN' guard or by an `IS' arithmetic goal must be substituted
 while this macro still owns the source forms -- a symbolic reference left in
 place would reach the DSL as an ordinary unbound Prolog atom. Each marker
@@ -137,7 +137,7 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
         ;; mutation, so a guard failure here never leaves a half-applied CALL
         ;; behind for the overflow clause below to inherit.
         ;; %EXTEND-OPCODE-RULEBASE-ONCE substitutes +CALL-STACK-LIMIT+ before
-        ;; cl-prolog's clause DSL quotes this body at EXTEND-RULEBASE
+        ;; cl-prolog-kit's clause DSL quotes this body at EXTEND-RULEBASE
         ;; macro-expansion time. Keeping the marker here makes the guard and
         ;; the public state constant share one source of truth.
         ((step 2 ?x ?y ?n ?kk ?nnn)
@@ -558,7 +558,7 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
         ;; following DXYN would then happily render as a glyph. MOD by 16
         ;; keeps every FX29 result inside [80, 155], the fontset's own span.
         ;;
-        ;; +FONTSET-ADDRESS+ is substituted for its value before cl-prolog's
+        ;; +FONTSET-ADDRESS+ is substituted for its value before cl-prolog-kit's
         ;; clause DSL quotes this body; see %EXTEND-OPCODE-RULEBASE-ONCE
         ;; above, which is the same mechanism family 2's guard uses for
         ;; +CALL-STACK-LIMIT+.

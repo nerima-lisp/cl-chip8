@@ -16,7 +16,7 @@
 
 (defpackage #:cl-chip8
   (:use #:cl)
-  ;; cl-prolog (L1): the rulebase container, the query API, and the
+  ;; cl-prolog-kit (L1): the rulebase container, the query API, and the
   ;; assert/retract/define-foreign-predicate primitives this package's CPU
   ;; state is built from. #:assert is deliberately NOT imported: this
   ;; package never calls it (ASSERTZ covers every insertion this stage
@@ -30,14 +30,14 @@
   ;; LOAD-REGISTERS in opcodes.lisp) without reusing a caller-visible name.
   ;; Goal functors like `is` must come in by exact symbol identity, same as
   ;; ASSERTZ/RETRACT above: the engine's builtin dispatch matches by EQL on
-  ;; the interned CL-PROLOG symbol, not by name, so a same-named
+  ;; the interned CL-PROLOG-KIT symbol, not by name, so a same-named
   ;; CL-CHIP8::IS the reader might otherwise intern here would silently
   ;; fail to dispatch. Arithmetic *sub-expression* operators inside an is/2
-  ;; expression (+, -, mod, //, *, ...) do NOT need this treatment: cl-prolog
+  ;; expression (+, -, mod, //, *, ...) do NOT need this treatment: cl-prolog-kit
   ;; resolves those by STRING= on the symbol's name, so the plain CL symbols
   ;; already inherited via :USE #:CL (or even a fresh CL-CHIP8:: symbol for
   ;; a non-CL name like `//') work without any import.
-  (:import-from #:cl-prolog
+  (:import-from #:cl-prolog-kit
                 #:make-rulebase
                 #:query-prolog
                 #:query-prolog-first
@@ -149,7 +149,7 @@
   ;; because a term read inside CL-CHIP8 interns the identical symbol.
   ;; Dispatch needs symbol IDENTITY, and :IMPORT-FROM supplies identity for
   ;; an internal symbol just as well as :EXPORT does -- t/package.lisp does
-  ;; exactly that, as it already did for cl-prolog's ASSERTZ and RETRACT.
+  ;; exactly that, as it already did for cl-prolog-kit's ASSERTZ and RETRACT.
   ;; :EXPORT additionally supplies a semver commitment, which is the part
   ;; that was being paid for and not used.
   (:export

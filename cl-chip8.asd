@@ -7,7 +7,7 @@
 ;;; unqualified `defsystem` then fails to read at all. See
 ;;; PACKAGE_STANDARD.md "asd の書き方".
 ;;;
-;;; No sibling package's prefix (cl-prolog:, cl-tty-kit:, cl-cli:,
+;;; No sibling package's prefix (cl-prolog-kit:, cl-tty-kit:, cl-cli:,
 ;;; cl-chip8/test:) may appear anywhere below. :DEPENDS-ON is not processed
 ;;; until the whole file has been READ, so a qualified symbol naming a
 ;;; package that does not exist yet is a hard read-time error, not a
@@ -20,10 +20,10 @@
   :description "A CHIP-8 (1977 COSMAC VIP instruction set) interpreter for the terminal."
   :long-description "A CHIP-8 interpreter for the terminal whose CPU state --
 registers, program counter, call stack, and timers -- is expressed as a
-cl-prolog rulebase of dynamic facts, with instruction dispatch driven by
+cl-prolog-kit rulebase of dynamic facts, with instruction dispatch driven by
 Prolog goal resolution rather than a conventional big-COND interpreter loop.
 Memory and the display framebuffer are plain Lisp arrays for O(1) access,
-wrapped by cl-prolog:define-foreign-predicate so Prolog goals can still read
+wrapped by cl-prolog-kit:define-foreign-predicate so Prolog goals can still read
 and write them. SBCL only."
   :author "takeokunn <bararararatty@gmail.com>"
   :maintainer "takeokunn <bararararatty@gmail.com>"
@@ -34,7 +34,7 @@ and write them. SBCL only."
   :homepage "https://github.com/nerima-lisp/cl-chip8"
   :bug-tracker "https://github.com/nerima-lisp/cl-chip8/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
-  :depends-on ("cl-prolog"  ; the CPU-state rulebase: dynamic facts, assert/retract,
+  :depends-on ("cl-prolog-kit"  ; the CPU-state rulebase: dynamic facts, assert/retract,
                             ; foreign predicates
                "cl-tty-kit" ; terminal screen/renderer/input, used by stage 2's rendering
                             ; and keypad layers
@@ -100,7 +100,7 @@ and write them. SBCL only."
   ;; cl-weave is the org's test framework everywhere. Do not introduce FiveAM,
   ;; parachute, rove or prove.
   ;;
-  ;; Test-only: cl-prolog for QUERY-PROLOG/ASSERTZ/RETRACT (t/state-test.lisp
+  ;; Test-only: cl-prolog-kit for QUERY-PROLOG/ASSERTZ/RETRACT (t/state-test.lisp
   ;; round-trips a register fact directly), and cl-tty-kit for DECODE-INPUT
   ;; (t/keypad-test.lisp builds KEY-EVENTs from a plain string, mirroring
   ;; cl-nyancat's t/input-test.lisp) and MAKE-SCREEN/SCREEN-CELL
@@ -114,7 +114,7 @@ and write them. SBCL only."
   ;; local run never complained -- but each Nix lispDerivation builds in its
   ;; own sandbox containing only its declared dependencies, so the omission
   ;; failed CI with `Component "cl-host-kit" not found`.
-  :depends-on ("cl-chip8" "cl-weave" "cl-prolog" "cl-tty-kit"
+  :depends-on ("cl-chip8" "cl-weave" "cl-prolog-kit" "cl-tty-kit"
                "cl-concurrent-kit"
                "cl-date-kit"
                "cl-host-kit")

@@ -7,7 +7,7 @@ display, a sixteen-key keypad, and delay and sound timers.
 
 ## State and execution
 
-The CPU facts live in a [cl-prolog](https://github.com/nerima-lisp/cl-prolog)
+The CPU facts live in a [cl-prolog-kit](https://github.com/nerima-lisp/cl-prolog-kit)
 rulebase. The public facts are `v(Index, Value)`, `i-register(Value)`,
 `pc(Value)`, `call-stack(List)`, `delay-timer(Value)`, `sound-timer(Value)`,
 and `key-down(Key)`. Memory and display pixels use Lisp arrays because they
@@ -43,25 +43,25 @@ Call `execute-instruction!` for CPU steps and `step-timers!` at 60 Hz.
 There is no exported function for delivering input. Key-event decoding belongs
 to the terminal layer, so a headless embedding drives the keypad by asserting
 and retracting `key-down` facts directly against `*rulebase*`. The query
-builtins come from `cl-prolog`, which `cl-chip8` imports but does not
+builtins come from `cl-prolog-kit`, which `cl-chip8` imports but does not
 re-export, so name that package explicitly:
 
 ```lisp
 ;; Press CHIP-8 key 5.
-(cl-prolog:query-prolog cl-chip8:*rulebase*
-                        '(cl-prolog:assertz (cl-chip8:key-down 5)))
+(cl-prolog-kit:query-prolog cl-chip8:*rulebase*
+                        '(cl-prolog-kit:assertz (cl-chip8:key-down 5)))
 
 ;; The interpreter now sees it: EX9E/EXA1/FX0A all read this fact.
 (cl-chip8:key-down-p 5)   ; => true
 (cl-chip8:pressed-keys)   ; => (5)
 
 ;; Release it.
-(cl-prolog:query-prolog cl-chip8:*rulebase*
-                        '(cl-prolog:retract (cl-chip8:key-down 5)))
+(cl-prolog-kit:query-prolog cl-chip8:*rulebase*
+                        '(cl-prolog-kit:retract (cl-chip8:key-down 5)))
 ```
 
-Both the functor `cl-chip8:key-down` and the builtins `cl-prolog:assertz` and
-`cl-prolog:retract` must be those exact symbols: the engine dispatches on
+Both the functor `cl-chip8:key-down` and the builtins `cl-prolog-kit:assertz` and
+`cl-prolog-kit:retract` must be those exact symbols: the engine dispatches on
 symbol identity, so a same-named symbol interned in another package will not
 match. Do not call the internal key-hold countdown machinery; it belongs to
 the terminal layer, and a fact you asserted yourself has no countdown entry to

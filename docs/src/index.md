@@ -1,7 +1,7 @@
 # cl-chip8
 
 An SBCL-only [CHIP-8](https://en.wikipedia.org/wiki/CHIP-8) interpreter for
-the terminal. The CPU state is represented by [cl-prolog](https://github.com/nerima-lisp/cl-prolog)
+the terminal. The CPU state is represented by [cl-prolog-kit](https://github.com/nerima-lisp/cl-prolog-kit)
 facts, while memory and the display remain direct Lisp arrays. The runtime
 implements the original CHIP-8 instruction set with a fixed modern behavior
 profile.

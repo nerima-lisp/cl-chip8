@@ -80,7 +80,7 @@ or register the tree from Lisp:
 ```
 
 Point either form at the *parent* of the checkouts, not at `cl-chip8` itself.
-`cl-chip8` depends directly on the sibling `nerima-lisp` systems `cl-prolog`,
+`cl-chip8` depends directly on the sibling `nerima-lisp` systems `cl-prolog-kit`,
 `cl-tty-kit`, `cl-cli`, `cl-concurrent-kit`, `cl-date-kit`, and `cl-host-kit`
 (plus SBCL's bundled `sb-posix`), and those systems have dependencies of their
 own, so every one of them must be resolvable. The repository's own

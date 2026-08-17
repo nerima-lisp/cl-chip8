@@ -6,7 +6,7 @@
 
 `cl-chip8` is an SBCL-only [CHIP-8](https://en.wikipedia.org/wiki/CHIP-8)
 interpreter for the terminal. It implements the original instruction set with
-a fixed modern compatibility profile and uses a `cl-prolog` rulebase for CPU
+a fixed modern compatibility profile and uses a `cl-prolog-kit` rulebase for CPU
 state and instruction dispatch.
 
 Full documentation is published at <https://nerima-lisp.github.io/cl-chip8/>.

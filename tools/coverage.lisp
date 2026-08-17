@@ -24,7 +24,7 @@
   (let ((organization-root (truename (merge-pathnames #p"../" root))))
     (loop for name in (list
                        "cl-chip8"
-                       "cl-prolog"
+                       "cl-prolog-kit"
                        "cl-tty-kit"
                        "cl-cli"
                        "cl-concurrent-kit"
@@ -289,7 +289,7 @@ uncovered today.")
   "True when HEAD/SECOND name a top-level form SB-COVER cannot credit."
   (or (member head *coverage-load-time-definition-heads* :test #'string=)
       ;; The ordered opcode rulebase is one top-level (SETF *RULEBASE* ...)
-      ;; whose body is quoted cl-prolog clause DATA, not Lisp code paths, and
+      ;; whose body is quoted cl-prolog-kit clause DATA, not Lisp code paths, and
       ;; it is installed at load. Matched on the place as well as the head so
       ;; this never becomes a blanket exemption for SETF.
       (and (string= head "setf") (string= second "*rulebase*"))))
