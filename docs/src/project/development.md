@@ -33,6 +33,23 @@ The flake currently declares `x86_64-linux` outputs. On another host, make the
 pinned sibling dependencies available in the expected `CL_SOURCE_REGISTRY`
 tree and use the direct SBCL commands below.
 
+## Updating pinned inputs
+
+`flake.lock` records the exact revisions used by the Nix workflow. Update only
+the inputs intended for the change, then review the lock diff and rerun the
+repository checks:
+
+```shell
+nix flake update nixpkgs treefmt-nix
+git diff -- flake.lock
+nix flake check --print-build-logs
+nix build .#docs --print-build-logs
+git diff --check
+```
+
+Keep the lock diff limited to the requested inputs. The Nix checks and docs
+build use the `x86_64-linux` outputs described above.
+
 ## Tests and coverage
 
 Run the test system directly with:
@@ -98,4 +115,6 @@ nix build .#docs --print-build-logs
 
 The MkDocs configuration uses strict mode. Keep all public symbols, examples,
 compatibility decisions, and navigation entries synchronized with the source.
+Use `--print-build-logs` (or its `-L` shorthand) to stream build logs while
+diagnosing a documentation failure.
 Use `git diff --check` to catch whitespace errors before submitting a change.
