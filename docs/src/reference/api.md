@@ -954,7 +954,7 @@ Test whether `object` is a rendering pipeline.
 
 ```lisp
 (cl-chip8:make-chip8-render-pipeline
- &key (parallelism 4) (parallel-threshold 13)
+ &key (parallelism 8) (parallel-threshold 13)
       (shutdown-timeout (duration-of-seconds 1)))
   => pipeline
 ```
@@ -973,7 +973,7 @@ startup condition.
 **Example**:
 
 ```lisp
-(cl-chip8:make-chip8-render-pipeline :parallelism 4)
+(cl-chip8:make-chip8-render-pipeline :parallelism 8)
 ```
 
 ### `close-chip8-render-pipeline`

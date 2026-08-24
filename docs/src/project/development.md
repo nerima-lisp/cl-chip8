@@ -85,7 +85,7 @@ unset or unparseable, and any value below 1 is clamped to 1:
 | `CL_CHIP8_BENCH_WARMUP` | 5 | Warm-up iterations discarded before timing. |
 | `CL_CHIP8_BENCH_ITERATIONS` | 2000 | Timed iterations per path. |
 | `CL_CHIP8_BENCH_PARALLEL_THRESHOLD` | 13 | Dirty-row count at which the concurrent path becomes eligible. |
-| `CL_CHIP8_BENCH_PARALLELISM` | 4 | Worker count for the pipeline under test. |
+| `CL_CHIP8_BENCH_PARALLELISM` | 8 | Worker count for the pipeline under test. |
 
 Treat the output as a local measurement, not a published figure. The result
 depends on the host, its core count, and the load on it at the time, so a

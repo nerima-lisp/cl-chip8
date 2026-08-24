@@ -33,12 +33,13 @@ terminal layer, so a headless embedding presses a key by asserting a
 2. Worker tasks convert snapshots into terminal characters only.
 3. The caller thread commits characters to the terminal screen.
 
-Small partial updates use a serial path. With the default settings, partial
-frames become eligible for workers at a threshold of 13 dirty rows, and the
-implementation requires at least 9 partial snapshots before submitting work.
-Full dirty frames remain serial. The pipeline does maintain counters for
-submitted, completed, and serial rows, plus executor queue depth and
-high-water mark, but none of them is exported: they are telemetry over the
+Small partial updates use a serial path. With the default settings, the
+pipeline has 8 workers, partial frames become eligible for workers at a
+threshold of 13 dirty rows, and the implementation requires at least 9 partial
+snapshots before submitting work. A batch uses no more workers than its row
+count requires. Full dirty frames remain serial. The pipeline does maintain
+counters for submitted, completed, and serial rows, plus executor queue depth
+and high-water mark, but none of them is exported: they are telemetry over the
 batching strategy and carry no compatibility promise. An embedding cannot
 observe which path a frame took through the public API.
 
