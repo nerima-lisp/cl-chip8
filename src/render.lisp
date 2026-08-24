@@ -14,6 +14,10 @@
 ;;;; is nonzero.
 (in-package #:cl-chip8)
 
+(declaim (inline half-block-character)
+         (ftype (function (bit bit) character)
+                half-block-character))
+
 (defun half-block-character (top-pixel bottom-pixel)
   "Return the half-block character for two display bits."
   (declare (type bit top-pixel bottom-pixel))
@@ -21,15 +25,28 @@
         (logior bottom-pixel (ash top-pixel 1))))
 (defvar *render-row-buffer* nil)
 
+(check-type *render-row-buffer* (or null (simple-array t (16))))
+
+(declaim (type (or null (simple-array t (16))) *render-row-buffer*))
+
+(declaim (inline %ensure-render-row-buffer)
+         (ftype (function () (simple-array t (16)))
+                %ensure-render-row-buffer))
+
 (defun %render-display-row-into-screen!
     (screen terminal-row &optional reusable-characters)
   "Blit one display row into SCREEN without acquiring locks or batching SCREEN."
+  (declare (type display-terminal-row terminal-row)
+           (type (or null (vector t 16)) reusable-characters))
   (let ((characters
           (or (and reusable-characters
                    (aref reusable-characters terminal-row))
-              (make-string +display-width+)))
-        (y0 (* terminal-row 2)))
+                   (make-string +display-width+)))
+        (y0 (ash terminal-row 1)))
+    (declare (type string characters)
+             (type display-row y0))
     (dotimes (x +display-width+)
+      (declare (type display-column x))
       (setf (char characters x)
             (half-block-character
              (%display-pixel-value x y0)
@@ -43,7 +60,9 @@
 (defun %render-display-into-screen!
     (screen &optional reusable-characters)
   "Blit *DISPLAY* into SCREEN without acquiring the display lock or batching SCREEN."
-  (dotimes (terminal-row (truncate +display-height+ 2))
+  (declare (type (or null (vector t 16)) reusable-characters))
+  (dotimes (terminal-row +display-terminal-row-count+)
+    (declare (type display-terminal-row terminal-row))
     (%render-display-row-into-screen!
      screen
      terminal-row
@@ -52,8 +71,12 @@
 (defun %ensure-render-row-buffer ()
   (or *render-row-buffer*
       (setf *render-row-buffer*
-            (let ((buffer (make-array (truncate +display-height+ 2))))
+            (let ((buffer (make-array +display-terminal-row-count+
+                                      :element-type t
+                                      :initial-element nil)))
+              (declare (type (simple-array t (16)) buffer))
               (dotimes (terminal-row (length buffer) buffer)
+                (declare (type display-terminal-row terminal-row))
                 (setf (aref buffer terminal-row)
                       (make-string +display-width+)))))))
 
@@ -68,8 +91,9 @@
 
 (defun sound-timer-active-p ()
   "True when the sound timer is currently nonzero."
-  (let ((solutions (query-prolog *rulebase* '(sound-timer ?value))))
-    (plusp (solution-binding '?value (first solutions)))))
+  (plusp (solution-binding
+          '?value
+          (query-prolog-first *rulebase* '(sound-timer ?value)))))
 
 (defun render-sound-indicator-into-screen! (screen)
   "Style SCREEN's top-left border corner in reverse video while

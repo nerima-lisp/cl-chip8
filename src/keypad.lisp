@@ -41,8 +41,12 @@ RESET-CPU-STATE!, which already clears every KEY-DOWN fact directly."
   "Return the CHIP-8 hex key (0-15) the cl-tty-kit KEY-EVENT EVENT maps to,
 or NIL when EVENT is not a :CHARACTER event for a mapped keypad character.
 Case-insensitive, so both q and Q map to key 4."
-  (and (eq (key-event-type event) :character)
-       (cdr (assoc (char-downcase (key-event-code event)) +keypad-mapping+ :test #'char=))))
+  (when (eq (key-event-type event) :character)
+    (let ((key (cdr (assoc (char-downcase (key-event-code event))
+                           +keypad-mapping+
+                           :test #'char=))))
+      (when key
+        (the chip8-key key)))))
 
 (defun keypad-apply-key-event! (event)
   "Apply one decoded cl-tty-kit KEY-EVENT to the keypad: for a mapped key,

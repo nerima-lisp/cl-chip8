@@ -420,7 +420,7 @@ styles, which the sound indicator owns."
          (expect
           (chip8-render-pipeline-parallelism pipeline)
           :to-be
-          4)
+          +concurrent-render-default-parallelism+)
           (expect (chip8-render-pipeline-parallel-threshold pipeline) :to-be 13))
       (close-chip8-render-pipeline pipeline))))
  (it

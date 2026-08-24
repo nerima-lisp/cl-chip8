@@ -67,13 +67,19 @@ application and tests call this to start from a clean machine. Returns
   (query-prolog *rulebase* (list 'assertz (list 'sound-timer 0)))
   *rulebase*)
 
+(declaim (inline key-down-p))
+
 (defun key-down-p (key)
   "Return true when hex key KEY (0-15) currently has a KEY-DOWN fact asserted
-in *RULEBASE*."
+  in *RULEBASE*."
+  (check-type key chip8-key)
   (prolog-succeeds-p *rulebase* (list 'key-down key)))
 
 (defun pressed-keys ()
   "Return the list of hex keys (0-15) currently asserted as KEY-DOWN facts in
 *RULEBASE*, in no particular order."
-  (mapcar (lambda (solution) (solution-binding '?key solution))
+  (mapcar (lambda (solution)
+            (let ((key (solution-binding '?key solution)))
+              (check-type key chip8-key)
+              key))
           (query-prolog *rulebase* (list 'key-down '?key))))

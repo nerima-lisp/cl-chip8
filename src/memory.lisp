@@ -10,6 +10,8 @@
 ;;;; see the repository README and cl-chip8.asd's :long-description.
 (in-package #:cl-chip8)
 
+(declaim (inline memory-reset! check-memory-access %checked-memory-index))
+
 (defun memory-reset! ()
   "Zero every byte of *MEMORY* in place and return it."
   (fill *memory* 0)
@@ -20,6 +22,9 @@
 BYTES. Signals CHIP8-MEMORY-ACCESS-OUT-OF-BOUNDS for a negative or beyond-end
 ADDRESS, and CHIP8-ROM-TOO-LARGE when BYTES would run past the end of the
 4096-byte address space."
+  (check-type bytes vector)
+  (check-type address integer)
+  (loop for byte across bytes do (check-type byte chip8-octet))
   (let ((size (length bytes)))
     (cond
       ((or (minusp address) (> address +memory-size+))
@@ -50,6 +55,8 @@ against *MEMORY* instead of going through those two primitives -- see this
 file's own header comment and opcodes.lisp's DRAW-SPRITE comment for why --
 so each of those three calls this function once before its loop rather than
 repeating the bounds arithmetic at every AREF site."
+  (check-type address integer)
+  (check-type span integer)
   (when (or (minusp address)
             (minusp span)
             (> (+ address span) +memory-size+))
@@ -58,21 +65,27 @@ repeating the bounds arithmetic at every AREF site."
            :span span))
   (values))
 
+(defun %checked-memory-index (address)
+  "Validate ADDRESS as a single-byte access and return its specialized index."
+  (check-memory-access address 1)
+  (the chip8-memory-index address))
+
 ;;; Prolog-callable primitives. Opcode goals (a later stage) read and write
 ;;; memory exclusively through these two, keeping every access on the same
 ;;; O(1) AREF path whether it originates from Lisp or from proof search.
 
 (define-foreign-predicate (memory-read address value) (rulebase environment depth emit)
-  (let ((resolved-address (logic-substitute address environment)))
-    (check-memory-access resolved-address 1)
+  (let ((resolved-address
+          (%checked-memory-index (logic-substitute address environment))))
     (multiple-value-bind (extended ok)
         (unify value (aref *memory* resolved-address) environment)
       (when ok (funcall emit extended)))))
 
 (define-foreign-predicate (memory-write address value) (rulebase environment depth emit)
-  (let ((resolved-address (logic-substitute address environment))
+  (let ((resolved-address
+          (%checked-memory-index (logic-substitute address environment)))
         (resolved-value (logic-substitute value environment)))
-    (check-memory-access resolved-address 1)
+    (check-type resolved-value chip8-octet)
     (setf (aref *memory* resolved-address) resolved-value)
     (funcall emit environment)))
 

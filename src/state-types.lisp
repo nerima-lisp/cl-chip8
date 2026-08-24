@@ -22,3 +22,8 @@ CHIP-8 ROM load address.")
 signal CHIP8-STACK-OVERFLOW. Declared alongside the state it bounds so that
 the opcode guard, its condition, and this stage's fact shape agree on the same
 number.")
+
+(deftype chip8-nibble () '(unsigned-byte 4))
+(deftype chip8-opcode () '(unsigned-byte 16))
+(deftype chip8-register-index () '(integer 0 15))
+(deftype chip8-key () '(integer 0 15))

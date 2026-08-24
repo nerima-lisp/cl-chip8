@@ -5,7 +5,7 @@
   "Terminal screen width: the 64-pixel-wide playfield plus a 1-cell border on
 each side.")
 
-(defconstant +screen-height+ (+ (truncate +display-height+ 2) 2)
+(defconstant +screen-height+ (+ +display-terminal-row-count+ 2)
   "Terminal screen height: the 32-pixel-tall playfield, two pixel rows per
 terminal row, plus a 1-cell border on each side.")
 
@@ -16,8 +16,15 @@ terminal row, plus a 1-cell border on each side.")
   "The terminal row the playfield's topmost pixel-pair renders at.")
 
 (defparameter +half-block-character-table+
-  (vector #\Space
-          (code-char #x2584)
-          (code-char #x2580)
-          (code-char #x2588))
+  (make-array 4
+              :element-type 'character
+              :initial-contents
+              (list #\Space
+                    (code-char #x2584)
+                    (code-char #x2580)
+                    (code-char #x2588)))
   "Character lookup for the four two-pixel terminal cells.")
+
+(declaim (type (integer 0 *) +playfield-origin-x+)
+         (type (integer 0 *) +playfield-origin-y+)
+         (type (simple-array character (4)) +half-block-character-table+))

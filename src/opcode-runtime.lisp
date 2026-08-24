@@ -4,17 +4,34 @@
 ;;; Fetch and decode: plain Lisp, no Prolog involved yet.
 ;;; --------------------------------------------------------------------------
 
+(declaim (inline fetch-opcode decode-opcode)
+         (ftype (function () chip8-opcode) fetch-opcode)
+         (ftype (function (chip8-opcode)
+                          (values chip8-nibble
+                                  chip8-nibble
+                                  chip8-nibble
+                                  chip8-nibble
+                                  chip8-octet
+                                  chip8-memory-index))
+                decode-opcode))
+
 (defun fetch-opcode ()
   "Return the 16-bit big-endian opcode at the current PC, read from *MEMORY*."
-  (let* ((solutions (query-prolog *rulebase* '(pc ?value)))
-         (address (solution-binding '?value (first solutions))))
-    (check-memory-access address 2)
-    (logior (ash (aref *memory* address) 8) (aref *memory* (1+ address)))))
+  (let* ((solution (query-prolog-first *rulebase* '(pc ?value)))
+         (raw-address (solution-binding '?value solution))
+         (address (progn
+                    (check-memory-access raw-address 2)
+                    (the chip8-memory-index raw-address)))
+         (high-byte (aref *memory* address))
+         (low-byte (aref *memory* (1+ address))))
+    (declare (type chip8-octet high-byte low-byte))
+    (the chip8-opcode (logior (ash high-byte 8) low-byte))))
 
 (defun decode-opcode (opcode)
   "Return (VALUES FAMILY X Y N KK NNN) for the 16-bit OPCODE: the top nibble,
 second nibble, third nibble, fourth nibble, last byte, and last three
 nibbles, respectively."
+  (check-type opcode chip8-opcode)
   (values (ldb (byte 4 12) opcode)
           (ldb (byte 4 8) opcode)
           (ldb (byte 4 4) opcode)
@@ -30,6 +47,9 @@ comment in src/opcodes.lisp for PC ownership). Signals CHIP8-INVALID-OPCODE when
 clause matches the decoded opcode. Returns no values."
   (let ((opcode (fetch-opcode)))
     (multiple-value-bind (family x y n kk nnn) (decode-opcode opcode)
+      (declare (type chip8-nibble family x y n)
+               (type chip8-octet kk)
+               (type chip8-memory-index nnn))
       (unless (prolog-succeeds-p *rulebase* (list 'step family x y n kk nnn))
         (error 'chip8-invalid-opcode :opcode opcode))))
   (values))

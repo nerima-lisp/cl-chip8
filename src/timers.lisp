@@ -7,11 +7,14 @@
 ;;;; independent of how many CPU instructions that same tick ran.
 (in-package #:cl-chip8)
 
+(declaim (inline %decrement-timer-fact!))
+
 (defun %decrement-timer-fact! (functor)
   "Decrement the single-fact timer predicate FUNCTOR (DELAY-TIMER or
-SOUND-TIMER, passed as a plain symbol) by 1, floored at 0."
-  (let* ((solutions (query-prolog *rulebase* (list functor '?value)))
-         (value (solution-binding '?value (first solutions))))
+  SOUND-TIMER, passed as a plain symbol) by 1, floored at 0."
+  (let* ((solution (query-prolog-first *rulebase* (list functor '?value)))
+         (value (solution-binding '?value solution)))
+    (check-type value chip8-octet)
     (when (plusp value)
       (query-prolog *rulebase* (list 'retract (list functor value)))
       (query-prolog *rulebase* (list 'assertz (list functor (1- value)))))))

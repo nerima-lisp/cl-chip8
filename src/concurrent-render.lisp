@@ -7,6 +7,11 @@
   "Start WORKER tasks and wait for each task to announce readiness.
 On startup failure, close the channels and use the native executor shutdown
 timeout before propagating the original condition."
+  (declare (type render-executor executor)
+           (type render-channel jobs-channel ready-channel)
+           (type (integer 1 *) parallelism)
+           (type duration shutdown-timeout)
+           (type function worker))
   (handler-case
       (progn
         (loop repeat parallelism do (submit executor worker))
@@ -32,8 +37,13 @@ timeout before propagating the original condition."
 
 (defun %make-render-snapshot-buffer ()
   "Allocate the reusable row-snapshot buffer for a render pipeline."
-  (let* ((row-count (truncate +display-height+ 2))
-         (buffer (make-array row-count :fill-pointer row-count)))
+  (let* ((row-count +display-terminal-row-count+)
+         (buffer (make-array row-count
+                             :element-type t
+                             :initial-element nil
+                             :fill-pointer row-count)))
+    (declare (type (integer 1 16) row-count)
+             (type (vector t 16) buffer))
     (dotimes (index row-count buffer)
       (setf (aref buffer index)
             (%make-render-row-snapshot
@@ -45,35 +55,56 @@ timeout before propagating the original condition."
 
 (defun %make-render-result-buffer ()
   "Allocate the reusable string buffer for rendered rows."
-  (let* ((row-count (truncate +display-height+ 2))
-         (buffer (make-array row-count :fill-pointer row-count)))
+  (let* ((row-count +display-terminal-row-count+)
+         (buffer (make-array row-count
+                             :element-type t
+                             :initial-element nil
+                             :fill-pointer row-count)))
+    (declare (type (integer 1 16) row-count)
+             (type (vector t 16) buffer))
     (dotimes (index row-count buffer)
       (setf (aref buffer index)
             (make-string +display-width+)))))
 
 (defun %make-render-job-buffer (parallelism)
   "Allocate reusable batch-job records for PARALLELISM workers."
-  (let ((buffer (make-array parallelism)))
+  (declare (type (integer 1 *) parallelism))
+  (let ((buffer (make-array parallelism
+                            :element-type t
+                            :initial-element nil)))
     (dotimes (index parallelism buffer)
       (setf (aref buffer index)
             (%make-render-batch-job nil nil 0 0)))))
 
 (defun %render-batch-job (job pipeline)
   "Render the rows assigned to JOB and signal its completion."
+  (declare (type render-batch-job job)
+           (type chip8-render-pipeline pipeline))
   (let* ((snapshots (render-batch-job-snapshots job))
          (results (render-batch-job-results job))
          (start (render-batch-job-start job))
          (end (render-batch-job-end job))
          (completed 0)
          (caught-condition nil))
+    (declare (type (vector t *) snapshots results)
+             (type fixnum start end completed))
     (handler-case
         (loop for snapshot-index from start below end
-              do (setf (aref results snapshot-index)
-                       (prog1
-                           (%render-row-snapshot
-                            (aref snapshots snapshot-index)
-                            (aref results snapshot-index))
-                         (incf completed))))
+              do (let ((snapshot
+                         (the render-row-snapshot
+                              (aref snapshots snapshot-index)))
+                       (reusable-characters
+                         (the (or null string)
+                              (aref results snapshot-index))))
+                   (declare (type fixnum snapshot-index)
+                            (type render-row-snapshot snapshot)
+                            (type (or null string) reusable-characters))
+                   (setf (aref results snapshot-index)
+                         (prog1
+                             (%render-row-snapshot
+                              snapshot
+                              reusable-characters)
+                           (incf completed)))))
       (error (condition)
         (setf caught-condition condition)))
     (setf (render-batch-job-caught-condition job) caught-condition)
@@ -85,6 +116,8 @@ timeout before propagating the original condition."
 
 (defun %render-worker-loop (jobs-channel ready-channel pipeline)
   "Announce readiness, then render jobs until the job channel closes."
+  (declare (type render-channel jobs-channel ready-channel)
+           (type chip8-render-pipeline pipeline))
   (send ready-channel t)
   (loop
     (multiple-value-bind (job received-p) (recv jobs-channel)
@@ -110,7 +143,7 @@ SHUTDOWN-TIMEOUT is passed directly to the native cl-concurrent-kit
 executor shutdown operation."
 
   (unless parallelism-supplied-p
-    (setf parallelism 4))
+    (setf parallelism +concurrent-render-default-parallelism+))
   (unless parallel-threshold-supplied-p
     (setf parallel-threshold 13))
   (check-type parallelism (integer 1 *))
@@ -187,10 +220,12 @@ Closing is idempotent and serialized with rendering."
 
 (defun chip8-render-pipeline-submitted-rows (pipeline)
   "Return the number of rows submitted to worker tasks."
+  (check-type pipeline chip8-render-pipeline)
   (atomic-counter-value (chip8-render-pipeline-submitted-counter pipeline)))
 
 (defun chip8-render-pipeline-completed-rows (pipeline)
   "Return the number of row tasks completed by workers or the serial path."
+  (check-type pipeline chip8-render-pipeline)
   (atomic-counter-value (chip8-render-pipeline-completed-counter pipeline)))
 
 (defun chip8-render-pipeline-serial-rows (pipeline)
@@ -202,8 +237,10 @@ Closing is idempotent and serialized with rendering."
 
 (defun chip8-render-pipeline-queue-depth (pipeline)
   "Return PIPELINE's current executor queue depth."
+  (check-type pipeline chip8-render-pipeline)
   (executor-queue-depth (chip8-render-pipeline-executor pipeline)))
 
 (defun chip8-render-pipeline-high-water-mark (pipeline)
   "Return PIPELINE executor's maximum observed queue depth."
+  (check-type pipeline chip8-render-pipeline)
   (executor-high-water-mark (chip8-render-pipeline-executor pipeline)))

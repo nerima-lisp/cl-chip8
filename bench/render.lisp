@@ -232,7 +232,9 @@
        (parallel-threshold
          (positive-integer-env "CL_CHIP8_BENCH_PARALLEL_THRESHOLD" 13))
        (parallelism
-         (positive-integer-env "CL_CHIP8_BENCH_PARALLELISM" 4)))
+         (positive-integer-env
+          "CL_CHIP8_BENCH_PARALLELISM"
+          cl-chip8::+concurrent-render-default-parallelism+)))
   (dolist (fixture
            (quote ((:sparse nil 1)
                    (:medium nil 8)
