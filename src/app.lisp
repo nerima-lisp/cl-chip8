@@ -1,20 +1,4 @@
-;;;; src/app.lisp -- the thin real-IO loop, mirroring cl-nyancat's own
-;;;; %ADVANCE-CHIP8!'s deterministic tick logic is testable without a terminal.
-;;;; The outer loop still reads *STANDARD-INPUT* and drives cl-tty-kit's realtime
-;;;; raw-mode I/O, so that integration boundary is covered by real-TTY smoke tests.
-;;;;
-;;;; Unlike cl-nyancat's WORLD, this application's actual CPU/display state
-;;;; lives entirely in the *RULEBASE*/*MEMORY*/*DISPLAY* globals, not
-;;;; in the per-tick STATE value TICK-LOOP-RUN-REALTIME threads through
-;;;; ADVANCE/RENDER/STOP. CHIP8-APP below only carries what the realtime loop
-;;;; itself needs: the renderer, the input decoder, the configured clock
-;;;; speed, and the quit flag an Escape/Ctrl-C key event sets.
-;;;;
-;;;; No resize polling: unlike cl-nyancat's terminal-filling animation,
-;;;; CHIP-8's framebuffer is a fixed 64x32 grid (see render.lisp's
-;;;; +SCREEN-WIDTH+/+SCREEN-HEIGHT+), so there is no terminal size to adapt
-;;;; to -- a deliberate omission of the reference pattern's resize-polling
-;;;; half, not an oversight.
+;;;; Realtime terminal loop for the fixed 64x32 CHIP-8 framebuffer.
 (in-package #:cl-chip8)
 
 (defparameter +default-clock-hz+ 700
@@ -53,8 +37,7 @@ raw mode because ISIG is cleared, so it arrives as input rather than SIGINT."
 
 (defun %read-available-string (stream)
   "Return every character currently buffered on STREAM, without blocking, as
-a string. See cl-nyancat's app.lisp for why READ-CHAR-NO-HANG is the right
-tool here rather than cl-tty-kit's fd-level reader."
+a string."
   (with-output-to-string (out)
     (loop for char = (read-char-no-hang stream nil nil)
           while char

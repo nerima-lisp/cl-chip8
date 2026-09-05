@@ -8,26 +8,9 @@
 ;;;;   a s d f      7 8 9 E
 ;;;;   z x c v      A 0 B F
 ;;;;
-;;;; Press/hold approximation: cl-tty-kit's KEY-EVENT-KIND is :PRESS,
-;;;; :REPEAT, or :RELEASE, but "terminals report :REPEAT and :RELEASE only
-;;;; under the kitty keyboard protocol; otherwise every event is :PRESS" (see
-;;;; cl-tty-kit's keys.lisp). This application does not enable the kitty
-;;;; keyboard enhancements (see app.lisp), so in practice every decoded event
-;;;; for a held key is a fresh :PRESS -- a real keyboard's OS-level key-repeat
-;;;; delivers a steady stream of them for as long as the key stays down, and
-;;;; nothing at all once it's released. There is therefore no direct signal
-;;;; for "the key was just released" to retract a KEY-DOWN fact on.
-;;;;
-;;;; The approximation: every mapped :PRESS (or :REPEAT, handled identically
-;;;; in case kitty mode is ever enabled later) asserts KEY-DOWN and resets
-;;;; that key's hold countdown to +KEY-HOLD-TICKS+ 60Hz ticks. KEYPAD-STEP!,
-;;;; called once per tick from the main loop alongside the timers, counts
-;;;; every currently-down key's countdown toward zero and retracts KEY-DOWN
-;;;; once it expires. A key genuinely held down keeps re-arming its
-;;;; countdown via repeated :PRESS events faster than it can expire; a key
-;;;; that was tapped once and released goes quiet, and its KEY-DOWN fact
-;;;; disappears +KEY-HOLD-TICKS+ ticks later. A real :RELEASE event (should
-;;;; kitty mode ever be enabled) is handled precisely instead of by timeout.
+;;;; Without kitty keyboard mode, held keys arrive as repeated :PRESS events.
+;;;; Mapped presses reset a 60Hz hold countdown; KEYPAD-STEP! retracts the
+;;;; KEY-DOWN fact when the countdown expires. :RELEASE is handled directly.
 (in-package #:cl-chip8)
 
 (defun keypad-reset! ()

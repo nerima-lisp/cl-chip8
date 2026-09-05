@@ -46,31 +46,9 @@
 ;; XOR erased a previously set pixel, else 0. This is DXYN's sprite-row/bit
 ;; iteration; display.lisp owns only the single-pixel XOR primitive.
 ;;
-;; Wrapping is the mainstream CHIP-8 / COSMAC VIP split, and the two halves
-;; are deliberately different. The sprite ORIGIN wraps modulo the display
-;; (VX=70 draws at column 6, VY=40 at row 8, VX=64 at column 0), so MOD is
-;; applied once to the resolved VX/VY below, before any row/bit offset is
-;; added. The sprite BODY then CLIPS: a wrapped origin at column 60 draws
-;; columns 60-63 and drops what would be 64-67 rather than folding them back
-;; to columns 0-3. Applying MOD to the final coordinate instead would wrap
-;; the body too, which is the behavior real ROMs do not expect.
-;;
-;; Because MOD's result is non-negative for a positive divisor, ORIGIN-X and
-;; ORIGIN-Y are already in range and the row/bit offsets only ever push them
-;; upward, so the lower-bound half of the old range test is unreachable and
-;; is gone; only the upper-bound clip remains.
-;;
-;; This function, STORE-REGISTERS, and LOAD-REGISTERS below all read/write
-;; *MEMORY* via direct AREF rather than the MEMORY-READ/MEMORY-WRITE foreign
-;; predicates that back every other memory access in this file: each already
-;; loops over a whole sprite row or register block on the Lisp side (a single
-;; Prolog clause body cannot express that iteration itself), so routing every
-;; byte of it through a foreign-predicate round trip would cost real
-;; performance for no benefit. This is a deliberate bypass, not an oversight
-;; -- and it is exactly why each of the three calls CHECK-MEMORY-ACCESS (see
-;; memory.lisp) once before its loop: that primitive is the chokepoint
-;; MEMORY-READ/MEMORY-WRITE get for free, so these three ask for it
-;; explicitly instead.
+;; The origin wraps modulo the display; sprite rows and bits clip at the
+;; lower-right edge. Validate the sprite range once, then read *MEMORY*
+;; directly while XORing pixels.
 (define-foreign-predicate
  (draw-sprite i vx vy n collision)
  (rulebase environment depth emit)

@@ -1,79 +1,23 @@
-;;;; src/opcodes.lisp -- the ordered STEP/6 rulebase: all 35 CHIP-8 opcodes.
+;;;; The ordered STEP/6 rulebase for CHIP-8 instructions.
 ;;;;
-;;;; Architecture recap (see cl-chip8.asd's :long-description and the README):
-;;;; instruction dispatch is driven by genuine Prolog goal resolution over
-;;;; *RULEBASE*, not a Lisp COND/CASE. A 16-bit opcode is fetched from
-;;;; *MEMORY* at the current PC and decoded in Lisp into six plain integers
-;;;; -- (FAMILY X Y N KK NNN), the top nibble, second nibble, third nibble,
-;;;; fourth nibble, last byte, and last three nibbles -- and EXECUTE-
-;;;; INSTRUCTION! resolves exactly one `(step Family X Y N Kk Nnn)' goal
-;;;; against the ~35-clause STEP/6 rulebase below. Which clause fires is
-;;;; decided by real unification: FAMILY gives cl-prolog-kit's first-argument
-;;;; indexing its top-level split, and within a family, N or KK (already
-;;;; bound to a concrete integer by the caller) unifies against a literal in
-;;;; the clause head to pick the sub-opcode -- e.g. `8XY6' and `8XY7' are two
-;;;; different STEP clauses distinguished purely by N unifying with 6 or 7,
-;;;; not by an if/case reading N in Lisp. `:when' guards (a cl-prolog-kit DSL
-;;;; feature that compiles to a plain Lisp closure over already-bound
-;;;; variables -- see cl-prolog-kit's rule-dsl.md) cover the handful of branches
-;;;; that depend on a runtime VALUE rather than the static opcode pattern:
-;;;; CALL's stack-depth check and SUB/SUBN's borrow flag.
-;;;;
-;;;; PC ownership: EVERY step clause below retracts and reasserts the `pc'
-;;;; fact itself, including the ordinary case (old value + 2). This is a
-;;;; deliberate simplification over one plausible split the brief sketches
-;;;; -- "Lisp auto-advances PC by 2 except where an opcode sets it itself" --
-;;;; which would require EXECUTE-INSTRUCTION! to know, for every family,
-;;;; whether that opcode already moved PC, duplicating the opcode-family
-;;;; knowledge that already lives in this rulebase. Making PC advancement
-;;;; uniform (every clause owns it, no exceptions but FX0A's block-until-
-;;;; keypress clause, which deliberately leaves PC untouched so the same
-;;;; instruction re-fetches next cycle) keeps EXECUTE-INSTRUCTION! completely
-;;;; ignorant of which opcode ran: it fetches, decodes, resolves STEP once,
-;;;; and never touches PC itself.
-;;;;
-;;;; Ordering matters within a family: cl-prolog-kit's first-argument indexing on
-;;;; FAMILY is purely an optimization -- clauses of the same predicate are
-;;;; still tried in the definition order this file lists them, per
-;;;; cl-prolog-kit's semantics.md. Family 0's three specific-NNN-value clauses
-;;;; (00E0, 00EE non-empty stack, 00EE empty stack) are therefore listed
-;;;; before its catch-all 0NNN/SYS clause, and EX9E/EXA1's guarded clause
-;;;; comes before its unconditional fallback -- see each family's comment
-;;;; below for why no explicit negation is needed for that fallback.
-;;;;
-;;;; The Lisp-side primitives used by these clauses live in
-;;;; OPCODE-RUNTIME.LISP (fetch/decode/execute) and OPCODE-FOREIGN.LISP
-;;;; (stack conditions, bitwise/random operations, sprite drawing, and
-;;;; register transfers). Keeping those forms outside this ordered table
-;;;; makes the rulebase easier to inspect without changing clause order.
+;;;; EXECUTE-INSTRUCTION! decodes an opcode and resolves one STEP/6 goal.
+;;;; Clauses are ordered from specific cases to family fallbacks.
 (in-package #:cl-chip8)
 
 ;;; --------------------------------------------------------------------------
 ;;; The STEP/6 rulebase: all 35 CHIP-8 instructions.
 ;;; --------------------------------------------------------------------------
 ;;;
-;;; *RULEBASE* is already bound by state.lisp's DEFVAR when this file loads
-;;; (:SERIAL T in cl-chip8.asd). EXTEND-RULEBASE returns a new rulebase value
-;;; that shadow-extends its base, so the guarded SETF below installs the
-;;; ordered opcode clauses once and re-points *RULEBASE* at that value.
-;;; Keeping the installation guard separate from RESET-CPU-STATE! is
-;;; intentional: reset retracts dynamic CPU facts, while source reloads must
-;;; not accumulate duplicate opcode clauses in the persistent rulebase.
+;;; Install the ordered opcode clauses once. CPU reset only changes dynamic
+;;; facts and does not rebuild the rulebase.
 (defvar *opcodes-installed-p* nil "True after the ordered opcode rulebase has been installed.")
 
 (defmacro %extend-opcode-rulebase-once (base &body clauses)
   "Return BASE extended with CLAUSES, but never extend it twice.
 
-The cl-prolog-kit DSL quotes clause bodies before compiling them, so a constant
-used by a `:WHEN' guard or by an `IS' arithmetic goal must be substituted
-while this macro still owns the source forms -- a symbolic reference left in
-place would reach the DSL as an ordinary unbound Prolog atom. Each marker
-listed below is replaced by its SYMBOL-VALUE here, which is what lets the
-clauses name +CALL-STACK-LIMIT+, +FONTSET-ADDRESS+, and +MEMORY-SIZE+
-instead of repeating 16, 80, and 4096 as bare literals. Every marker must
-name a constant already defined when this file loads: :SERIAL T in
-cl-chip8.asd puts state-types, fontset, and memory-types all ahead of
-opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
+The DSL quotes clause bodies before compiling them, so constants used in
+guards and arithmetic goals must be substituted before the forms are passed to
+the rulebase. Markers are replaced by their SYMBOL-VALUE during expansion."
   (let ((base-variable (gensym "BASE-"))
         (expanded-clauses
           (reduce (lambda (forms marker)
@@ -98,11 +42,7 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
          (is ?new-pc (+ ?old-pc 2))
          (assertz (pc ?new-pc)))
 
-        ;; 00EE RET, non-empty call stack: pop it into PC. Combining the
-        ;; empty/non-empty test with the mutation in one RETRACT is safe --
-        ;; RETRACT only removes a fact when its pattern actually unifies, so
-        ;; an empty stack (a bare NIL, not a cons) simply fails this clause
-        ;; with no side effect, falling through to the next one below.
+        ;; 00EE RET, non-empty call stack: pop it into PC.
         ((step 0 ?x ?y ?n ?kk 238)
          (retract (call-stack (?return-address . ?rest)))
          (assertz (call-stack ?rest))
@@ -131,15 +71,7 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
 
         ;; -- Family 2: 2NNN CALL addr --
 
-        ;; Room on the call stack: push the return address (the instruction
-        ;; after this CALL) and jump. The depth guard is tested (a
-        ;; non-destructive fact read plus a pure :WHEN predicate) before any
-        ;; mutation, so a guard failure here never leaves a half-applied CALL
-        ;; behind for the overflow clause below to inherit.
-        ;; %EXTEND-OPCODE-RULEBASE-ONCE substitutes +CALL-STACK-LIMIT+ before
-        ;; cl-prolog-kit's clause DSL quotes this body at EXTEND-RULEBASE
-        ;; macro-expansion time. Keeping the marker here makes the guard and
-        ;; the public state constant share one source of truth.
+        ;; Room on the call stack: push the return address and jump.
         ((step 2 ?x ?y ?n ?kk ?nnn)
          (call-stack ?stack)
          (:when (< (length ?stack) +call-stack-limit+))
@@ -150,8 +82,7 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
          (retract (pc ?old-pc))
          (assertz (pc ?nnn)))
 
-        ;; No room: overflow. The same marker is expanded before the DSL
-        ;; receives this clause; see the guard clause just above.
+        ;; No room: overflow.
         ((step 2 ?x ?y ?n ?kk ?nnn)
          (call-stack ?stack)
          (:when (>= (length ?stack) +call-stack-limit+))
@@ -159,12 +90,6 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
 
         ;; -- Family 3: 3XKK SE Vx, byte --
         ;;
-        ;; The equality test below is plain unification, not an arithmetic
-        ;; comparison goal: (v ?x ?kk) reuses ?KK, already bound to the
-        ;; literal byte STEP was called with, as register X's expected
-        ;; current value, so the goal only succeeds when they are the same
-        ;; number. This needs no `=:=' import at all.
-
         ;; Vx == KK: skip (pc+4).
         ((step 3 ?x ?y ?n ?kk ?nnn)
          (v ?x ?kk)
@@ -396,23 +321,7 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
 
         ;; -- Family 11 (B): BNNN JP V0, addr --
         ;;
-        ;; NNN is capped to 12 bits by the opcode encoding, but V0 is a full
-        ;; runtime byte, so NNN + V0 reaches 0xFFF + 0xFF = 4350 -- past the
-        ;; 4096-byte address space. Left unmasked, the fault does not surface
-        ;; here at all: PC is simply set out of range and the NEXT fetch
-        ;; signals CHIP8-MEMORY-ACCESS-OUT-OF-BOUNDS, blaming an instruction
-        ;; that never ran. Masking the sum to 12 bits puts PC back inside the
-        ;; address space, which is also what the wraparound behavior of the
-        ;; original interpreter's 12-bit program counter produced.
-        ;;
-        ;; This bounds PC; it does not make the next fetch infallible. PC =
-        ;; 4095 is in range and still signals, because FETCH-OPCODE reads two
-        ;; bytes (CHECK-MEMORY-ACCESS ADDRESS 2 in opcode-runtime.lisp). Note
-        ;; the behavior change this buys: a ROM that used to fault on an
-        ;; out-of-range jump now wraps and keeps running, so the corpus smoke
-        ;; test loses that fault as a signal.
-        ;; +MEMORY-SIZE+ is substituted for its value before the DSL quotes
-        ;; this body; see %EXTEND-OPCODE-RULEBASE-ONCE above.
+        ;; BNNN wraps the target to the 12-bit address space before updating PC.
         ((step 11 ?x ?y ?n ?kk ?nnn)
          (v 0 ?v0)
          (is ?target (mod (+ ?nnn ?v0) +memory-size+))
@@ -444,12 +353,6 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
 
         ;; -- Family 14 (E): EX9E SKP Vx, EXA1 SKNP Vx, sub-dispatched on KK --
         ;;
-        ;; Neither fallback below needs an explicit negation-as-failure goal:
-        ;; (key-down ?vx) simply has no solutions when that key is not
-        ;; pressed, which is exactly Prolog's natural clause-fallback
-        ;; trigger, so the second clause for each KK value is reached
-        ;; precisely when the first one's key-down test failed.
-
         ;; EX9E SKP Vx: skip (pc+4) if key Vx is pressed.
         ((step 14 ?x ?y ?n 158 ?nnn)
          (v ?x ?vx)
@@ -522,22 +425,7 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
          (is ?new-pc (+ ?old-pc 2))
          (assertz (pc ?new-pc)))
 
-        ;; FX1E ADD I, Vx: no CHIP-8-standard overflow flag, VF untouched. I
-        ;; wraps mod 65536 (16 bits), not mod 4096 (12 bits) like ANNN/BNNN's
-        ;; NNN above: NNN is capped to 12 bits by the opcode ENCODING itself
-        ;; (DECODE-OPCODE's (ldb (byte 12 0) ...)), a static fact about the
-        ;; instruction, whereas FX1E's addend is a runtime register value
-        ;; that repeated execution can push arbitrarily high with no encoding
-        ;; to cap it -- unmasked, that is exactly finding #2 of the security
-        ;; review this comment documents. 16 bits (not 12) is the deliberate
-        ;; choice: some ROMs rely on I temporarily exceeding 0xFFF as an
-        ;; overflow-detection trick (the "spaceflight" quirk), so masking to
-        ;; 12 bits here would silently break a real ROM behavior there is no
-        ;; other reason to reject. This does NOT reopen finding #1: I
-        ;; being a 16-bit integer only bounds the register's own storage --
-        ;; FX33/FX55/FX65/DXYN each still call CHECK-MEMORY-ACCESS (see
-        ;; memory.lisp) before touching *MEMORY* through I, and that is what
-        ;; actually rejects an I left outside [0, +MEMORY-SIZE+).
+        ;; FX1E ADD I, Vx: VF is unchanged and I wraps modulo 65536.
         ((step 15 ?x ?y ?n 30 ?nnn)
          (v ?x ?vx)
          (retract (i-register ?i))
@@ -551,17 +439,8 @@ opcodes.lisp, so each SYMBOL-VALUE is available at expansion time."
         ;; FX29 LD F, Vx: I = fontset glyph address for the hex digit in Vx,
         ;; i.e. +FONTSET-ADDRESS+ (0x50 = 80) + 5 * (Vx & 0xF).
         ;;
-        ;; The low-nibble mask is load-bearing, not defensive. Vx is a full
-        ;; byte but the fontset holds exactly 16 five-byte glyphs, so only
-        ;; 0-15 names one: unmasked, Vx=16 points one byte past the fontset's
-        ;; 80-byte block and Vx=255 points at 1355, arbitrary RAM that a
-        ;; following DXYN would then happily render as a glyph. MOD by 16
-        ;; keeps every FX29 result inside [80, 155], the fontset's own span.
-        ;;
-        ;; +FONTSET-ADDRESS+ is substituted for its value before cl-prolog-kit's
-        ;; clause DSL quotes this body; see %EXTEND-OPCODE-RULEBASE-ONCE
-        ;; above, which is the same mechanism family 2's guard uses for
-        ;; +CALL-STACK-LIMIT+.
+        ;; Vx is masked to a hexadecimal digit before calculating the glyph
+        ;; address.
         ((step 15 ?x ?y ?n 41 ?nnn)
          (v ?x ?vx)
          (is ?addr (+ +fontset-address+ (* 5 (mod ?vx 16))))

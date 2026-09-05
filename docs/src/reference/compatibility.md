@@ -72,14 +72,8 @@ individually below and are not configurable.
   release.
 - `BNNN` is the original `JP V0, addr`: the jump target is `NNN + V0` taken
   modulo 4096. It is not the SUPER-CHIP `BXNN` reading, which would use `VX`
-  selected by the high nibble of the address. The mask is load-bearing rather
-  than cosmetic: `NNN` reaches `0xFFF` and `V0` is a full byte, so the raw sum
-  reaches 4350 -- past the address space. Unmasked, the program counter would
-  simply go out of range and the *next* fetch would signal
-  `chip8-memory-access-out-of-bounds`, blaming an instruction that never ran.
-  Wrapping matches the original interpreter's 12-bit program counter. It
-  bounds `PC` but does not make the next fetch infallible: `PC = 4095` is in
-  range and still signals, because a fetch reads two bytes.
+  selected by the high nibble of the address. A fetch at `PC = 4095` still
+  fails because an instruction occupies two bytes.
 - `FX29` masks `Vx` to its low nibble before selecting a digit sprite, so the
   address is `+fontset-address+ + 5 * (Vx mod 16)`. The fontset holds exactly
   sixteen five-byte glyphs; without the mask, `Vx = 255` would point `I` at
@@ -140,11 +134,6 @@ CL_CHIP8_ROM_CORPUS_BUDGET=10000 \
   sbcl --script run-tests.lisp
 ```
 
-If you want the ROM bytes pinned as well as the commit, record a checksum
-manifest on one machine and verify it on another, or after a later re-clone.
-Generating a manifest and immediately checking it against the same files
-verifies nothing at that moment.
-
 The corpus run is a CPU smoke test. It initializes the machine, loads each
 ROM, and executes the budget in a loop; it does not supply input, advance
 timers, or render a terminal frame.
@@ -167,31 +156,3 @@ There is no per-ROM-class breakdown. Discovery walks every `.ch8` file under
 the root and never reads chip8Archive's metadata, so the run cannot tell a
 `chip8` program from an `schip` or `xochip` one. Any figure split that way came
 from reading the archive's metadata by hand, not from this command.
-
-### A recorded past run
-
-The following was observed once against the pinned commit, by cross-referencing
-the archive's own metadata with per-ROM outcomes. It is a historical record,
-not output this procedure reproduces, and it is not re-measured on each
-release:
-
-- All 48 `chip8` ROMs completed 2,000 instructions, and all 48 also completed
-  a 10,000-instruction run.
-- 23 of 25 `schip` ROMs completed 2,000 instructions; 2 stopped at an
-  unsupported opcode.
-- 1 of 28 `xochip` ROMs completed 2,000 instructions; 5 stopped at an
-  unsupported opcode and 22 were rejected for exceeding the 3,584-byte ROM
-  capacity.
-- No memory-access or stack errors occurred across the 101 ROMs.
-
-Whether those counts predate the `BNNN` mask-to-4096 change described above is
-unresolved. That change converts an out-of-range jump from a fault into a wrap,
-so the corpus no longer sees that particular fault at all: a rerun could differ
-from the figures above without anything having regressed.
-
-Read the numbers narrowly in any case. "Completed N instructions without
-erroring" does not distinguish a correctly executed ROM from one whose
-unsupported opcodes were silently ignored -- the family-0 catch-all described
-above turns every SUPER-CHIP display opcode into a no-op that a smoke test
-cannot see. The `schip` and `xochip` figures are compatibility limits, not
-gameplay compatibility claims.

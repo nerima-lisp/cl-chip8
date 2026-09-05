@@ -1,14 +1,7 @@
 ;;;; t/opcodes-alu-test.lisp -- 6XKK, 7XKK, and the 8XY* ALU family.
 ;;;;
-;;;; On VF assertions: RESET-MACHINE! zeroes all 16 registers, VF included
-;;;; (src/state.lisp:61-62 asserts `(v index 0)` for every index). An
-;;;; expectation that VF is 0 after an opcode is therefore satisfied by the
-;;;; fixture alone -- it would still pass if the opcode never wrote VF, or
-;;;; wrote the wrong value and something else zeroed it. Every such test below
-;;;; seeds VF with +VF-SENTINEL+ before acting, so only a write performed by
-;;;; the opcode under test can produce the expected 0. Assertions that expect
-;;;; VF to be 1 need no sentinel: 0 is already the pre-act value, so 1 can only
-;;;; come from the opcode.
+;;;; Tests expecting VF to become zero seed it with +VF-SENTINEL+ first, so the
+;;;; assertion verifies that the opcode writes VF.
 (in-package #:cl-chip8/test)
 
 (defparameter +vf-sentinel+ #xAA
@@ -31,10 +24,7 @@
     (expect (register-value 0) :to-be 8))
   (it "wraps mod 256 and leaves VF untouched"
     (set-register! 0 250)
-    ;; 7XKK's clause (src/opcodes.lisp:225-232) asserts no `(v 15 ...)` fact at
-    ;; all, so the contract is "VF is unchanged", not "VF is 0". Seeding the
-    ;; sentinel is what distinguishes the two: without it the assertion holds
-    ;; even for an implementation that clobbers VF with 0.
+    ;; 7XKK leaves VF unchanged; the sentinel distinguishes that from zeroing.
     (set-register! 15 +vf-sentinel+)
     (run-instruction! #x700A)
     (with-soft-assertions
@@ -77,8 +67,7 @@
   (it "sets VF to 0 and the sum when it fits in a byte"
     (set-register! 0 10)
     (set-register! 1 20)
-    ;; The carry write is src/opcodes.lisp:285-286; the sentinel is what makes
-    ;; that write, rather than the fixture, responsible for the expected 0.
+    ;; The sentinel makes the carry write observable when the expected flag is 0.
     (set-register! 15 +vf-sentinel+)
     (run-instruction! #x8014)
     (with-soft-assertions

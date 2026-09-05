@@ -1,40 +1,9 @@
-;;;; t/corpus-test.lisp -- FR-010: the ROM corpus smoke test.
+;;;; ROM corpus smoke tests. The corpus is supplied through
+;;;; CL_CHIP8_ROM_CORPUS; no ROM bytes are vendored here.
 ;;;;
-;;;; Every other ROM in this suite is hand-authored inline (t/integration-
-;;;; test.lisp's is 14 bytes). The project's strongest correctness evidence has
-;;;; always been something else: running the JohnEarnest/chip8Archive corpus --
-;;;; real, third-party, `chip8`-class programs -- through the interpreter and
-;;;; observing that none of them drives it into a memory or stack fault. That
-;;;; was recorded once as a manual REPL procedure in prose. Prose is not
-;;;; evidence anyone can re-run, so this file makes it a test.
-;;;;
-;;;; No ROM bytes are vendored here and nothing on this path touches the
-;;;; network: `git ls-files | grep -i 'ch8$'` returns nothing today and must
-;;;; keep doing so. The corpus is supplied by the operator through the
-;;;; CL_CHIP8_ROM_CORPUS environment variable, pointing at a directory tree of
-;;;; .ch8 files (clone JohnEarnest/chip8Archive and point at its roms/).
-;;;;
-;;;; When that variable is unset the corpus spec SKIPS, with a reason the
-;;;; reporter prints, and the run's summary line carries a non-zero skipped
-;;;; count. It does not quietly pass: a suite that gets shorter without saying
-;;;; so is exactly the false green this file exists to prevent.
-;;;;
-;;;; The remaining DESCRIBEs in this file need no corpus. They run on every
-;;;; invocation, against synthetic ROMs written to a temporary directory, and
-;;;; they exist to prove that the corpus machinery above is not inert:
-;;;;
-;;;;   - that the budget parser rejects a budget too small to prove anything,
-;;;;     rather than silently falling back to the default;
-;;;;   - that ROM discovery actually descends subdirectories and actually
-;;;;     filters on the .ch8 type, since a discovery function that silently
-;;;;     returns NIL would make the corpus spec pass over an empty set;
-;;;;   - that each outcome class -- including every fault class -- is reachable,
-;;;;     so the corpus spec's "no faults" assertion is known to be capable of
-;;;;     going red.
-;;;;
-;;;; A corpus spec whose discovery is broken and whose fault classifier never
-;;;; fires would report the same green as a healthy one. Those three groups are
-;;;; what distinguishes the two.
+;;;; Without the environment variable, the corpus spec reports a skip. The
+;;;; remaining specs use synthetic ROMs to test discovery, budget parsing, and
+;;;; outcome classification without requiring the external corpus.
 (in-package #:cl-chip8/test)
 
 ;;; ---------------------------------------------------------------------------
@@ -50,10 +19,8 @@ Unset means the corpus spec skips. See this file's header.")
 
 (defparameter *rom-corpus-default-budget* 2000
   "Instructions executed per ROM when the budget variable is unset.
-2000 is the smaller of the two budgets the original manual procedure used; it
-is deep enough to carry a typical chip8Archive program well past its
-initialization and into its main loop, which is where a sprite draw or a
-register-block load actually exercises the memory bounds check.")
+The budget carries a typical chip8Archive program through initialization and
+into its main loop, where memory bounds checks are exercised.")
 
 (defparameter *rom-corpus-outcome-order*
   '(:completed
@@ -79,10 +46,8 @@ reported; neither fails the run.")
 
 (defun %corpus-environment-value (name)
   "Return environment variable NAME's value with surrounding blanks trimmed, or
-NIL when it is unset or blank. Follows the HOST-KIT:GETENV shape used by
-tools/coverage.lisp and bench/render.lisp -- the only two getenv call sites in
-the repository. Treating a blank value as unset means `CL_CHIP8_ROM_CORPUS=`
-skips rather than failing on a corpus root named by the empty string."
+NIL when it is unset or blank. Treating a blank value as unset means
+`CL_CHIP8_ROM_CORPUS=` skips rather than failing on an empty corpus root."
   (let ((value (host-kit:getenv name)))
     (when value
       (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) value)))
@@ -153,21 +118,19 @@ to, so this descends rather than listing ROOT's direct entries."
 
 Returns (VALUES OUTCOME CONDITION): OUTCOME is a member of
 *ROM-CORPUS-OUTCOME-ORDER* and CONDITION is the condition that ended the run,
-NIL when the whole budget was executed. The initialization sequence is the one
-the original manual procedure used: RESET-CPU-STATE!, MEMORY-RESET!,
-DISPLAY-RESET!, LOAD-FONTSET-INTO-MEMORY!, LOAD-ROM-FILE!, KEYPAD-RESET!, then
-EXECUTE-INSTRUCTION! in a loop.
+NIL when the whole budget was executed. The machine is initialized with
+RESET-CPU-STATE!, MEMORY-RESET!, DISPLAY-RESET!,
+LOAD-FONTSET-INTO-MEMORY!, LOAD-ROM-FILE!, and KEYPAD-RESET!, then executes
+instructions in a loop.
 
 No input is delivered and no timer is advanced, so this is a CPU smoke test and
 nothing here asserts on pixels. FX0A (block until a keypress) leaves PC
 untouched by design, so a ROM waiting for input spins in place and consumes its
 budget rather than blocking the suite.
 
-The final ERROR clause is deliberately broad and deliberately classified as a
-fault: an unexpected condition escaping the interpreter is exactly what this
-test is looking for, and swallowing it into a passing outcome would be the
-whole point lost. Leaves the machine holding the last ROM's state; every caller
-resets before it reads anything."
+The final ERROR clause classifies unexpected interpreter conditions as faults
+instead of swallowing them. The machine retains the last ROM's state; callers
+reset it before reading anything."
   (handler-case
       (progn
         (reset-cpu-state!)
@@ -334,24 +297,19 @@ temporary-file API."
 (describe "chip8Archive ROM corpus smoke test (FR-010)"
   (it "runs every .ch8 ROM under CL_CHIP8_ROM_CORPUS with no memory or stack fault"
     (let ((root (%corpus-root)))
-      ;; SKIP, not a silent pass: the reporter prints [SKIP] with this reason
-      ;; and the summary line's skipped count goes up, so an unconfigured run
-      ;; is visibly missing this coverage rather than quietly shorter.
+      ;; An unconfigured corpus is reported as a skip.
       (unless root
         (skip (format nil "~A is unset. Set it to a directory tree of .ch8 files ~
                            (for example a clone of JohnEarnest/chip8Archive) to run ~
                            the corpus smoke test."
                       *rom-corpus-root-variable*)))
-      ;; Configured but wrong is an error, not a skip. The operator asked for
-      ;; the corpus run; silently skipping it would hide the typo.
+      ;; A configured but missing directory is an error.
       (unless (host-kit:directory-exists-p root)
         (error "~A names ~A, which is not an existing directory."
                *rom-corpus-root-variable* root))
       (let ((budget (%corpus-budget))
             (roms (%corpus-rom-files root)))
-        ;; Non-vacuity gate. A configured root holding no .ch8 file would send
-        ;; every assertion below over an empty set and report a green that
-        ;; proves nothing; this is the assertion that makes that case red.
+        ;; Require at least one ROM when a corpus is configured.
         (expect (length roms) :to-be-greater-than 0)
         (let ((outcomes (%corpus-outcomes roms budget)))
           (%report-corpus-summary root budget outcomes *standard-output*)
@@ -396,9 +354,7 @@ temporary-file API."
       (%write-corpus-rom root "shouty.CH8" (%looping-rom-bytes))
       (expect (length (%corpus-rom-files root)) :to-be 1)))
   (it "returns an empty list for a corpus directory holding no ROM"
-    ;; The state the corpus spec's own :TO-BE-GREATER-THAN 0 gate exists to
-    ;; catch. Proving discovery really can return NIL is what makes that gate
-    ;; more than decoration.
+    ;; This is the empty-corpus case rejected by the smoke-test gate.
     (with-temp-corpus (root)
       (expect (%corpus-rom-files root) :to-equal '()))))
 
@@ -463,10 +419,7 @@ temporary-file API."
           (expect (cdr (assoc :unsupported-opcode (%corpus-tally outcomes))) :to-be 1)
           (expect (cdr (assoc :too-large (%corpus-tally outcomes))) :to-be 1)))))
   (it "names the offending ROM when one of them faults"
-    ;; The proof that the corpus spec's `(expect (%corpus-faults outcomes)
-    ;; :to-equal '())` can go red. Without this, a classifier that never
-    ;; returned a fault outcome would leave that assertion green forever
-    ;; against any corpus at all.
+    ;; Ensure fault outcomes identify the offending ROM.
     (with-temp-corpus (root)
       (%write-corpus-rom root "loop.ch8" (%looping-rom-bytes))
       (%write-corpus-rom root "oob.ch8" (%out-of-bounds-rom-bytes))

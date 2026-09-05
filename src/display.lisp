@@ -1,19 +1,8 @@
 ;;;; src/display.lisp -- the 64x32 monochrome CHIP-8 framebuffer.
 ;;;;
-;;;; Same rationale as memory.lisp: one Prolog fact per pixel would make
-;;;; RETRACT/RETRACTALL scan up to 2048 clauses on every sprite draw, so the
-;;;; framebuffer is a plain Lisp bit array, wrapped by
-;;;; DEFINE-FOREIGN-PREDICATE for Prolog callers.
-;;;;
-;;;; Boundary with opcode logic (a later stage's concern): this file owns
-;;;; single-pixel storage and mutation -- clearing, reading, and XOR-ing one
-;;;; bit while reporting whether that XOR erased a set pixel. It does NOT own
-;;;; sprite drawing: decoding DXYN's height/registers, walking a sprite's rows
-;;;; out of memory, and accumulating the VF collision flag across a whole
-;;;; sprite are opcode-decode concerns. DISPLAY-XOR-PIXEL! is the primitive
-;;;; DXYN's implementation calls once per bit; it is a display-layer primitive
-;;;; because it is about how the framebuffer stores and mutates a single bit,
-;;;; not about which opcode is running.
+;;;; The framebuffer is a Lisp bit array exposed to Prolog through foreign
+;;;; predicates. This file provides pixel-level operations; opcode.lisp owns
+;;;; sprite traversal and collision accumulation.
 (in-package #:cl-chip8)
 
 (declaim (inline %mark-display-row-dirty!

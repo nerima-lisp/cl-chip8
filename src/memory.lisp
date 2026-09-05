@@ -1,13 +1,6 @@
 ;;;; src/memory.lisp -- the 4096-byte CHIP-8 address space.
 ;;;;
-;;;; Modeling every byte as an individual Prolog fact would make RETRACT and
-;;;; RETRACTALL (which linearly scan every clause in the module) prohibitively
-;;;; expensive for a 4096-entry space that changes every instruction. Memory
-;;;; is therefore a plain Lisp array for O(1) AREF, wrapped by
-;;;; DEFINE-FOREIGN-PREDICATE below so opcode goals (a later stage's concern)
-;;;; can still read and write it from within Prolog proof search. This is the
-;;;; one deliberate exception to "CPU state lives entirely in the rulebase" --
-;;;; see the repository README and cl-chip8.asd's :long-description.
+;;;; Memory is a Lisp array exposed to Prolog through foreign predicates.
 (in-package #:cl-chip8)
 
 (declaim (inline memory-reset! check-memory-access %checked-memory-index))
@@ -65,14 +58,7 @@ repeating the bounds arithmetic at every AREF site."
            :span span))
   (values))
 
-(defun %checked-memory-index (address)
-  "Validate ADDRESS as a single-byte access and return its specialized index."
-  (check-memory-access address 1)
-  (the chip8-memory-index address))
-
-;;; Prolog-callable primitives. Opcode goals (a later stage) read and write
-;;; memory exclusively through these two, keeping every access on the same
-;;; O(1) AREF path whether it originates from Lisp or from proof search.
+;;; Prolog-callable memory primitives.
 
 (define-foreign-predicate (memory-read address value) (rulebase environment depth emit)
   (let ((resolved-address

@@ -18,8 +18,4 @@ docs/src/guide/terminal.md.")
 release -- see this file's header comment.")
 
 (defvar *key-hold-countdowns* (make-hash-table)
-  "Maps a currently-down CHIP-8 hex key to its remaining hold countdown in
-60Hz ticks. A DEFVAR, not a DEFPARAMETER, matching *RULEBASE*/*MEMORY*/
-*DISPLAY*'s own reload-safety rationale: reloading this file must not wipe
-out a machine already in the middle of a run. Call KEYPAD-RESET! to clear it
-explicitly.")
+  "Maps a down CHIP-8 hex key to its remaining hold countdown in 60Hz ticks.")

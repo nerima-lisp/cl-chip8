@@ -70,13 +70,8 @@
       (expect (search "cl-chip8" output) :to-be-truthy)))
 
   (it "reports the .asd's actual :version rather than the 0.0.0 fallback"
-    ;; %CHIP8-VERSION (src/cli.lisp) reads cl-chip8.asd's :version via
-    ;; ASDF:FIND-SYSTEM/ASDF:COMPONENT-VERSION at load time, the same
-    ;; pattern cl-nyancat's %NYANCAT-VERSION uses. This test suite runs
-    ;; against cl-chip8 loaded as an installed ASDF system (not a delivered
-    ;; image built without installed sources), so the fallback never applies
-    ;; here -- unlike cl-nyancat's own version test, this one can assert the
-    ;; exact string rather than just its shape.
+    ;; The test suite runs against cl-chip8 as an installed ASDF system, so
+    ;; the fallback for images built without installed sources does not apply.
     (let ((output (with-output-to-string (out)
                     (run-app *app* :argv '("cl-chip8" "--version") :stdout out))))
       (expect (search (asdf:component-version (asdf:find-system "cl-chip8")) output)

@@ -144,10 +144,7 @@
           (expect (chip8-invalid-opcode-opcode condition) :to-be #x5011)
           (expect (pc-value) :to-be +rom-load-address+)))))
   (it "names the offending opcode in its printed representation"
-    ;; The reader assertion above proves the OPCODE slot is populated; it does
-    ;; not run the :REPORT closure that turns the condition into the text a
-    ;; user actually sees. Formatting the condition is the only thing that
-    ;; does, so this asserts on the printed string rather than on the slot.
+    ;; Check the printed condition separately from its stored opcode.
     (let ((condition
             (handler-case
                 (progn (run-instruction! #x5011) nil)

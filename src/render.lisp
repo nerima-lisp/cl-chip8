@@ -1,17 +1,4 @@
-;;;; src/render.lisp -- blitting *DISPLAY* into a cl-tty-kit SCREEN.
-;;;;
-;;;; CHIP-8's 64x32 monochrome framebuffer is rendered two pixel-rows per
-;;;; terminal cell using half-block glyphs (U+2580 UPPER HALF BLOCK, U+2584
-;;;; LOWER HALF BLOCK, U+2588 FULL BLOCK, and plain space): the top pixel of
-;;;; each pair picks the glyph's upper half, the bottom pixel its lower half,
-;;;; so a 64x32 field renders as 64 columns by 16 terminal rows. That
-;;;; playfield sits inset by a 1-cell border on every side (see
-;;;; +PLAYFIELD-ORIGIN-X+/+PLAYFIELD-ORIGIN-Y+ below), so the top-left border
-;;;; corner has a cell of its own to carry the sound-timer indicator without
-;;;; overlapping the playfield itself -- CHIP-8 has no audio output in this
-;;;; application (see the brief's "no audio" quirk decision), so a reverse-
-;;;; video corner cell stands in for the beep for as long as the sound timer
-;;;; is nonzero.
+;;;; Render the 64x32 framebuffer as half-block terminal cells with a border.
 (in-package #:cl-chip8)
 
 (declaim (inline half-block-character)

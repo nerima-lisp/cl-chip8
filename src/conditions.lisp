@@ -1,9 +1,4 @@
-;;;; src/conditions.lisp -- the package's condition hierarchy.
-;;;;
-;;;; Every condition this package signals derives from CHIP8-ERROR, so a
-;;;; caller can catch all of them with one HANDLER-CASE clause. Public
-;;;; condition names carry the package prefix per CODING_STANDARD.md
-;;;; "コンディションの設計".
+;;;; Condition hierarchy.
 (in-package #:cl-chip8)
 
 (define-condition chip8-error (error)

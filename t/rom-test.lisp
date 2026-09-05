@@ -92,7 +92,7 @@ and cl-chip8.asd), so a plain /tmp path avoids depending on any particular
       (signals chip8-rom-too-large
         (read-file-bytes path :max-size 4)))))
 
-(describe "regular-file-p and check-regular-rom-file (security review: non-regular ROM paths)"
+(describe "regular-file-p and check-regular-rom-file"
   (it "returns false for a path that does not exist"
     (expect (regular-file-p #p"/tmp/cl-chip8-rom-test-does-not-exist-9999.ch8") :to-be-falsy))
   (it "does not signal for a path that does not exist -- left to read-file-bytes' own file-error"
@@ -104,9 +104,8 @@ and cl-chip8.asd), so a plain /tmp path avoids depending on any particular
   (it "signals chip8-rom-not-regular-file for a directory"
     (signals chip8-rom-not-regular-file (check-regular-rom-file #p"/tmp/")))
   (it "signals chip8-rom-not-regular-file for a FIFO, without blocking on it"
-    ;; The whole point of this check (see rom.lisp) is that FILE-LENGTH/READ-
-    ;; SEQUENCE on a FIFO can block forever; this proves LOAD-ROM-FILE! never
-    ;; reaches that call for one.
+    ;; FILE-LENGTH/READ-SEQUENCE on a FIFO can block forever; this proves
+    ;; LOAD-ROM-FILE! rejects one before reaching that call.
     (let ((path (merge-pathnames
                  (format nil "cl-chip8-rom-test-fifo-~D-~D" (get-universal-time) (random 1000000))
                  #p"/tmp/")))

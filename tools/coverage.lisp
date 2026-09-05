@@ -74,33 +74,17 @@
          (merge-pathnames #p"coverage/" root)))))
 
 (defun coverage-excluded-source-files (root)
-  "Source files deliberately left out of the coverage measurement.
+  "Return source files excluded from coverage measurement.
 
-Every entry below states the reason it is here, and the reason has to be one a
-reader can check against the file. An unexplained exclusion is how this list
-came to hide the emulator's own 35-instruction rulebase: OPCODES, CONDITIONS
-and FONTSET were dropped from it because each has real branches and real tests
-(t/opcodes-*-test.lisp, t/fontset-test.lisp, and the CONDITION assertions
-throughout the suite), so measuring around them made the reported figure mean
-nothing.
-
-Do not add a name here to make a threshold pass. Excluding a file to reach a
-minimum measures the exclusion list, not the code."
+Exclusions must correspond to files without executable branches or to code
+whose coverage is measured by dedicated tests."
   (mapcar
    (lambda (name)
      (merge-pathnames (format nil "src/~A.lisp" name) root))
    (list
-    ;; Real-terminal-only. The outer loop reads *STANDARD-INPUT* and drives
-    ;; cl-tty-kit raw-mode I/O, which a headless test process cannot enter;
-    ;; src/app.lisp:1-4 records that boundary as covered by real-TTY smoke
-    ;; tests instead. The cost of this entry, stated so it is not forgotten:
-    ;; the deterministic tick helpers in the same file, which
-    ;; t/integration-test.lisp does exercise, go unmeasured along with it,
-    ;; because sb-cover excludes whole files and not regions.
+    ;; Real-terminal I/O is unavailable to the headless coverage process.
     "app"
-    ;; Real-terminal-only, the same boundary as "app": %RUN-HANDLER opens a
-    ;; terminal once the ROM has loaded, so only the pre-terminal failure
-    ;; path is reachable from a test -- see the note at t/cli-test.lisp:3-5.
+    ;; %RUN-HANDLER opens a terminal after loading the ROM.
     "cli"
     ;; DEFPACKAGE and nothing else (src/package.lisp:17). A package
     ;; definition is a load-time form with no branch a test can take.
@@ -257,41 +241,14 @@ character after that single pad."
 (defparameter *coverage-load-time-definition-heads*
   '("in-package" "defvar" "defparameter" "defconstant" "defmacro"
     "define-condition")
-  "Heads of the top-level forms SB-COVER cannot credit.
-
-Establishing why this list is not a way of hiding untested code: a probe that
-performs the instrumented `asdf:load-system ... :force t` and then reads
-CL-WEAVE::COVERAGE-STATISTICS with zero tests run reports 0 covered
-expressions out of 1509, across every measured file. SB-COVER records nothing
-for load-time execution. For a top-level definition form in a system that
-loaded successfully, \"never executed\" is therefore not a state this tool can
-tell apart from \"executed at load, uncredited\" -- the system could not have
-loaded at all otherwise. Asserting such a form carries an execution mark
-asserts something SB-COVER does not report.
-
-DEFMACRO is here on the same footing, and it is worth spelling out because it
-looks like the loosest entry: a macro body runs at its callers'
-macroexpansion time, and SB-COVER credits none of it either. Every line of
-DEFINE-CHIP8-CONDITION in src/conditions.lisp is marked unexecuted even
-though it demonstrably expanded seven times -- the seven conditions it defines
-exist and their reports format correctly.
-
-Deliberately NOT here, though it was proposed: DEFINE-CHIP8-CONDITION. Its
-regions ARE credited, because the :REPORT closure it generates runs at
-runtime whenever a test formats the condition. Excluding it would have hidden
-precisely the gap that t/opcodes-flow-test.lisp's printed-representation test
-was added to close -- before that test, CHIP8-INVALID-OPCODE's whole region
-was unexecuted; after it, no DEFINE-CHIP8-CONDITION region is. An entry here
-must be a form SB-COVER cannot credit, never a form that merely happens to be
-uncovered today.")
+  "Heads of top-level forms that SB-COVER cannot credit. Load-time forms and
+macro bodies are not represented in its runtime coverage statistics; the
+list therefore excludes only forms that the tool cannot measure.")
 
 (defun coverage-load-time-definition-p (head second)
   "True when HEAD/SECOND name a top-level form SB-COVER cannot credit."
   (or (member head *coverage-load-time-definition-heads* :test #'string=)
-      ;; The ordered opcode rulebase is one top-level (SETF *RULEBASE* ...)
-      ;; whose body is quoted cl-prolog-kit clause DATA, not Lisp code paths, and
-      ;; it is installed at load. Matched on the place as well as the head so
-      ;; this never becomes a blanket exemption for SETF.
+    ;; The opcode rulebase is quoted clause data installed at load time.
       (and (string= head "setf") (string= second "*rulebase*"))))
 
 (defun unexecuted-coverage-bodies (pathname)
@@ -325,52 +282,17 @@ loudly instead of silently widening."
 
 (defparameter *coverage-minimum-expression* 95
   "Expression-coverage percentage the run must reach. Bound once and used both
-to gate the run and to print the summary, so the reported minimum cannot drift
-away from the enforced one.
-
-The measured subset stood at 95.63% (1443/1509 forms) when this threshold was
-set, so 95 leaves roughly 0.63 points of headroom -- about nine expressions at
-1/1509 = 0.066 points each. The margin exists so that one unrelated added
-expression cannot turn CI red; it is deliberately under ten expressions so
-that a real block of dead code still trips the gate rather than being absorbed.
-
-The residual 66 uncovered expressions are top-level definition forms --
-IN-PACKAGE in every measured file, plus the DEFVAR/DEFMACRO/DEFINE-CONDITION/
-DEFCONSTANT/DEFPARAMETER forms and the (SETF *RULEBASE* ...) installation in
-opcodes.lisp, conditions.lisp and fontset.lisp. SB-COVER does not credit them.
-What establishes that, and what a future reader can re-run instead of
-re-deriving it: a probe that performs the instrumented
-`asdf:load-system \"cl-chip8/test\" :force t` and then reads
-CL-WEAVE::COVERAGE-STATISTICS with ZERO tests run reports 0 covered
-expressions out of 1509, and 0.0% for all fourteen measured files. Nothing
-that runs at load time is counted, so no test can move these numbers.
-
-Two things this comment deliberately does NOT claim. First, the MECHANISM is
-not established: why SB-COVER credits nothing from the load is unknown. The
-available conjecture -- that SB-COVER's marks live in the code component
-compiled for each top-level form, which becomes garbage once the form has run
-and so is not around to be counted -- is UNVERIFIED, and no measurement here
-supports it. Do not repeat it as fact.
-
-Second, a plausible explanation that was TESTED AND REFUTED, recorded so it is
-not re-run: that CL-WEAVE's runner defaults :COVERAGE-RESET to T (see RUN-ALL
-in cl-weave/src/runner-api.lisp) and zeroes SB-COVER's counters AFTER the load
-has already executed every top-level form. Running the suite with
-:COVERAGE-RESET NIL against an otherwise identical control arm with it left on
-produces byte-identical totals -- 95.56% (1442/1509) on both, with identical
-per-file numbers -- and the zero-tests probe above shows there is no load-time
-coverage for a reset to erase in the first place. The reset is not the cause.")
+to gate the run and print the same enforced minimum. The margin is small
+enough to expose a meaningful loss of covered code.")
 
 (defparameter *coverage-minimum-branch* 100
   "Branch-coverage percentage the run must reach. See
 *COVERAGE-MINIMUM-EXPRESSION*.")
 
 (defun coverage-source-manifest ()
-  "Every production source file ASDF itself lists for the cl-chip8 system.
-
-Derived from the component list rather than from a second hand-maintained
-list, so a component added to cl-chip8.asd appears in the denominator on the
-commit that adds it instead of being silently absent from the measurement."
+  "Every production source file listed by ASDF for the cl-chip8 system.
+Derived from the component list so new system files enter the denominator
+automatically."
   (loop for component in (asdf:component-children (asdf:find-system "cl-chip8"))
         for pathname = (asdf:component-pathname component)
         when (probe-file pathname)
@@ -476,23 +398,7 @@ that trips a threshold still says what it measured."
   (let ((runner (find-symbol "RUN-TESTS" "CL-CHIP8/TEST")))
     (unless (and runner (fboundp runner))
       (error "CL-CHIP8/TEST:RUN-TESTS is unavailable"))
-    ;; The summary runs in the cleanup so a run that trips a threshold still
-    ;; reports the numbers it measured instead of dying silently on them. A
-    ;; failure inside the summary itself must not replace the primary error,
-    ;; hence the handler-case.
-    ;;
-    ;; Before adding a coverage keyword below, read RUN-TESTS in t/package.lisp:
-    ;; its lambda list is fixed and forwards a hardcoded :COVERAGE-RESET T, so
-    ;; it accepts only the seven :COVERAGE-* keywords already passed here. An
-    ;; unrecognised one signals UNKNOWN-KEYWORD-ARGUMENT, which aborts before
-    ;; any test runs -- and because the summary above still executes from the
-    ;; cleanup, the run ends by printing "0.00% (0/1509 forms)". That reads
-    ;; like a catastrophic collapse in coverage and is nothing of the kind.
-    ;; A 0/N summary from this tool means the harness failed, not that
-    ;; coverage vanished; check for a keyword error above it before believing
-    ;; the number. To vary an option RUN-TESTS does not expose, call
-    ;; CL-WEAVE:RUN-ALL directly from a throwaway copy of this script rather
-    ;; than widening the wrapper.
+    ;; Keep the measured summary when threshold checks fail.
     (unwind-protect
          (funcall runner
                   :coverage t

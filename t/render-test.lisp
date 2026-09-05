@@ -57,17 +57,8 @@
                 :to-be (code-char #x2588))
         (expect (cell-style (screen-cell screen 0 0)) :to-equal '(:reverse))))))
 
-;;; Every other assertion in this file locates its expected cell with
-;;; +PLAYFIELD-ORIGIN-X+ / +PLAYFIELD-ORIGIN-Y+ -- the same two values
-;;; RENDER-DISPLAY-INTO-SCREEN! uses to place the pixel. Both sides therefore
-;;; move together, and shifting either constant leaves the whole suite green
-;;; while the playfield visibly overwrites the border. Verified by mutation:
-;;; changing +PLAYFIELD-ORIGIN-X+ from 1 to 2 broke nothing.
-;;;
-;;; These assertions use literal screen coordinates instead, so they are
-;;; anchored to the layout rather than to the constants that define it. If the
-;;; playfield is ever meant to move, this is the test that should have to
-;;; change, deliberately.
+;;; Use literal coordinates here so the test remains independent of the
+;;; constants that define the playfield placement.
 (describe "playfield placement (literal coordinates, not the origin constants)"
   (before-each
     (reset-cpu-state!)

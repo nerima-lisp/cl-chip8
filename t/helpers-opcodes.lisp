@@ -1,16 +1,4 @@
-;;;; t/helpers-opcodes.lisp -- shared helpers for the opcode/integration
-;;;; tests. Named per CODING_STANDARD.md's helpers-<concern>.lisp convention
-;;;; for shared test-helper files, not <concern>-test.lisp (which is reserved
-;;;; for a file that itself defines DESCRIBE/IT specs).
-;;;;
-;;;; Every opcode test follows the same shape: reset the machine, poke a
-;;;; small hand-authored byte sequence into memory (and sometimes a register
-;;;; precondition), run one or more instructions via EXECUTE-INSTRUCTION!,
-;;;; and assert on the resulting register/PC/I/memory/display state. These
-;;;; helpers read and write CPU-state facts directly against *RULEBASE*
-;;;; (via the test-only ASSERTZ/RETRACT/QUERY-PROLOG imports in package.lisp)
-;;;; so each test file can stay focused on the opcode it exercises rather
-;;;; than on repeating this plumbing.
+;;;; Shared helpers for opcode and integration tests.
 (in-package #:cl-chip8/test)
 
 (defun reset-machine! ()

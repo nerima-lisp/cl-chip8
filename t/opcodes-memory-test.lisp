@@ -20,13 +20,7 @@
       (expect (logtest (register-value 0) (lognot #x0F)) :to-be-falsy))))
 
 (describe "DXYN DRW Vx, Vy, nibble"
-  ;; Seed VF with the sentinel, not 0. RESET-MACHINE! already zeroes every
-  ;; register, so a bare (expect (register-value 15) :to-be 0) after a
-  ;; non-colliding draw is guaranteed by the fixture rather than by DXYN --
-  ;; it passes even if DXYN never writes VF at all, which was verified by
-  ;; mutation. DXYN always writes the collision flag (0 or 1), so starting
-  ;; from #xAA makes every "no collision" assertion prove the write happened.
-  ;; Same reasoning, and the same constant, as t/opcodes-alu-test.lisp:14.
+  ;; Seed VF so the no-collision case also checks that DXYN writes VF.
   (before-each (reset-machine!) (set-register! 15 +vf-sentinel+))
   (it "draws a sprite byte and reports no collision on a clear pixel"
     (setf (aref *memory* #x300) #x80) ; one row, leftmost bit set
@@ -135,10 +129,7 @@
 (describe "FX1E ADD I, Vx"
   (before-each (reset-machine!))
   (it "adds Vx into I and leaves VF exactly as it found it"
-    ;; VF is seeded nonzero on purpose. RESET-CPU-STATE! already zeroes every
-    ;; register, so asserting VF = 0 after a reset would hold no matter what
-    ;; FX1E did to it; only a value the instruction would have to overwrite
-    ;; makes "VF untouched" a claim this test can actually fail on.
+    ;; A nonzero seed distinguishes an unchanged VF from the reset value.
     (set-i-register! #x300)
     (set-register! 0 5)
     (set-register! 15 #xAB)
@@ -219,7 +210,7 @@
       (expect (register-value 2) :to-be 30)
       (expect (i-register-value) :to-be #x300))))
 
-(describe "memory bounds checking near the top of the address space (security review)"
+(describe "memory bounds checking near the top of the address space"
   ;; +MEMORY-SIZE+ is 4096, so (1- +memory-size+) = 4095 is the last valid
   ;; address; any of these opcodes reading/writing more than 1 byte starting
   ;; there runs off the end. Each case would previously have hit an

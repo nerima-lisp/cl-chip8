@@ -4,11 +4,7 @@
 (in-package #:cl-chip8)
 
 (defvar *rulebase* (make-rulebase)
-  "The mutable Prolog rulebase holding the entire CPU state as dynamic facts
--- see this file's header comment for the fact shapes. A DEFVAR, not a
-DEFPARAMETER: reloading this file must not hand a running machine a fresh,
-empty rulebase out from under it. Call RESET-CPU-STATE! to reinitialize its
-contents in place.")
+  "The mutable Prolog rulebase holding CPU state as dynamic facts.")
 
 (defconstant +register-count+ 16
   "The number of general-purpose registers, V0 through VF.")

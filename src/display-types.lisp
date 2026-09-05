@@ -25,10 +25,7 @@
                    'bit
                    :initial-element
                    0)
-  "The 64x32 monochrome framebuffer, indexed (ROW COLUMN) i.e. (Y X) --
-row-major order matches how a later stage blits this to a terminal screen. A
-DEFVAR, not a DEFPARAMETER: reloading this file must not silently wipe the
-screen. Call DISPLAY-RESET! to clear it explicitly.")
+  "The 64x32 monochrome framebuffer, indexed as (ROW COLUMN).")
 
 (defvar *display-dirty-rows* (make-array +display-height+ :element-type 'bit :initial-element 1)
   "Pixel rows that changed since the last concurrent render commit.")

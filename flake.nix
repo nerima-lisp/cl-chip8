@@ -2,24 +2,13 @@
   description = "A CHIP-8 (1977 COSMAC VIP instruction set) interpreter for the terminal.";
 
   inputs = {
-    # nixos-unstable, not nixpkgs-unstable: it advances only after the NixOS
-    # release tests pass, so it is less likely to land a broken build.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-    # The org flake preset. The single `mkPackageFlake` call below generates
-    # this repository's entire required-output table, so none of it is spelled
-    # out here and none of it can drift from the other repositories.
     cl-nix-forge = {
       url = "github:nerima-lisp/cl-nix-forge/v0.5.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Sibling packages are ALWAYS pinned to a release tag; a bare
-    # `github:nerima-lisp/<pkg>` follows that repo's default branch, which
-    # would break this repo's CI without warning the moment upstream pushes to
-    # main. `flake = false`: only the source tree is needed (to build a
-    # `lispDerivation` below), never these repos' own flake outputs -- see
-    # DEPENDENCY_POLICY.md "姉妹パッケージは flake = false で引きます".
     cl-prolog-kit = {
       url = "github:nerima-lisp/cl-prolog-kit/v1.5.0";
       flake = false;
@@ -55,11 +44,6 @@
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
 
-    # Transitive sibling dependencies of cl-tty-kit, cl-cli, and
-    # cl-concurrent-kit above. Nix builds each lispDerivation as its own
-    # sandboxed derivation, so every nested ASDF :depends-on must be satisfied
-    # by the owning lispDerivation's lispDependencies list -- flattening every
-    # sibling into this repository's own list would not reach a nested build.
     cl-codec-kit = {
       url = "github:nerima-lisp/cl-codec-kit/v0.5.0";
       flake = false;
@@ -78,9 +62,6 @@
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
 
-    # Unlike the sibling *packages* above, this is consumed for its `lib`
-    # output (`mkLintCheck`), which a `flake = false` source tree cannot
-    # provide -- the same reason cl-nix-forge stays a real flake input.
     paredit-cli = {
       url = "github:nerima-lisp/paredit-cli/v1.6.0";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -110,15 +91,6 @@
       treefmt-nix,
     }:
     let
-      # x86_64-linux only, full stop. PACKAGE_STANDARD.md's "systems" section
-      # (2026-08-01 revision) retracted the earlier two-system list org-wide:
-      # declaring aarch64-darwin promises a platform whose only verification
-      # was a developer remembering to run `nix flake check` by hand, which is
-      # not a gate. Every per-system output -- packages, checks, apps AND
-      # devShells -- comes from this one list (mkPackageFlake's
-      # `lib.genAttrs systems`), so this also removes `nix build` and
-      # `nix develop` on macOS; that is the accepted cost, not an oversight.
-      # aarch64-linux and x86_64-darwin were never declared at all.
       systems = [ "x86_64-linux" ];
     in
     cl-nix-forge.lib.${builtins.head systems}.mkPackageFlake {
@@ -126,8 +98,6 @@
 
       pname = "cl-chip8";
 
-      # Single source of truth for the version: the `:version` form in
-      # cl-chip8.asd.
       asd = ./cl-chip8.asd;
 
       root = ./.;
@@ -139,12 +109,6 @@
         platforms = nixpkgs.lib.platforms.unix;
       };
 
-      # Runtime dependencies: cl-chip8's own :DEPENDS-ON. These are BUILT
-      # DERIVATIONS, not CL_SOURCE_REGISTRY strings -- cl-nix-forge assembles
-      # the registry transitively from them. Each nested ASDF dependency is
-      # represented by a local derivation so the same source/version is shared
-      # across the graph rather than importing a sibling flake's prebuilt
-      # output (which can introduce duplicate source identities).
       lispDependencies =
         ctx:
         let
@@ -196,14 +160,6 @@
             version = ctx.cl.fromAsdSystem "${cl-tty-kit}/cl-tty-kit.asd";
             src = cl-tty-kit;
             lispSystem = "cl-tty-kit";
-            # cl-tty-kit v1.5.0 declares :depends-on ("cl-codec-kit"
-            # "cl-concurrent-kit"); the concurrent-kit entry is newer than the
-            # pin this list was written against. Each lispDerivation builds in
-            # its own sandbox, so a nested :depends-on that is missing here is
-            # simply absent at build time -- and the local
-            # `sbcl --script run-tests.lisp` cannot catch it, because that
-            # registers a flat (:tree ../) registry in which every sibling
-            # resolves regardless of what this list says.
             lispDependencies = [
               codecKit
               concurrentKit
@@ -218,20 +174,9 @@
           })
           dateKit
           concurrentKit
-          # cl-chip8.asd names "cl-host-kit" in its own :depends-on, so it
-          # belongs at THIS level and not only nested inside cl-cli's
-          # derivation above. A nested entry satisfies cl-cli's sandbox, not
-          # cl-chip8's, and run-tests.lisp additionally loads the system by
-          # name before it runs the suite.
           hostKit
         ];
 
-      # Test-only: cl-weave, the org's test framework, plus cl-host-kit, which
-      # t/corpus-test.lisp calls directly and run-tests.lisp LOADs by name.
-      # This block is a separate `ctx:` lambda from lispDependencies above, so
-      # its `hostKit` binding is not in scope here and the derivation is spelled
-      # out again; identical inputs resolve to the identical store path, so this
-      # is a second reference rather than a second build.
       lispCheckDependencies = ctx: [
         (ctx.cl.lispDerivation {
           pname = "cl-weave";
@@ -247,27 +192,6 @@
         })
       ];
 
-      # The delivered `cl-chip8` binary: `packages.default`, `apps.default`
-      # and `apps.cl-chip8`, all built from the `:build-operation` /
-      # `:build-pathname` / `:entry-point` already declared in cl-chip8.asd --
-      # nothing here repeats them.
-      #
-      # `programPath` IS needed, contrary to what this comment used to claim.
-      # The old reasoning was that cl-nix-forge places the program directly
-      # under `$out/<lispSystem>` regardless of the system's own `:pathname`,
-      # citing cl-nyancat as precedent. That is not what happens:
-      # app.nix's `resolvedProgramPath = if programPath == null then
-      # lispSystem else programPath` looks for `$out/cl-chip8`, while ASDF
-      # honours `:pathname "src"` and writes `$out/src/cl-chip8`. The build
-      # therefore succeeded and then failed its own existence check with
-      # "ASDF program-op did not create executable cl-chip8", with the binary
-      # sitting one directory away. Reasoning from a sibling repository's
-      # config is not verification; this value came from the build log.
-      #
-      # installSource lets the delivered binary find its own installed ASDF
-      # sources when it needs to re-resolve itself, which is what makes
-      # `cl-chip8 --version` report the .asd's :version rather than the
-      # 0.0.0 fallback in src/cli.lisp.
       executable = {
         installSource = true;
         programPath = "src/cl-chip8";
@@ -275,31 +199,15 @@
 
       docs.root = ./docs;
 
-      # ONE treefmt evaluation drives both `nix fmt` and `checks.formatting`.
-      # Scope stays the preset's default of Nix only.
       treefmt.evalModule = treefmt-nix.lib.evalModule;
 
-      # Granularity lives here, not in an extra GitHub Actions job: `nix flake
-      # check` evaluates each attribute as its own derivation, in parallel,
-      # with build caching -- see cl-nyancat's flake.nix, which this follows.
       extraOutputs = ctx: {
         checks = {
-          # Structural parse gate over every Lisp source in the filtered tree:
-          # fails if any .lisp/.asd file is not a balanced S-expression
-          # document. The test suite would not catch it -- an unbalanced file
-          # makes ASDF fail to load the system, which reads like any other
-          # build error and points at the wrong cause.
           paredit-lint = paredit-cli.lib.${ctx.system}.mkLintCheck {
             inherit (ctx) src;
             name = "cl-chip8-paredit-lint";
           };
 
-          # PACKAGE_STANDARD.md requires the delivered binary itself to be
-          # part of `nix flake check`'s gate, not just the library derivation
-          # `checks.default`'s run-tests.lisp already exercises -- see
-          # nshell's flake.nix, whose `checks.build = delivery;` this
-          # mirrors. `ctx.executable` is exactly the `executable` block above,
-          # built.
           build = ctx.executable;
         };
       };
