@@ -33,6 +33,11 @@ The flake currently declares `x86_64-linux` outputs. On another host, make the
 pinned sibling dependencies available in the expected `CL_SOURCE_REGISTRY`
 tree and use the direct SBCL commands below.
 
+The direct commands load dependencies from `CL_SOURCE_REGISTRY`; they do not
+install missing systems. If a dependency cannot be found, run the commands
+inside `nix develop` or provide a registry containing the pinned sibling
+checkouts before treating the test result as a code failure.
+
 ## Updating pinned inputs
 
 `flake.lock` records the exact revisions used by the Nix workflow. Update only
