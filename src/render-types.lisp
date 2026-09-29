@@ -36,7 +36,8 @@ terminal row, plus a 1-cell border on each side.")
 
 (defstruct (chip8-render-state (:constructor make-chip8-render-state))
   (framebuffer nil :type (or null display-framebuffer))
-  (sound-active-p nil :type boolean))
+  (sound-active-p nil :type boolean)
+  (frame-count 0 :type (unsigned-byte 64)))
 
 (defun %copy-framebuffer (framebuffer)
   (declare (type display-framebuffer framebuffer))

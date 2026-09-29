@@ -18,3 +18,20 @@
         (expect (< (cl-chip8::chip8-app-instruction-remainder app) 60)
                 :to-be
                 t)))))
+
+(describe "application error handling"
+  (it "steps the error event when instruction execution signals"
+    (let* ((machine (make-chip8-machine))
+           (app (make-chip8-app
+                 :machine machine
+                 :state-machine (make-chip8-control-state-machine)
+                 :clock-hz 60)))
+      (setf (cl-dataflow-kit:state-machine-state
+             (chip8-app-state-machine app))
+            "running")
+      (setf (chip8-machine-pc machine) #xfff)
+      (cl-chip8::step-chip8-app! app)
+      (expect (chip8-app-error app) :to-be-type-of 'error)
+      (expect (chip8-control-state (chip8-app-state-machine app))
+              :to-equal "error")
+      (expect (chip8-app-quit-p app) :to-be-truthy))))

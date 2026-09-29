@@ -69,6 +69,7 @@
            (machine (cl-chip8:make-chip8-machine))
            (app (cl-chip8::make-chip8-app
                  :machine machine
+                 :render-state (cl-chip8::make-chip8-render-state)
                  :started-at (- (get-internal-real-time)
                                 internal-time-units-per-second)))
            (invocation (parse-argv *app*
@@ -84,6 +85,9 @@
                    (lambda (&key rom-path clock-hz quirks stream)
                      (declare (ignore rom-path clock-hz quirks stream))
                      app))
+             (render-chip8! (cl-tty-kit:make-screen +screen-width+ +screen-height+)
+                            (chip8-machine-framebuffer machine)
+                            (cl-chip8::chip8-app-render-state app))
              (let ((error-output (make-string-output-stream)))
                (let ((*error-output* error-output))
                  (let ((status (cl-chip8::%run-handler invocation)))
@@ -92,7 +96,10 @@
                             (get-output-stream-string error-output))))))
              (let ((contents (uiop:read-file-string log-path)))
                (expect (search "chip8_instructions_total" contents) :to-be-truthy)
-               (expect (search ":7" contents) :to-be-truthy)))
+               (expect (search ":7" contents) :to-be-truthy)
+               (expect (search "chip8_render_frames_total" contents) :to-be-truthy)
+               (expect (search "\"chip8_render_frames_total\":1" contents)
+                       :to-be-truthy)))
         (setf (symbol-function 'cl-chip8:run) original-run)
         (when (probe-file rom-path) (delete-file rom-path))
         (when (probe-file log-path) (delete-file log-path))))))

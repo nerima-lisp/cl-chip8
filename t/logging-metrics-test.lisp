@@ -30,11 +30,12 @@
       (cl-chip8::close-chip8-logger logger)))
   (%read-log-records path))
 
-(defun %finalized-fields (metrics &key instructions effective-hz render-pipeline)
+(defun %finalized-fields (metrics &key instructions effective-hz render-state render-pipeline)
   (cl-chip8::chip8-metrics-fields
    (cl-chip8::finalize-chip8-metrics! metrics
                                       :instructions instructions
                                       :effective-hz effective-hz
+                                      :render-state render-state
                                       :render-pipeline render-pipeline)))
 
 (defun %metrics-test-framebuffer (terminal-rows)
@@ -142,8 +143,20 @@
                (expect (%log-field record "chip8_effective_hz") :to-equal 1234.5d0)
                (expect (%log-field record "chip8_render_rows_worker_total") :to-be 11)
                (expect (%log-field record "chip8_render_rows_serial_total") :to-be 19)))
+
         (when (probe-file path)
           (delete-file path)))))
+
+  (it "includes frames from the serial renderer in termination metrics"
+    (let* ((state (cl-chip8::make-chip8-render-state))
+           (screen (cl-tty-kit:make-screen +screen-width+ +screen-height+))
+           (framebuffer (%metrics-test-framebuffer '())))
+      (render-chip8! screen framebuffer state)
+      (render-chip8! screen framebuffer state)
+      (expect (getf (%finalized-fields (cl-chip8::make-chip8-metrics)
+                                       :render-state state)
+                    :chip8_render_frames_total)
+              :to-be 2)))
 
   (it "sets the effective Hz gauge instead of incrementing it"
     (let ((metrics (cl-chip8::make-chip8-metrics)))
@@ -164,7 +177,8 @@
            (fields (%finalized-fields metrics :effective-hz 500)))
       (expect (getf fields :chip8_instructions_total) :to-be 0)
       (expect (getf fields :chip8_render_rows_worker_total) :to-be 0)
-      (expect (getf fields :chip8_render_rows_serial_total) :to-be 0)))
+      (expect (getf fields :chip8_render_rows_serial_total) :to-be 0)
+      (expect (getf fields :chip8_render_frames_total) :to-be 0)))
 
   (it "applies the instruction count once across repeated finalizes"
     (let ((metrics (cl-chip8::make-chip8-metrics)))
@@ -191,13 +205,12 @@
   (it "rejects a counter or gauge used with the wrong operation"
     (let ((metrics (cl-chip8::make-chip8-metrics)))
       (signals error (cl-chip8::chip8-metric-add metrics "chip8_effective_hz" 1))
-      (signals error (cl-chip8::chip8-metric-set metrics "chip8_instructions_total" 1))
-      (signals error (cl-chip8::chip8-metric-add metrics "chip8_render_frames_total" 1))))
+      (signals error (cl-chip8::chip8-metric-set metrics "chip8_instructions_total" 1))))
 
-  (it "registers no metric that no source can feed"
+  (it "registers metrics with feedable sources"
     (let* ((snapshots (cl-chip8::chip8-metrics-snapshot (cl-chip8::make-chip8-metrics)))
            (names (mapcar #'cl-observability-kit:metric-snapshot-name snapshots)))
-      (expect (member "chip8_render_frames_total" names :test #'string=) :to-be-null)
+      (expect (member "chip8_render_frames_total" names :test #'string=) :to-be-truthy)
       (expect (cl-observability-kit:metric-snapshot-unit
                (find "chip8_effective_hz" snapshots
                      :key #'cl-observability-kit:metric-snapshot-name

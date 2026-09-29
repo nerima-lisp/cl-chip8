@@ -2,6 +2,11 @@
 
 (in-package #:cl-chip8)
 
+(declaim (notinline chip8-render-state-frame-count
+                    chip8-render-pipeline-state
+                    chip8-render-pipeline-submitted-rows
+                    chip8-render-pipeline-serial-rows))
+
 (defstruct (chip8-metrics (:constructor %make-chip8-metrics))
   registry
   counters
@@ -52,6 +57,7 @@
          (pending (make-hash-table :test #'equal)))
     (dolist (spec '(("chip8_instructions_total" "Executed CHIP-8 instructions." :counter nil)
                     ("chip8_effective_hz" "Effective instruction rate." :gauge "Hz")
+                    ("chip8_render_frames_total" "Rendered frames." :counter nil)
                     ("chip8_render_rows_worker_total" "Rendered rows in workers." :counter nil)
                     ("chip8_render_rows_serial_total" "Rendered rows serially." :counter nil)))
       (setf (gethash (first spec) counters)
@@ -108,11 +114,12 @@ idempotent and safe to call once per tick."
         (chip8-metric-add metrics name delta)))))
 
 (defun finalize-chip8-metrics! (metrics
-                                &key machine instructions effective-hz render-pipeline)
+                                &key machine instructions effective-hz render-state render-pipeline)
   "Apply the run's metrics once, from the termination boundary.
 
-MACHINE supplies the instruction count when INSTRUCTIONS is not given, and
-RENDER-PIPELINE's existing row counters supply the two render counters.  Either
+MACHINE supplies the instruction count when INSTRUCTIONS is not given,
+RENDER-STATE or RENDER-PIPELINE supplies the frame count, and
+RENDER-PIPELINE's existing row counters supply the two row counters. Either
 source may be NIL, in which case its metrics are left at zero."
   (check-type metrics chip8-metrics)
   (when machine
@@ -121,6 +128,14 @@ source may be NIL, in which case its metrics are left at zero."
     (%chip8-queue-absolute-counter metrics "chip8_instructions_total" instructions))
   (when effective-hz
     (chip8-metric-set metrics "chip8_effective_hz" effective-hz))
+  (let ((frame-count (if render-pipeline
+                        (chip8-render-state-frame-count
+                         (chip8-render-pipeline-state render-pipeline))
+                        (and render-state
+                             (chip8-render-state-frame-count render-state)))))
+    (when frame-count
+      (%chip8-queue-absolute-counter metrics "chip8_render_frames_total"
+                                     frame-count)))
   (when render-pipeline
     (%chip8-queue-absolute-counter
      metrics "chip8_render_rows_worker_total"

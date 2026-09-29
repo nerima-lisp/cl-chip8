@@ -69,6 +69,8 @@ enter its terminal session."
                                   (finalize-chip8-metrics!
                                    metrics
                                    :machine (and app (chip8-app-machine app))
+                                   :render-state
+                                   (and app (chip8-app-render-state app))
                                    :render-pipeline
                                    (and app (chip8-app-render-pipeline app))
                                    :effective-hz

@@ -113,4 +113,5 @@
           (render-sound-indicator-into-screen! screen sound-active-p)))
       (setf (chip8-render-state-framebuffer state) (%copy-framebuffer framebuffer)
             (chip8-render-state-sound-active-p state) sound-active-p)
+      (incf (chip8-render-state-frame-count state))
       screen)))
