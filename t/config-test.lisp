@@ -195,3 +195,63 @@ signals none instead."
                        (search (format nil "~D" (cl-chip8:chip8-config-error-column condition))
                                text))))
         (expect report :to-contain (cl-chip8:chip8-config-error-reason condition))))))
+
+  ;; One row per schema key, plus the positive-integer boundary below one.
+  ;; Each row must signal through the real TOML loading path and identify the
+  ;; schema path, so a table entry cannot pass by merely returning a value.
+  (cl-weave:it-isolated "rejects every invalid configuration key value"
+      (:systems ("cl-chip8/test") :timeout 30)
+    (dolist (case
+             '(("profile type" "[chip8]~%quirks = ~S" "legacy"
+                "chip8.quirks" "profile must be modern or cosmac-vip")
+               ("clock type" "[chip8]~%clock_hz = ~S" "fast"
+                "chip8.clock_hz" "expected a positive integer")
+               ("clock range" "[chip8]~%clock_hz = 0" nil
+                "chip8.clock_hz" "expected a positive integer")
+               ("display wait type" "[chip8]~%display_wait = ~S" "yes"
+                "chip8.display_wait" "expected a boolean")
+               ("clipping enum" "[chip8]~%clipping = ~S" "diagonal"
+                "chip8.clipping" "invalid value")
+               ("shift source enum" "[chip8]~%shift_source = ~S" "vz"
+                "chip8.shift_source" "invalid value")
+               ("BNNN register enum" "[chip8]~%bnnn_register = ~S" "vy"
+                "chip8.bnnn_register" "invalid value")
+               ("FX0A completion enum" "[chip8]~%fx0a_completion = ~S" "hold"
+                "chip8.fx0a_completion" "invalid value")
+               ("memory I enum" "[chip8]~%memory_i = ~S" "reset"
+                "chip8.memory_i" "invalid value")
+               ("VF reset enum" "[chip8]~%vf_reset = ~S" "clear"
+                "chip8.vf_reset" "invalid value")
+               ("logging path type" "[logging]~%path = 7" nil
+                "logging.path" "expected a string")))
+      (destructuring-bind (label control arg expected-path expected-reason) case
+        (%with-toml-file (path control arg)
+          (let ((condition (%signalled-config-error
+                            (lambda () (cl-chip8:load-chip8-config-file path)))))
+            (expect (list label (typep condition 'cl-chip8:chip8-config-error))
+                    :to-equal (list label t))
+            (expect (cl-chip8:chip8-config-error-path condition)
+                    :to-equal expected-path)
+            (expect (cl-chip8:chip8-config-error-reason condition)
+                    :to-equal expected-reason))))))
+
+  ;; The TOML override names are intentionally different from the structure
+  ;; accessors. This table proves that every registered override reaches its
+  ;; corresponding observable slot on the resulting quirks object.
+  (cl-weave:it-isolated "applies every TOML quirks override slot"
+      (:systems ("cl-chip8/test") :timeout 30)
+    (dolist (case
+             '(("vf_reset" chip8-quirks-vf-behavior "reset" :reset)
+               ("memory_i" chip8-quirks-memory-i "increment" :increment)
+               ("display_wait" chip8-quirks-display-wait t :wait)
+               ("clipping" chip8-quirks-clipping "wrap" :wrap)
+               ("shift_source" chip8-quirks-shift-source "vy" :vy)
+               ("bnnn_register" chip8-quirks-bnnn-register "vx" :vx)
+               ("fx0a_completion" chip8-quirks-fx0a-completion "release" :release)))
+      (destructuring-bind (key accessor value expected) case
+        (let* ((toml (%config-toml key value))
+               (config (cl-chip8:merge-chip8-config
+                        :toml toml
+                        :defaults '(:quirks "modern"))))
+          (expect (list key (funcall accessor (cl-chip8:chip8-config-quirks config)))
+                  :to-equal (list key expected))))))

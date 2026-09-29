@@ -32,6 +32,39 @@
   '(:start :quit :error :key-wait :display-wait :pause :key-press
     :key-release :tick :step :resume))
 
+(defparameter *control-event-cases*
+  '((nil nil nil)
+    (:special :escape :quit)
+    (:special :control-c :quit)
+    (:character #\a :key-press)
+    (:character #\a :key-release)))
+
+(defparameter *control-cps-wait-cases*
+  '((nil :tick :ignored nil)
+    (nil :key-press :ignored nil)
+    (nil :key-release :ignored nil)
+    (:key :tick :error :key)
+    (:key :key-press :resumed nil)
+    (:key :key-release :resumed nil)
+    (:display :tick :resumed nil)
+    (:display :key-press :error :display)
+    (:display :key-release :error :display)))
+
+(defun %control-cps-test-app (wait-kind)
+  (let* ((machine (make-chip8-machine))
+         (state-machine (cl-chip8::make-chip8-control-state-machine))
+         (app (make-chip8-app :machine machine :state-machine state-machine)))
+    (when wait-kind
+      (setf (chip8-machine-waiting machine)
+            (cl-chip8::make-chip8-wait-state
+             :kind wait-kind
+             :continuation (lambda (event)
+                             (declare (ignore event))
+                             t)))
+      (setf (cl-dataflow-kit:state-machine-state state-machine)
+            (if (eq wait-kind :key) "waiting-key" "waiting-display")))
+    app))
+
 (defun generated-transition (state event)
   (let* ((machine (getf state :machine))
          (current (cl-chip8::chip8-control-state machine))
@@ -101,8 +134,61 @@
                      (cl-chip8::step-chip8-control-state machine event))
                     :to-equal
                     (third transition))
-            (signals error
+              (signals error
               (cl-chip8::step-chip8-control-state machine event)))))))
+
+(cl-weave:it-isolated
+    "maps every key event variant through the control-event table"
+    (:systems ("cl-chip8/test") :timeout 20)
+  (dolist (case *control-event-cases*)
+    (destructuring-bind (type code expected-type) case
+      (let ((event (and type
+                        (cl-tty-kit:make-key-event
+                         :type type :code code
+                         :kind (if (eq expected-type :key-release)
+                                   :release
+                                   :press)))))
+        (let ((control-event
+                (cl-chip8::chip8-key-event->control-event event)))
+          (if expected-type
+              (progn
+                (expect (cl-chip8::chip8-control-event-type control-event)
+                        :to-be expected-type)
+                (expect (cl-chip8::chip8-control-event-value control-event)
+                        :to-equal code))
+              (expect control-event :to-be nil)))))))
+
+(cl-weave:it-isolated
+    "drives every control-cps event across each wait state"
+    (:systems ("cl-chip8/test") :timeout 20)
+  (dolist (case *control-cps-wait-cases*)
+    (destructuring-bind (wait-kind type expected-result expected-wait) case
+      (let* ((app (%control-cps-test-app wait-kind))
+             (event (cl-chip8::make-chip8-control-event
+                     type (when (member type '(:key-press :key-release)) 5)))
+             (result (handler-case
+                         (progn
+                           (cl-chip8::resume-chip8-app app event)
+                           :ok)
+                       (chip8-cps-error () :error))))
+        (case expected-result
+          (:error (expect result :to-be :error))
+          (:resumed
+           (expect result :to-be :ok)
+           (expect (wait-kind (chip8-app-machine app)) :to-be nil)
+           (expect (cl-chip8::chip8-control-state
+                    (chip8-app-state-machine app))
+                   :to-equal "running"))
+          (:ignored
+           (expect result :to-be :ok)
+           (expect (wait-kind (chip8-app-machine app)) :to-be expected-wait)
+           (expect (cl-chip8::chip8-control-state
+                    (chip8-app-state-machine app))
+                   :to-equal (if expected-wait
+                                 (if (eq expected-wait :key)
+                                     "waiting-key"
+                                     "waiting-display")
+                                 "ready"))))))))
 
 (describe
   "control state transition table"

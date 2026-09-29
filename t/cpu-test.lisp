@@ -216,3 +216,34 @@
    (execute-instruction! m)
    (expect (< (chip8-machine-pc m) 4096) :to-be-truthy)
    (expect (evenp (chip8-machine-pc m)) :to-be-truthy)))
+
+(defparameter *opcode-condition-cases*
+  '((:invalid-low #x5f0f chip8-invalid-opcode)
+    (:invalid-subopcode #x8f08 chip8-invalid-opcode)
+    (:stack-overflow #x2200 chip8-stack-overflow)
+    (:fetch-at-final-byte nil chip8-memory-access-out-of-bounds)))
+
+(defun %condition-case (case)
+  (destructuring-bind (name opcode condition) case
+    (declare (ignore name))
+    (let ((machine (make-chip8-machine))
+          (caught nil))
+      (if opcode
+          (handler-case
+              (progn
+                (when (= opcode #x2200)
+                  (setf (chip8-machine-sp machine) +call-stack-limit+))
+                (test-opcode machine opcode))
+            (chip8-error (value) (setf caught value)))
+          (progn
+            (setf (chip8-machine-pc machine) #xfff)
+            (handler-case
+                (execute-instruction! machine)
+              (chip8-error (value) (setf caught value)))))
+      (expect caught :to-be-type-of condition)
+      (expect caught :to-be-truthy))))
+
+(cl-weave:it-isolated "reports opcode execution conditions"
+    (:systems '("cl-chip8/test") :timeout 60)
+  (dolist (case *opcode-condition-cases*)
+    (%condition-case case)))
