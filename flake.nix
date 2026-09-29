@@ -305,5 +305,13 @@
           build = ctx.executable;
         };
       };
+
+      overrideOutputs = ctx: {
+        checks.default = ctx.generated.checks.default.overrideAttrs (old: {
+          preCheck = (old.preCheck or "") + ''
+            export CHIP8_TIMENDUS_DIR=${timendus-chip8-test-suite}/bin
+          '';
+        });
+      };
     };
 }
