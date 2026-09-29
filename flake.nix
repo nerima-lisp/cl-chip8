@@ -203,28 +203,41 @@
             version = ctx.cl.fromAsdSystem "${cl-dataflow-kit}/cl-dataflow-kit.asd";
             src = cl-dataflow-kit;
             lispSystem = "cl-dataflow-kit";
-            lispDependencies = [ prologKit concurrentKit ];
+            lispDependencies = [
+              prologKit
+              concurrentKit
+            ];
           };
           logKit = ctx.cl.lispDerivation {
             pname = "cl-log-kit";
             version = ctx.cl.fromAsdSystem "${cl-log-kit}/cl-log-kit.asd";
             src = cl-log-kit;
             lispSystem = "cl-log-kit";
-            lispDependencies = [ dateKit concurrentKit hostKit ];
+            lispDependencies = [
+              dateKit
+              concurrentKit
+              hostKit
+            ];
           };
           tomlKit = ctx.cl.lispDerivation {
             pname = "cl-toml-kit";
             version = ctx.cl.fromAsdSystem "${cl-toml-kit}/cl-toml-kit.asd";
             src = cl-toml-kit;
             lispSystem = "cl-toml-kit";
-            lispDependencies = [ parserKit dateKit ];
+            lispDependencies = [
+              parserKit
+              dateKit
+            ];
           };
           observabilityKit = ctx.cl.lispDerivation {
             pname = "cl-observability-kit";
             version = ctx.cl.fromAsdSystem "${cl-observability-kit}/cl-observability-kit.asd";
             src = cl-observability-kit;
             lispSystem = "cl-observability-kit";
-            lispDependencies = [ concurrentKit boundaryKit ];
+            lispDependencies = [
+              concurrentKit
+              boundaryKit
+            ];
           };
         in
         [
