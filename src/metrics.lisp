@@ -71,7 +71,13 @@
              (chip8-metrics-counters metrics)))
   metrics)
 
-(defun finalize-chip8-metrics! (metrics)
+(defun finalize-chip8-metrics! (metrics &key machine instructions effective-hz)
+  (when machine
+    (setf instructions (chip8-machine-instructions machine)))
+  (when instructions
+    (chip8-metric-add metrics "chip8_instructions_total" instructions))
+  (when effective-hz
+    (chip8-metric-set metrics "chip8_effective_hz" effective-hz))
   (flush-chip8-metrics! metrics)
   (chip8-metrics-snapshot metrics))
 
