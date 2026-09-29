@@ -37,9 +37,11 @@ timeout 1800 sbcl --script tools/coverage.lisp
 
 Coverage currently reports 78.02% expression coverage and 65.00% branch
 coverage, with stable integer floors of 78% and 65%. The current run reports
-439 tracked executable gaps across 28 measured source reports. The detailed
-per-form gap classification and the opcode macro-expansion evidence are
-maintained in `tools/coverage.lisp`; the coverage log prints every tracked gap.
+439 tracked executable gaps across 28 measured source reports. The runtime
+terminal loop is outside the automated test scope; key handling is verified by
+in-process tests. The detailed per-form gap classification and the opcode
+macro-expansion evidence are maintained in `tools/coverage.lisp`; the coverage
+log prints every tracked gap.
 The aggregate floors are the CI gate.
 
 Run the flake checks and documentation build with:
