@@ -17,7 +17,6 @@
   :depends-on ("cl-tty-kit"
                "cl-dataflow-kit"
                "cl-cli"     ; command-line parsing
-               "cl-dataflow-kit"
                "cl-toml-kit"
                "cl-log-kit"
                "cl-observability-kit"

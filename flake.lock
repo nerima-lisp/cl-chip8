@@ -83,23 +83,6 @@
         "type": "github"
       }
     },
-    "cl-dataflow-kit": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1786949793,
-        "narHash": "sha256-26KT1QL7KJ2soRppDDoYwgXyzLKOZjPu0Un0eJBL5M4=",
-        "owner": "nerima-lisp",
-        "repo": "cl-dataflow-kit",
-        "rev": "c4770c3b757bc40a9d5ecfc5de53871ec5da26c8",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v1.2.0",
-        "repo": "cl-dataflow-kit",
-        "type": "github"
-      }
-    },
     "cl-date-kit": {
       "inputs": {
         "cl-nix-forge": [
@@ -291,23 +274,6 @@
         "type": "github"
       }
     },
-    "cl-prolog-kit": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1786948477,
-        "narHash": "sha256-3qn9W1Jmbxnr0Si77J7Klo26oX/zjgBVwb5ye74NsTY=",
-        "owner": "nerima-lisp",
-        "repo": "cl-prolog-kit",
-        "rev": "239368e1001bc3a8576d45770c9e91da11515d09",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v1.5.0",
-        "repo": "cl-prolog-kit",
-        "type": "github"
-      }
-    },
     "cl-toml-kit": {
       "flake": false,
       "locked": {
@@ -450,14 +416,12 @@
         "cl-cli": "cl-cli",
         "cl-codec-kit": "cl-codec-kit",
         "cl-concurrent-kit": "cl-concurrent-kit",
-        "cl-dataflow-kit": "cl-dataflow-kit",
         "cl-date-kit": "cl-date-kit",
         "cl-host-kit": "cl-host-kit_2",
         "cl-log-kit": "cl-log-kit",
         "cl-nix-forge": "cl-nix-forge",
         "cl-observability-kit": "cl-observability-kit",
         "cl-parser-kit": "cl-parser-kit",
-        "cl-prolog-kit": "cl-prolog-kit",
         "cl-toml-kit": "cl-toml-kit",
         "cl-tty-kit": "cl-tty-kit",
         "cl-weave": "cl-weave_2",

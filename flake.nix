@@ -9,11 +9,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    cl-prolog-kit = {
-      url = "github:nerima-lisp/cl-prolog-kit/v1.5.0";
-      flake = false;
-    };
-
     cl-tty-kit = {
       url = "github:nerima-lisp/cl-tty-kit/v1.6.1";
       flake = false;
@@ -77,11 +72,6 @@
       flake = false;
     };
 
-    cl-dataflow-kit = {
-      url = "github:nerima-lisp/cl-dataflow-kit/v1.2.0";
-      flake = false;
-    };
-
     cl-log-kit = {
       url = "github:nerima-lisp/cl-log-kit/v2.2.0";
       flake = false;
@@ -108,7 +98,6 @@
       self,
       nixpkgs,
       cl-nix-forge,
-      cl-prolog-kit,
       cl-tty-kit,
       cl-cli,
       cl-concurrent-kit,
@@ -120,7 +109,6 @@
       paredit-cli,
       treefmt-nix,
       cl-parser-kit,
-      cl-dataflow-kit,
       cl-log-kit,
       cl-toml-kit,
       cl-observability-kit,
@@ -186,27 +174,11 @@
               dateKit
             ];
           };
-          prologKit = ctx.cl.lispDerivation {
-            pname = "cl-prolog-kit";
-            version = ctx.cl.fromAsdSystem "${cl-prolog-kit}/cl-prolog-kit.asd";
-            src = cl-prolog-kit;
-            lispSystem = "cl-prolog-kit";
-          };
           parserKit = ctx.cl.lispDerivation {
             pname = "cl-parser-kit";
             version = ctx.cl.fromAsdSystem "${cl-parser-kit}/cl-parser-kit.asd";
             src = cl-parser-kit;
             lispSystem = "cl-parser-kit";
-          };
-          dataflowKit = ctx.cl.lispDerivation {
-            pname = "cl-dataflow-kit";
-            version = ctx.cl.fromAsdSystem "${cl-dataflow-kit}/cl-dataflow-kit.asd";
-            src = cl-dataflow-kit;
-            lispSystem = "cl-dataflow-kit";
-            lispDependencies = [
-              prologKit
-              concurrentKit
-            ];
           };
           logKit = ctx.cl.lispDerivation {
             pname = "cl-log-kit";
@@ -241,7 +213,6 @@
           };
         in
         [
-          prologKit
           (ctx.cl.lispDerivation {
             pname = "cl-tty-kit";
             version = ctx.cl.fromAsdSystem "${cl-tty-kit}/cl-tty-kit.asd";
@@ -262,7 +233,6 @@
           dateKit
           concurrentKit
           hostKit
-          dataflowKit
           logKit
           tomlKit
           observabilityKit

@@ -21,7 +21,6 @@
      (loop for organization-root in organization-roots
            append (loop for name in (list
                                     "cl-chip8"
-                                    "cl-prolog-kit"
                                     "cl-tty-kit"
                                     "cl-cli"
                                     "cl-concurrent-kit"
@@ -31,7 +30,6 @@
                                     "cl-codec-kit"
                                     "cl-weave"
                                     "cl-parser-kit"
-                                    "cl-dataflow-kit"
                                     "cl-log-kit"
                                     "cl-toml-kit"
                                     "cl-observability-kit")
