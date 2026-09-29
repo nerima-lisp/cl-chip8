@@ -5,7 +5,8 @@
 (defstruct (chip8-metrics (:constructor %make-chip8-metrics))
   registry
   counters
-  pending)
+  pending
+  applied)
 
 (defvar *chip8-metrics* nil)
 
@@ -19,65 +20,114 @@
       (error "Required CL-OBSERVABILITY-KIT::~A macro is unavailable." name))
     symbol))
 
-(defun %define-chip8-metric (registry name help kind)
+(defun %define-chip8-metric (registry name help kind unit)
   ;; DEFINE-COUNTER is intentionally evaluated only during setup.  Runtime
   ;; command paths update the local pending table, never the external metric.
   (eval (list (%chip8-observability-macro-symbol
                (if (eq kind :gauge) "DEFINE-GAUGE" "DEFINE-COUNTER"))
               registry (intern name (find-package "CL-CHIP8"))
-              :help help)))
+              :help help
+              :unit unit)))
+
+(defun %chip8-metric-for (metrics name)
+  (or (gethash name (chip8-metrics-counters metrics))
+      (error "Unknown CHIP-8 metric ~S." name)))
+
+(defun %chip8-metric-of-kind (metrics name kind)
+  "Return the registered metric NAME, signalling unless it is of KIND.
+
+  cl-observability-kit rejects a mis-kinded operation too, but only once
+  FLUSH reaches it, by which point the wrong value is already in the pending
+  table and the failure names FLUSH rather than the call that caused it."
+  (let* ((metric (%chip8-metric-for metrics name))
+         (actual (funcall (%chip8-observability-function "METRIC-KIND") metric)))
+    (unless (eq actual kind)
+      (error "CHIP-8 metric ~A is a ~A, not a ~A." name actual kind))
+    metric))
 
 (defun make-chip8-metrics ()
   (let* ((make-registry (%chip8-observability-function "MAKE-METRIC-REGISTRY"))
          (registry (funcall make-registry :scope-name "cl-chip8"))
          (counters (make-hash-table :test #'equal))
          (pending (make-hash-table :test #'equal)))
-    (dolist (spec '(("chip8_instructions_total" "Executed CHIP-8 instructions." :counter)
-                    ("chip8_effective_hz" "Effective instruction rate." :gauge)
-                    ("chip8_render_rows_worker_total" "Rendered rows in workers." :counter)
-                    ("chip8_render_rows_serial_total" "Rendered rows serially." :counter)
-                    ("chip8_render_frames_total" "Rendered frames." :counter)))
-      (setf (gethash (car spec) counters)
-            (%define-chip8-metric registry (first spec) (second spec) (third spec))
-            (gethash (car spec) pending) 0))
-    (%make-chip8-metrics :registry registry :counters counters :pending pending)))
+    (dolist (spec '(("chip8_instructions_total" "Executed CHIP-8 instructions." :counter nil)
+                    ("chip8_effective_hz" "Effective instruction rate." :gauge "Hz")
+                    ("chip8_render_rows_worker_total" "Rendered rows in workers." :counter nil)
+                    ("chip8_render_rows_serial_total" "Rendered rows serially." :counter nil)))
+      (setf (gethash (first spec) counters)
+            (%define-chip8-metric registry
+                                  (first spec) (second spec) (third spec) (fourth spec))
+            (gethash (first spec) pending) 0))
+    (%make-chip8-metrics :registry registry
+                         :counters counters
+                         :pending pending
+                         :applied (make-hash-table :test #'equal))))
 
 (defun chip8-metric-add (metrics name &optional (amount 1))
-  "Record AMOUNT locally.  No cl-observability-kit operation occurs here."
+  "Queue AMOUNT for the counter NAME.  No cl-observability-kit operation occurs here."
   (check-type metrics chip8-metrics)
-  (unless (gethash name (chip8-metrics-counters metrics))
-    (error "Unknown CHIP-8 metric ~S." name))
+  (%chip8-metric-of-kind metrics name :counter)
   (incf (gethash name (chip8-metrics-pending metrics)) amount))
 
 (defun chip8-metric-set (metrics name value)
-  "Set a gauge at the termination boundary, not in the instruction hot path."
+  "Queue the absolute gauge VALUE, not an increment.  No operation occurs here."
   (check-type metrics chip8-metrics)
-  (unless (gethash name (chip8-metrics-counters metrics))
-    (error "Unknown CHIP-8 metric ~S." name))
+  (%chip8-metric-of-kind metrics name :gauge)
   (setf (gethash name (chip8-metrics-pending metrics)) value))
 
-(defun record-chip8-instruction! (metrics)
-  (chip8-metric-add metrics "chip8_instructions_total"))
-
 (defun flush-chip8-metrics! (metrics)
-  "Apply pending values once, normally from the run termination boundary."
+  "Apply every pending value once: counters through METRIC-INC, gauges through METRIC-SET.
+
+A zero pending value is published rather than skipped, so a counter that never
+moved reports zero and a gauge cleared to zero does not keep its old reading."
   (check-type metrics chip8-metrics)
-  (let ((metric-inc (%chip8-observability-function "METRIC-INC")))
+  (let ((metric-inc (%chip8-observability-function "METRIC-INC"))
+        (metric-set (%chip8-observability-function "METRIC-SET"))
+        (metric-kind (%chip8-observability-function "METRIC-KIND"))
+        (pending (chip8-metrics-pending metrics)))
     (maphash (lambda (name metric)
-               (let ((amount (gethash name (chip8-metrics-pending metrics) 0)))
-                 (when (plusp amount)
-                   (funcall metric-inc metric amount)
-                   (setf (gethash name (chip8-metrics-pending metrics)) 0))))
+               (let ((value (gethash name pending 0)))
+                 (ecase (funcall metric-kind metric)
+                   (:counter (funcall metric-inc metric value))
+                   (:gauge (funcall metric-set metric value)))
+                 (setf (gethash name pending) 0)))
              (chip8-metrics-counters metrics)))
   metrics)
 
-(defun finalize-chip8-metrics! (metrics &key machine instructions effective-hz)
+(defun %chip8-queue-absolute-counter (metrics name value)
+  "Queue the change from the last applied reading of the counter NAME to VALUE.
+
+FINALIZE reads absolute values while a counter is published with an increment,
+so re-reading the same value has to queue nothing.  That is what makes FINALIZE
+idempotent and safe to call once per tick."
+  (let* ((applied (chip8-metrics-applied metrics))
+         (previous (gethash name applied 0)))
+    (setf (gethash name applied) value)
+    (let ((delta (- value previous)))
+      (unless (zerop delta)
+        (chip8-metric-add metrics name delta)))))
+
+(defun finalize-chip8-metrics! (metrics
+                                &key machine instructions effective-hz render-pipeline)
+  "Apply the run's metrics once, from the termination boundary.
+
+MACHINE supplies the instruction count when INSTRUCTIONS is not given, and
+RENDER-PIPELINE's existing row counters supply the two render counters.  Either
+source may be NIL, in which case its metrics are left at zero."
+  (check-type metrics chip8-metrics)
   (when machine
     (setf instructions (chip8-machine-instructions machine)))
   (when instructions
-    (chip8-metric-add metrics "chip8_instructions_total" instructions))
+    (%chip8-queue-absolute-counter metrics "chip8_instructions_total" instructions))
   (when effective-hz
     (chip8-metric-set metrics "chip8_effective_hz" effective-hz))
+  (when render-pipeline
+    (%chip8-queue-absolute-counter
+     metrics "chip8_render_rows_worker_total"
+     (chip8-render-pipeline-submitted-rows render-pipeline))
+    (%chip8-queue-absolute-counter
+     metrics "chip8_render_rows_serial_total"
+     (chip8-render-pipeline-serial-rows render-pipeline)))
   (flush-chip8-metrics! metrics)
   (chip8-metrics-snapshot metrics))
 
