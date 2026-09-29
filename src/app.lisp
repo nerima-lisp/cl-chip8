@@ -53,7 +53,7 @@
          (setf (chip8-app-paused-p app) t)
          (setf (chip8-app-state-machine app)
                (step-chip8-control-state
-                (chip8-app-state-machine app) :pause)))
+                (chip8-app-state-machine app) :step)))
        t)
       ((eq special :backspace)
        (chip8-reset! (chip8-app-machine app))
