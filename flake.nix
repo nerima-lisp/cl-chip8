@@ -87,6 +87,11 @@
       flake = false;
     };
 
+    cl-dataflow-kit = {
+      url = "github:nerima-lisp/cl-dataflow-kit/v1.2.0";
+      flake = false;
+    };
+
     timendus-chip8-test-suite = {
       url = "github:Timendus/chip8-test-suite/v4.2";
       flake = false;
@@ -112,6 +117,7 @@
       cl-log-kit,
       cl-toml-kit,
       cl-observability-kit,
+      cl-dataflow-kit,
       timendus-chip8-test-suite,
     }:
     let
@@ -245,6 +251,12 @@
           version = ctx.cl.fromAsdSystem "${cl-weave}/cl-weave.asd";
           src = cl-weave;
           lispSystem = "cl-weave";
+        })
+        (ctx.cl.lispDerivation {
+          pname = "cl-dataflow-kit";
+          version = ctx.cl.fromAsdSystem "${cl-dataflow-kit}/cl-dataflow-kit.asd";
+          src = cl-dataflow-kit;
+          lispSystem = "cl-dataflow-kit";
         })
       ];
 
