@@ -5,22 +5,17 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     cl-nix-forge = {
-      url = "github:nerima-lisp/cl-nix-forge/v0.5.0";
+      url = "github:nerima-lisp/cl-nix-forge/v0.6.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    cl-prolog-kit = {
-      url = "github:nerima-lisp/cl-prolog-kit/v1.5.0";
-      flake = false;
-    };
-
     cl-tty-kit = {
-      url = "github:nerima-lisp/cl-tty-kit/v1.5.0";
+      url = "github:nerima-lisp/cl-tty-kit/v1.6.1";
       flake = false;
     };
 
     cl-cli = {
-      url = "github:nerima-lisp/cl-cli/v1.3.0";
+      url = "github:nerima-lisp/cl-cli/v1.4.0";
       flake = false;
     };
 
@@ -38,14 +33,14 @@
     };
 
     cl-date-kit = {
-      url = "github:nerima-lisp/cl-date-kit/v1.0.0";
+      url = "github:nerima-lisp/cl-date-kit/v1.1.1";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-nix-forge.follows = "cl-nix-forge";
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
 
     cl-codec-kit = {
-      url = "github:nerima-lisp/cl-codec-kit/v0.5.0";
+      url = "github:nerima-lisp/cl-codec-kit/v0.6.0";
       flake = false;
     };
 
@@ -63,13 +58,38 @@
     };
 
     paredit-cli = {
-      url = "github:nerima-lisp/paredit-cli/v1.6.0";
+      url = "github:nerima-lisp/paredit-cli/v1.6.3";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    cl-parser-kit = {
+      url = "github:nerima-lisp/cl-parser-kit/v1.1.1";
+      flake = false;
+    };
+
+    cl-log-kit = {
+      url = "github:nerima-lisp/cl-log-kit/v2.2.0";
+      flake = false;
+    };
+
+    cl-toml-kit = {
+      url = "github:nerima-lisp/cl-toml-kit/v0.1.0";
+      flake = false;
+    };
+
+    cl-observability-kit = {
+      url = "github:nerima-lisp/cl-observability-kit/v1.0.0";
+      flake = false;
+    };
+
+    timendus-chip8-test-suite = {
+      url = "github:Timendus/chip8-test-suite/v4.2";
+      flake = false;
     };
   };
 
@@ -78,7 +98,6 @@
       self,
       nixpkgs,
       cl-nix-forge,
-      cl-prolog-kit,
       cl-tty-kit,
       cl-cli,
       cl-concurrent-kit,
@@ -89,9 +108,17 @@
       cl-weave,
       paredit-cli,
       treefmt-nix,
+      cl-parser-kit,
+      cl-log-kit,
+      cl-toml-kit,
+      cl-observability-kit,
+      timendus-chip8-test-suite,
     }:
     let
-      systems = [ "x86_64-linux" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-darwin"
+      ];
     in
     cl-nix-forge.lib.${builtins.head systems}.mkPackageFlake {
       inherit self systems nixpkgs;
@@ -147,14 +174,45 @@
               dateKit
             ];
           };
+          parserKit = ctx.cl.lispDerivation {
+            pname = "cl-parser-kit";
+            version = ctx.cl.fromAsdSystem "${cl-parser-kit}/cl-parser-kit.asd";
+            src = cl-parser-kit;
+            lispSystem = "cl-parser-kit";
+          };
+          logKit = ctx.cl.lispDerivation {
+            pname = "cl-log-kit";
+            version = ctx.cl.fromAsdSystem "${cl-log-kit}/cl-log-kit.asd";
+            src = cl-log-kit;
+            lispSystem = "cl-log-kit";
+            lispDependencies = [
+              dateKit
+              concurrentKit
+              hostKit
+            ];
+          };
+          tomlKit = ctx.cl.lispDerivation {
+            pname = "cl-toml-kit";
+            version = ctx.cl.fromAsdSystem "${cl-toml-kit}/cl-toml-kit.asd";
+            src = cl-toml-kit;
+            lispSystem = "cl-toml-kit";
+            lispDependencies = [
+              parserKit
+              dateKit
+            ];
+          };
+          observabilityKit = ctx.cl.lispDerivation {
+            pname = "cl-observability-kit";
+            version = ctx.cl.fromAsdSystem "${cl-observability-kit}/cl-observability-kit.asd";
+            src = cl-observability-kit;
+            lispSystem = "cl-observability-kit";
+            lispDependencies = [
+              concurrentKit
+              boundaryKit
+            ];
+          };
         in
         [
-          (ctx.cl.lispDerivation {
-            pname = "cl-prolog-kit";
-            version = ctx.cl.fromAsdSystem "${cl-prolog-kit}/cl-prolog-kit.asd";
-            src = cl-prolog-kit;
-            lispSystem = "cl-prolog-kit";
-          })
           (ctx.cl.lispDerivation {
             pname = "cl-tty-kit";
             version = ctx.cl.fromAsdSystem "${cl-tty-kit}/cl-tty-kit.asd";
@@ -175,6 +233,10 @@
           dateKit
           concurrentKit
           hostKit
+          logKit
+          tomlKit
+          observabilityKit
+          parserKit
         ];
 
       lispCheckDependencies = ctx: [
@@ -184,12 +246,6 @@
           src = cl-weave;
           lispSystem = "cl-weave";
         })
-        (ctx.cl.lispDerivation {
-          pname = "cl-host-kit";
-          version = ctx.cl.fromAsdSystem "${cl-host-kit}/cl-host-kit.asd";
-          src = cl-host-kit;
-          lispSystem = "cl-host-kit";
-        })
       ];
 
       executable = {
@@ -197,11 +253,17 @@
         programPath = "src/cl-chip8";
       };
 
+      timeoutSeconds = 600;
+      killAfterSeconds = 30;
+
       docs.root = ./docs;
 
       treefmt.evalModule = treefmt-nix.lib.evalModule;
 
       extraOutputs = ctx: {
+        packages.timendus = ctx.pkgs.runCommand "timendus-chip8-test-suite" { } ''
+          cp -r ${timendus-chip8-test-suite} "$out"
+        '';
         checks = {
           paredit-lint = paredit-cli.lib.${ctx.system}.mkLintCheck {
             inherit (ctx) src;
@@ -210,6 +272,14 @@
 
           build = ctx.executable;
         };
+      };
+
+      overrideOutputs = ctx: {
+        checks.default = ctx.generated.checks.default.overrideAttrs (old: {
+          preCheck = (old.preCheck or "") + ''
+            export CHIP8_TIMENDUS_DIR=${timendus-chip8-test-suite}/bin
+          '';
+        });
       };
     };
 }
