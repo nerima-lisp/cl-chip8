@@ -29,9 +29,70 @@
   (it "signals stack and memory errors"
     (let ((m (test-machine))) (signals chip8-stack-underflow (test-opcode m #x00ee)) (signals chip8-memory-access-out-of-bounds (check-memory-access 4095 2)))))
 
-(it-each ((:modern #x00e0) (:modern #x00ee) (:modern #x0123) (:modern #x1200) (:modern #x2200) (:modern #x3000) (:modern #x4000) (:modern #x5000) (:modern #x6000) (:modern #x7000) (:modern #x8000) (:modern #x8001) (:modern #x8002) (:modern #x8003) (:modern #x8004) (:modern #x8005) (:modern #x8006) (:modern #x8007) (:modern #x800e) (:modern #x9000) (:modern #xa200) (:modern #xb200) (:modern #xc0ff) (:modern #xd010) (:modern #xe09e) (:modern #xe0a1) (:modern #xf007) (:modern #xf00a) (:modern #xf015) (:modern #xf018) (:modern #xf01e) (:modern #xf029) (:modern #xf033) (:modern #xf055) (:modern #xf065) (:cosmac-vip #x00e0) (:cosmac-vip #x00ee) (:cosmac-vip #x0123) (:cosmac-vip #x1200) (:cosmac-vip #x2200) (:cosmac-vip #x3000) (:cosmac-vip #x4000) (:cosmac-vip #x5000) (:cosmac-vip #x6000) (:cosmac-vip #x7000) (:cosmac-vip #x8000) (:cosmac-vip #x8001) (:cosmac-vip #x8002) (:cosmac-vip #x8003) (:cosmac-vip #x8004) (:cosmac-vip #x8005) (:cosmac-vip #x8006) (:cosmac-vip #x8007) (:cosmac-vip #x800e) (:cosmac-vip #x9000) (:cosmac-vip #xa200) (:cosmac-vip #xb200) (:cosmac-vip #xc0ff) (:cosmac-vip #xd010) (:cosmac-vip #xe09e) (:cosmac-vip #xe0a1) (:cosmac-vip #xf007) (:cosmac-vip #xf00a) (:cosmac-vip #xf015) (:cosmac-vip #xf018) (:cosmac-vip #xf01e) (:cosmac-vip #xf029) (:cosmac-vip #xf033) (:cosmac-vip #xf055) (:cosmac-vip #xf065)) "executes opcode table case ~A ~4,'0X" (profile opcode)
+(it-each
+    ((:modern #x00e0) (:modern #x00ee) (:modern #x0123) (:modern #x1200) (:modern #x2200) (:modern #x3000) (:modern #x4000) (:modern #x5000) (:modern #x6000) (:modern #x7000) (:modern #x8000) (:modern #x8001) (:modern #x8002) (:modern #x8003) (:modern #x8004) (:modern #x8005) (:modern #x8006) (:modern #x8007) (:modern #x800e) (:modern #x9000) (:modern #xa200) (:modern #xb200) (:modern #xc0ff) (:modern #xd010) (:modern #xe09e) (:modern #xe0a1) (:modern #xf007) (:modern #xf00a) (:modern #xf015) (:modern #xf018) (:modern #xf01e) (:modern #xf029) (:modern #xf033) (:modern #xf055) (:modern #xf065) (:cosmac-vip #x00e0) (:cosmac-vip #x00ee) (:cosmac-vip #x0123) (:cosmac-vip #x1200) (:cosmac-vip #x2200) (:cosmac-vip #x3000) (:cosmac-vip #x4000) (:cosmac-vip #x5000) (:cosmac-vip #x6000) (:cosmac-vip #x7000) (:cosmac-vip #x8000) (:cosmac-vip #x8001) (:cosmac-vip #x8002) (:cosmac-vip #x8003) (:cosmac-vip #x8004) (:cosmac-vip #x8005) (:cosmac-vip #x8006) (:cosmac-vip #x8007) (:cosmac-vip #x800e) (:cosmac-vip #x9000) (:cosmac-vip #xa200) (:cosmac-vip #xb200) (:cosmac-vip #xc0ff) (:cosmac-vip #xd010) (:cosmac-vip #xe09e) (:cosmac-vip #xe0a1) (:cosmac-vip #xf007) (:cosmac-vip #xf00a) (:cosmac-vip #xf015) (:cosmac-vip #xf018) (:cosmac-vip #xf01e) (:cosmac-vip #xf029) (:cosmac-vip #xf033) (:cosmac-vip #xf055) (:cosmac-vip #xf065))
+  "executes opcode table case ~A ~4,'0X" (profile opcode)
   (let ((m (make-chip8-machine :quirks (make-chip8-quirks :profile profile))))
-    (setf (chip8-machine-sp m) 1 (aref (chip8-machine-stack m) 0) #x200)
-    (handler-case (test-opcode m opcode)
-      (chip8-error () nil))
-    (expect (chip8-machine-instructions m) :to-be 1)))
+    (setf (chip8-machine-sp m) 1
+          (aref (chip8-machine-stack m) 0) #x200)
+    (test-opcode m opcode)
+    (expect (chip8-machine-instructions m) :to-be 1)
+    (expect (chip8-machine-pc m)
+            :to-be
+            (cond
+              ((= opcode #x00ee) #x200)
+              ((member opcode '(#x1200 #x2200 #xb200)) #x200)
+              ((member opcode '(#x3000 #x5000 #xe0a1)) #x204)
+              ((and (= opcode #xd010) (eq profile :cosmac-vip)) #x200)
+              ((= opcode #xf00a) #x200)
+              (t #x202)))))
+
+(describe "CPU boundary and CPS contracts"
+  (it "wraps PC after the last two-byte instruction"
+    (let ((m (make-chip8-machine)))
+      (setf (chip8-machine-pc m) #xffe)
+      (load-rom m (vector #x60 #x00) :address #xffe)
+      (execute-instruction! m)
+      (expect (chip8-machine-pc m) :to-be 0)))
+  (it "rejects a fetch starting at the final byte"
+    (let ((m (make-chip8-machine)))
+      (setf (chip8-machine-pc m) #xfff)
+      (signals chip8-memory-access-out-of-bounds (execute-instruction! m))))
+  (it "rejects invalid and duplicate resumes"
+    (let ((m (make-chip8-machine)))
+      (test-opcode m #xf00a)
+      (chip8-run-instructions m 1)
+      (signals chip8-cps-error (chip8-resume! m '(:key-down 16)))
+      (chip8-resume! m '(:key-down 3))
+      (signals chip8-cps-error (chip8-resume! m '(:key-down 3))))))
+
+(cl-weave:it-property
+ "register writes remain octets"
+ ((value (cl-weave:gen-integer :min 0 :max 65535)))
+ (let ((m (make-chip8-machine)))
+   (setf (chip8-machine-register m 0) value)
+   (expect (< (chip8-machine-register m 0) 256) :to-be-truthy)))
+
+(cl-weave:it-property
+ "drawing the same pixel twice restores the framebuffer"
+ ((x (cl-weave:gen-integer :min 0 :max 63))
+  (y (cl-weave:gen-integer :min 0 :max 31)))
+ (let ((m (make-chip8-machine)))
+   (let ((before (chip8-framebuffer m)))
+     (display-xor-pixel! m x y)
+     (display-xor-pixel! m x y)
+     (expect (loop for row below +display-height+
+                   always (loop for column below +display-width+
+                                always (= (aref (chip8-framebuffer m) row column)
+                                          (aref before row column))))
+             :to-be-truthy))))
+
+(cl-weave:it-property
+ "instruction flow preserves the 12-bit even PC invariant"
+ ((word (cl-weave:gen-integer :min 0 :max 2047)))
+ (let ((m (make-chip8-machine)) (pc (* 2 word)))
+   (setf (chip8-machine-pc m) pc)
+   (load-rom m (vector #x60 #x00) :address pc)
+   (execute-instruction! m)
+   (expect (< (chip8-machine-pc m) 4096) :to-be-truthy)
+   (expect (evenp (chip8-machine-pc m)) :to-be-truthy)))

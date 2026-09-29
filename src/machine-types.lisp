@@ -2,7 +2,7 @@
 (defstruct (chip8-machine (:constructor %make-chip8-machine))
   (memory (make-array 4096 :element-type 'chip8-octet :initial-element 0) :type (simple-array chip8-octet (4096)))
   (v (make-array 16 :element-type 'chip8-octet :initial-element 0) :type (simple-array chip8-octet (16)))
-  (i 0 :type (unsigned-byte 16)) (pc #x200 :type (unsigned-byte 16)) (sp 0 :type (integer 0 16))
+  (i 0 :type (unsigned-byte 16)) (pc #x200 :type chip8-program-counter) (sp 0 :type (integer 0 16))
   (stack (make-array 16 :element-type '(unsigned-byte 16) :initial-element 0) :type (simple-array (unsigned-byte 16) (16)))
   (delay-timer 0 :type chip8-octet) (sound-timer 0 :type chip8-octet)
   (keypad (make-array 16 :element-type 'bit :initial-element 0) :type (simple-array bit (16)))

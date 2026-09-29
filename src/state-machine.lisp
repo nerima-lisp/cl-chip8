@@ -26,8 +26,13 @@
     ("paused" :error "error"))
   "Immutable definition of the control states used by CHIP8-APP.")
 
-(defun make-chip8-control-state-machine ()
+(defparameter *chip8-state-machine-definition* *chip8-state-machine*)
+
+(defun make-chip8-app-state-machine ()
   (cl-dataflow-kit:copy-state-machine *chip8-state-machine*))
+
+(defun make-chip8-control-state-machine ()
+  (make-chip8-app-state-machine))
 
 (defun chip8-control-state (machine)
   (cl-dataflow-kit:state-machine-state machine))

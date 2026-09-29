@@ -75,7 +75,7 @@
     (let ((machine (make-chip8-machine)))
       (state-machine-test-opcodes machine #xF10A)
       (chip8-run-instructions machine 1)
-      (chip8-resume! machine '(:other 5))
+      (signals chip8-cps-error (chip8-resume! machine '(:other 5)))
       (expect (wait-kind machine) :to-be :key)
       (expect (chip8-machine-pc machine) :to-be +initial-pc+)))
   (it
@@ -88,7 +88,7 @@
             (chip8-machine-register machine 1) 0)
       (chip8-run-instructions machine 2)
       (expect (wait-kind machine) :to-be :display)
-      (chip8-resume! machine :key-down)
+      (signals chip8-cps-error (chip8-resume! machine :key-down))
       (expect (wait-kind machine) :to-be :display)
       (chip8-resume! machine :tick)
       (expect (wait-kind machine) :to-be nil)

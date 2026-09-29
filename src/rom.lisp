@@ -5,4 +5,7 @@
   (when (and (probe-file pathname) (not (regular-file-p pathname))) (error 'chip8-rom-not-regular-file :path pathname))
   (with-open-file (stream pathname :element-type '(unsigned-byte 8))
     (let* ((size (file-length stream)) (bytes (make-array size :element-type '(unsigned-byte 8))))
-      (read-sequence bytes stream) (load-rom machine bytes))))
+      (let ((actual-size (read-sequence bytes stream)))
+        (unless (= actual-size size)
+          (error 'chip8-rom-short-read :actual-size actual-size :expected-size size)))
+      (load-rom machine bytes))))
