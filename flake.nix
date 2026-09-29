@@ -87,6 +87,11 @@
       flake = false;
     };
 
+    cl-prolog-kit = {
+      url = "github:nerima-lisp/cl-prolog-kit/v1.5.0";
+      flake = false;
+    };
+
     cl-dataflow-kit = {
       url = "github:nerima-lisp/cl-dataflow-kit/v1.2.0";
       flake = false;
@@ -118,6 +123,7 @@
       cl-toml-kit,
       cl-observability-kit,
       cl-dataflow-kit,
+      cl-prolog-kit,
       timendus-chip8-test-suite,
     }:
     let
@@ -217,8 +223,26 @@
               boundaryKit
             ];
           };
+          prologKit = ctx.cl.lispDerivation {
+            pname = "cl-prolog-kit";
+            version = ctx.cl.fromAsdSystem "${cl-prolog-kit}/cl-prolog-kit.asd";
+            src = cl-prolog-kit;
+            lispSystem = "cl-prolog-kit";
+          };
+          dataflowKit = ctx.cl.lispDerivation {
+            pname = "cl-dataflow-kit";
+            version = ctx.cl.fromAsdSystem "${cl-dataflow-kit}/cl-dataflow-kit.asd";
+            src = cl-dataflow-kit;
+            lispSystem = "cl-dataflow-kit";
+            lispDependencies = [
+              prologKit
+              concurrentKit
+            ];
+          };
         in
         [
+          prologKit
+          dataflowKit
           (ctx.cl.lispDerivation {
             pname = "cl-tty-kit";
             version = ctx.cl.fromAsdSystem "${cl-tty-kit}/cl-tty-kit.asd";
@@ -251,12 +275,6 @@
           version = ctx.cl.fromAsdSystem "${cl-weave}/cl-weave.asd";
           src = cl-weave;
           lispSystem = "cl-weave";
-        })
-        (ctx.cl.lispDerivation {
-          pname = "cl-dataflow-kit";
-          version = ctx.cl.fromAsdSystem "${cl-dataflow-kit}/cl-dataflow-kit.asd";
-          src = cl-dataflow-kit;
-          lispSystem = "cl-dataflow-kit";
         })
       ];
 

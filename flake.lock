@@ -291,6 +291,23 @@
         "type": "github"
       }
     },
+    "cl-prolog-kit": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786948477,
+        "narHash": "sha256-3qn9W1Jmbxnr0Si77J7Klo26oX/zjgBVwb5ye74NsTY=",
+        "owner": "nerima-lisp",
+        "repo": "cl-prolog-kit",
+        "rev": "239368e1001bc3a8576d45770c9e91da11515d09",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nerima-lisp",
+        "ref": "v1.5.0",
+        "repo": "cl-prolog-kit",
+        "type": "github"
+      }
+    },
     "cl-toml-kit": {
       "flake": false,
       "locked": {
@@ -440,6 +457,7 @@
         "cl-nix-forge": "cl-nix-forge",
         "cl-observability-kit": "cl-observability-kit",
         "cl-parser-kit": "cl-parser-kit",
+        "cl-prolog-kit": "cl-prolog-kit",
         "cl-toml-kit": "cl-toml-kit",
         "cl-tty-kit": "cl-tty-kit",
         "cl-weave": "cl-weave_2",
