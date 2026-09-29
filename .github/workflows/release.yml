@@ -34,9 +34,9 @@ jobs:
           set -euo pipefail
           asd_versions="$(sed -n 's/^[[:space:]]*:version "\([^"]*\)".*/\1/p' "$PACKAGE.asd")"
           tag_version="${GITHUB_REF_NAME#v}"
-          version_count="$(printf '%s\n' "$asd_versions" | grep -c . || true)"
           echo "asd=$(printf '%s' "$asd_versions" | tr '\n' ' ')tag=$tag_version"
 
+          version_count="$(printf '%s\n' "$asd_versions" | grep -c . || true)"
           if [[ "$version_count" -ne 1 ]]; then
             echo "::error::$PACKAGE.asd must declare exactly one :version form" >&2
             exit 1
