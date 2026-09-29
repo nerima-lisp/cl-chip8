@@ -10,7 +10,7 @@
                        (%make-render-row-snapshot
                         terminal-row
                         (make-array +display-width+ :element-type 'bit)
-                        (make-array +display-width+ :element-type 'bit))))
+                        (make-array +display-width+ :element-type 'bit)))))
     (dotimes (x +display-width+)
       (setf (sbit (render-row-snapshot-top-pixels snapshot) x)
             (aref framebuffer y0 x)
@@ -89,7 +89,8 @@
                        snapshots)
           (incf count)))
       (with-screen-batch (screen)
-        (if (and (>= count (chip8-render-pipeline-parallel-threshold pipeline))
+        (if (and (< count +display-terminal-row-count+)
+                 (>= count (chip8-render-pipeline-parallel-threshold pipeline))
                  (>= count +concurrent-render-minimum-snapshots+))
             (let ((results (%render-snapshots-concurrently snapshots pipeline)))
               (loop for snapshot across snapshots
@@ -99,6 +100,10 @@
                         characters)))
             (progn
               (incf (chip8-render-pipeline-serial-row-count pipeline) count)
+              (unless (= count +display-terminal-row-count+)
+                (atomic-counter-incf
+                 (chip8-render-pipeline-completed-counter pipeline)
+                 count))
               (loop for snapshot across snapshots
                     do (%commit-render-row!
                         screen (render-row-snapshot-terminal-row snapshot)

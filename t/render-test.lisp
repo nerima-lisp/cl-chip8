@@ -19,12 +19,13 @@
     (setf (aref *display* 0 3) 1)
     (setf (aref *display* 1 3) 1)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-chip8! screen *display* (make-chip8-render-state))
+      (render-chip8! screen *display* (make-chip8-render-state) :sound-active-p t)
       (expect (cell-char (screen-cell screen (+ +playfield-origin-x+ 3) +playfield-origin-y+))
               :to-be (code-char #x2588))))
   (it "blits a clear pixel pair as a space"
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-chip8! screen *display* (make-chip8-render-state))
+      (render-chip8! screen *display* (make-chip8-render-state)
+                     :sound-active-p t)
       (expect (cell-char (screen-cell screen +playfield-origin-x+ +playfield-origin-y+))
               :to-be #\Space))))
 
@@ -57,7 +58,8 @@
     (setf (aref *display* 1 3) 1)
     (set-sound-timer! 5)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-chip8! screen *display* (make-chip8-render-state))
+      (render-chip8! screen *display* (make-chip8-render-state)
+                     :sound-active-p t)
       (with-soft-assertions
         (expect (cell-char (screen-cell screen (+ +playfield-origin-x+ 3) +playfield-origin-y+))
                 :to-be (code-char #x2588))

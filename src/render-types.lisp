@@ -35,7 +35,10 @@ terminal row, plus a 1-cell border on each side.")
 
 (defun %copy-framebuffer (framebuffer)
   (declare (type display-framebuffer framebuffer))
-  (adjust-array (copy-seq framebuffer) '(32 64)))
+  (let ((copy (make-array '(32 64) :element-type 'bit)))
+    (dotimes (y +display-height+ copy)
+      (dotimes (x +display-width+)
+        (setf (aref copy y x) (aref framebuffer y x))))))
 
 (defun %changed-terminal-rows (state framebuffer)
   (declare (type chip8-render-state state) (type display-framebuffer framebuffer))

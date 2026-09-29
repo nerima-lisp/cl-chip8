@@ -47,7 +47,7 @@
            when directory
              collect directory))))
 
-(defun configure-local-source-registry (root) (asdf:initialize-source-registry `(:source-registry ,@(mapcar (lambda (directory) `(:directory ,directory)) (local-source-directories root)) :ignore-inherited-configuration)))
+(defun configure-local-source-registry (root) (asdf:initialize-source-registry `(:source-registry ,@(mapcar (lambda (directory) `(:directory ,directory)) (local-source-directories root)) :inherit-configuration)))
 
 (let ((root (project-root)))
   (configure-local-source-registry root)

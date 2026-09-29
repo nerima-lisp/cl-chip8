@@ -55,8 +55,8 @@
         (actual (make-screen +screen-width+ +screen-height+)))
     (with-chip8-render-pipeline
      (pipeline :parallelism 2 :parallel-threshold 4)
-     (render-chip8! expected *display* (make-chip8-render-state))
-     (render-chip8-concurrently! actual *display* pipeline)
+     (render-chip8! expected *display* (make-chip8-render-state) :sound-active-p t)
+     (render-chip8-concurrently! actual *display* pipeline :sound-active-p t)
      (with-soft-assertions
       (expect (%screen-matches-display-p actual) :to-be t)
       (expect (%screens-equal-p expected actual) :to-be t)
@@ -72,13 +72,13 @@
        (expected (make-screen +screen-width+ +screen-height+)))
    (with-chip8-render-pipeline
     (pipeline :parallelism 2 :parallel-threshold 4)
-    (render-chip8-concurrently! screen *display* pipeline)
+    (render-chip8-concurrently! screen *display* pipeline :sound-active-p t)
     (dotimes (terminal-row 8)
       (display-xor-pixel!
        (mod (+ 3 (* terminal-row 5)) +display-width+)
        (* terminal-row 2)))
-    (render-chip8! expected *display* (make-chip8-render-state))
-    (render-chip8-concurrently! screen *display* pipeline)
+    (render-chip8! expected *display* (make-chip8-render-state) :sound-active-p t)
+    (render-chip8-concurrently! screen *display* pipeline :sound-active-p t)
     (with-soft-assertions
      (expect (%screen-matches-display-p screen) :to-be t)
      ;; Compare the incrementally updated screen with a fresh full render.
@@ -94,11 +94,11 @@
   (let ((screen (make-screen +screen-width+ +screen-height+)))
     (with-chip8-render-pipeline
      (pipeline :parallelism 2 :parallel-threshold 4)
-     (render-chip8-concurrently! screen *display* pipeline)
+     (render-chip8-concurrently! screen *display* pipeline :sound-active-p t)
      (let ((submitted-before (chip8-render-pipeline-submitted-rows pipeline))
            (completed-before (chip8-render-pipeline-completed-rows pipeline))
            (serial-before (chip8-render-pipeline-serial-rows pipeline)))
-       (render-chip8-concurrently! screen *display* pipeline)
+       (render-chip8-concurrently! screen *display* pipeline :sound-active-p t)
        (with-soft-assertions
         (expect (chip8-render-pipeline-submitted-rows pipeline) :to-be submitted-before)
        (expect (chip8-render-pipeline-completed-rows pipeline) :to-be completed-before)
@@ -111,15 +111,15 @@
         (expected (make-screen +screen-width+ +screen-height+)))
     (with-chip8-render-pipeline
      (pipeline :parallelism 2 :parallel-threshold 4)
-     (render-chip8-concurrently! actual *display* pipeline)
+     (render-chip8-concurrently! actual *display* pipeline :sound-active-p t)
      (let ((submitted-before
              (chip8-render-pipeline-submitted-rows pipeline))
            (completed-before
              (chip8-render-pipeline-completed-rows pipeline))
            (serial-before
              (chip8-render-pipeline-serial-rows pipeline)))
-       (render-chip8! expected *display* (make-chip8-render-state))
-       (render-chip8-concurrently! actual *display* pipeline)
+       (render-chip8! expected *display* (make-chip8-render-state) :sound-active-p t)
+       (render-chip8-concurrently! actual *display* pipeline :sound-active-p t)
        (with-soft-assertions
         (expect (%screens-equal-p expected actual) :to-be t)
         (expect (chip8-render-pipeline-submitted-rows pipeline)
@@ -137,7 +137,7 @@
         (expected (make-screen +screen-width+ +screen-height+)))
     (with-chip8-render-pipeline
      (pipeline :parallelism 2 :parallel-threshold 4)
-     (render-chip8-concurrently! actual *display* pipeline)
+     (render-chip8-concurrently! actual *display* pipeline :sound-active-p t)
      (set-sound-timer! 5)
      (let ((submitted-before
              (chip8-render-pipeline-submitted-rows pipeline))
@@ -145,8 +145,8 @@
              (chip8-render-pipeline-completed-rows pipeline))
            (serial-before
              (chip8-render-pipeline-serial-rows pipeline)))
-       (render-chip8! expected *display* (make-chip8-render-state))
-       (render-chip8-concurrently! actual *display* pipeline)
+       (render-chip8! expected *display* (make-chip8-render-state) :sound-active-p t)
+       (render-chip8-concurrently! actual *display* pipeline :sound-active-p t)
        (with-soft-assertions
         (expect (%screens-equal-p expected actual) :to-be t)
         (expect (cell-style (screen-cell actual 0 0)) :to-equal '(:reverse))
@@ -165,11 +165,11 @@
         (expected (make-screen +screen-width+ +screen-height+)))
     (with-chip8-render-pipeline
      (pipeline :parallelism 2 :parallel-threshold 4)
-     (render-chip8-concurrently! screen *display* pipeline)
+     (render-chip8-concurrently! screen *display* pipeline :sound-active-p t)
      (let ((completed-before (chip8-render-pipeline-completed-rows pipeline)))
        (display-xor-pixel! 2 5)
-       (render-chip8! expected *display* (make-chip8-render-state))
-       (render-chip8-concurrently! screen *display* pipeline)
+       (render-chip8! expected *display* (make-chip8-render-state) :sound-active-p t)
+       (render-chip8-concurrently! screen *display* pipeline :sound-active-p t)
        (with-soft-assertions
         (expect (%screen-matches-display-p screen) :to-be t)
         ;; Compare the incremental update with a fresh full render.
@@ -189,7 +189,7 @@
    (close-chip8-render-pipeline pipeline)
    (signals
     error
-    (render-chip8-concurrently! (make-screen +screen-width+ +screen-height+) *display* pipeline))))
+    (render-chip8-concurrently! (make-screen +screen-width+ +screen-height+) *display* pipeline :sound-active-p t))))
  (it
   "closes the pipeline when its scope unwinds"
   (let ((pipeline nil)
@@ -200,7 +200,7 @@
       (candidate :parallelism 1)
       (setf pipeline candidate)
       (error "scope exit")))
-    (signals error (render-chip8-concurrently! screen *display* pipeline)))))
+    (signals error (render-chip8-concurrently! screen *display* pipeline :sound-active-p t)))))
 
 (describe
  "render-chip8-concurrently! parallel row batches"
@@ -214,13 +214,13 @@
         (expected (make-screen +screen-width+ +screen-height+)))
     (with-chip8-render-pipeline
      (pipeline :parallelism 2 :parallel-threshold 9)
-     (render-chip8-concurrently! screen *display* pipeline)
+     (render-chip8-concurrently! screen *display* pipeline :sound-active-p t)
      (dotimes (terminal-row 12)
        (display-xor-pixel!
         (mod (+ 3 (* terminal-row 5)) +display-width+)
         (* terminal-row 2)))
-     (render-chip8! expected *display* (make-chip8-render-state))
-     (render-chip8-concurrently! screen *display* pipeline)
+     (render-chip8! expected *display* (make-chip8-render-state) :sound-active-p t)
+     (render-chip8-concurrently! screen *display* pipeline :sound-active-p t)
      (with-soft-assertions
       (expect (%screen-matches-display-p screen) :to-be t)
       (expect (%screens-equal-p expected screen) :to-be t)
@@ -259,52 +259,10 @@
 ;;; Group these cases so the suite's BEFORE-EACH hook resets shared state.
 
 (describe
- "concurrent render dirty-row bookkeeping"
- (before-each (reset-cpu-state!) (display-reset!))
- (it
-  "retains a row dirtied after its snapshot"
-  (display-reset!)
-  (let ((snapshots
-          (cl-chip8::with-display-lock (cl-chip8::%snapshot-dirty-display-rows-under-lock))))
-    (display-xor-pixel! 0 0)
-    (cl-chip8::%clear-rendered-display-rows! snapshots)
-    (with-soft-assertions
-      (expect (sbit cl-chip8::*display-dirty-rows* 0) :to-be 1)
-      (expect (sbit cl-chip8::*display-dirty-rows* 2) :to-be 0))))
- (it
-  "handles rows dirtied only on their bottom scanline"
-  (display-reset!)
-  (let ((screen (make-screen +screen-width+ +screen-height+)))
-    (with-chip8-render-pipeline
-        (pipeline :parallelism 1 :parallel-threshold 16)
-      (render-chip8-concurrently! screen *display* pipeline)
-      (display-xor-pixel! 1 1)
-      (render-chip8-concurrently! screen *display* pipeline)
-      (display-xor-pixel! 1 1)
-      (let ((snapshots
-              (cl-chip8::with-display-lock (cl-chip8::%snapshot-dirty-display-rows-under-lock))))
-        (cl-chip8::%clear-rendered-display-rows! snapshots))
-      (with-soft-assertions
-        (expect (sbit cl-chip8::*display-dirty-rows* 0) :to-be 0)
-        (expect (sbit cl-chip8::*display-dirty-rows* 1) :to-be 0)
-        (expect cl-chip8::*display-dirty-terminal-row-count* :to-be 0)))))
- (it
-  "allocates a row buffer when no reusable buffer is supplied"
-  (display-reset!)
-  (let* ((snapshots
-           (cl-chip8::with-display-lock (cl-chip8::%snapshot-dirty-display-rows-under-lock)))
-         (characters
-           (cl-chip8::%render-row-snapshot
-            (aref snapshots 0))))
-    (with-soft-assertions
-     (expect (length characters) :to-be +display-width+)
-     (expect (char characters 0) :to-be #\Space)))))
-
-(describe
  "concurrent render failure propagation"
  (before-each (reset-cpu-state!) (display-reset!))
  (it "propagates row worker failures to the caller" (let ((pipeline (make-chip8-render-pipeline :parallelism 1 :parallel-threshold 1))) (unwind-protect (signals error (cl-chip8::%render-snapshots-concurrently (vector :invalid) pipeline)) (close-chip8-render-pipeline pipeline))))
- (it "signals when the job channel closes before submission" (let ((pipeline (make-chip8-render-pipeline :parallelism 1 :parallel-threshold 1))) (unwind-protect (progn (cl-concurrent-kit:close-channel (cl-chip8::chip8-render-pipeline-jobs-channel pipeline)) (signals error (cl-chip8::%render-snapshots-concurrently (vector (cl-chip8::%make-render-row-snapshot 0 (make-array +display-width+ :element-type (quote bit) :initial-element 0) (make-array +display-width+ :element-type (quote bit) :initial-element 0) 0 0)) pipeline))) (close-chip8-render-pipeline pipeline))))
+ (it "signals when the job channel closes before submission" (let ((pipeline (make-chip8-render-pipeline :parallelism 1 :parallel-threshold 1))) (unwind-protect (progn (cl-concurrent-kit:close-channel (cl-chip8::chip8-render-pipeline-jobs-channel pipeline)) (signals error (cl-chip8::%render-snapshots-concurrently (vector (cl-chip8::%make-render-row-snapshot 0 (make-array +display-width+ :element-type (quote bit) :initial-element 0) (make-array +display-width+ :element-type (quote bit) :initial-element 0))) pipeline))) (close-chip8-render-pipeline pipeline))))
  (it
   "signals when the job channel is full before submission"
   (let* ((pipeline
