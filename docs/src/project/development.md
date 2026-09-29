@@ -35,6 +35,12 @@ Run coverage with a time limit:
 timeout 1800 sbcl --script tools/coverage.lisp
 ```
 
+Coverage currently reports 73.06% expression coverage and 55.63% branch
+coverage, with stable integer floors of 73% and 55%. The detailed per-file
+gap classification and the opcode macro-expansion evidence are maintained in
+`tools/coverage.lisp`; the coverage log prints every tracked gap. The aggregate
+floors are the CI gate.
+
 Run the flake checks and documentation build with:
 
 ```sh
