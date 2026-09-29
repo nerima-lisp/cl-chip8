@@ -5,48 +5,11 @@
 
 (declaim (optimize (sb-cover:store-coverage-data 3)))
 
-(defun script-directory ()
-  (make-pathname
-   :name
-   nil
-   :type
-   nil
-   :defaults
-   (or
-    *load-truename*
-    *compile-file-truename*
-    (error "Unable to determine the script location"))))
+(load (merge-pathnames #p"bootstrap.lisp"
+                       (merge-pathnames #p"../tools/"
+                                        (bootstrap-script-directory *load-truename*))))
 
-(defun project-root ()
-  (truename (merge-pathnames #p"../" (script-directory))))
-
-(defun local-source-directories (root)
-  (let ((organization-root (truename (merge-pathnames #p"../" root))))
-    (loop for name in (list
-                       "cl-chip8"
-                       "cl-prolog-kit"
-                       "cl-tty-kit"
-                       "cl-cli"
-                       "cl-concurrent-kit"
-                       "cl-boundary-kit"
-                       "cl-date-kit"
-                       "cl-host-kit"
-                       "cl-codec-kit"
-                       "cl-weave")
-          for directory = (merge-pathnames
-                           (format nil "~A/" name)
-                           organization-root)
-          when (probe-file directory)
-            collect (truename directory))))
-
-(defun configure-local-source-registry (root)
-  (asdf:initialize-source-registry
-   `(:source-registry
-     ,@(mapcar (lambda (directory) `(:directory ,directory))
-               (local-source-directories root))
-     :ignore-inherited-configuration)))
-
-(let ((root (project-root)))
+(let ((root (bootstrap-project-root *load-truename*)))
   (configure-local-source-registry root))
 (load (merge-pathnames #p"bootstrap.lisp" (script-directory)))
 
@@ -386,7 +349,8 @@ that trips a threshold still says what it measured."
             (length reports)
             *coverage-load-time-definition-heads*)))
 
-(let* ((root (project-root))
+(sb-ext:with-timeout 1800
+  (let* ((root (bootstrap-project-root *load-truename*))
        (directory (coverage-directory root))
        (source-directory (merge-pathnames #p"src/" root))
        (excluded-source-files (coverage-excluded-source-files root)))
@@ -419,4 +383,4 @@ that trips a threshold still says what it measured."
   (assert-executable-coverage directory)
   (format t "~&Coverage report: ~A~%"
           (merge-pathnames #p"cover-index.html" directory))
-  (host-kit:quit 0))
+    (host-kit:quit 0)))

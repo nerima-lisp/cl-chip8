@@ -1,55 +1,10 @@
 ;;;; bench/render.lisp -- deterministic baseline/concurrent render comparison.
 (require :asdf)
 
-(defun script-directory ()
-  (make-pathname
-   :name
-   nil
-   :type
-   nil
-   :defaults
-   (or
-    *load-truename*
-    *compile-file-truename*
-    (error "Unable to determine the script location"))))
+(load (merge-pathnames #p"../tools/bootstrap.lisp"
+                       (bootstrap-script-directory *load-truename*)))
 
-(defun project-root ()
-  (truename (merge-pathnames #p"../" (script-directory))))
-
-(defun local-source-directories
-    (root)
-  (let ((organization-roots
-          (remove-duplicates
-           (list
-            (truename (merge-pathnames #p"../" root))
-            (truename (merge-pathnames #p"../../" root))
-            (truename (merge-pathnames #p"../../../" root)))
-           :test #'equal)))
-    (cons
-     (truename root)
-     (loop for name in (list
-                        "cl-prolog-kit"
-                        "cl-tty-kit"
-                        "cl-cli"
-                        "cl-concurrent-kit"
-                        "cl-boundary-kit"
-                        "cl-date-kit"
-                        "cl-host-kit"
-                        "cl-codec-kit"
-                        "cl-weave")
-           for directory =
-             (loop for organization-root in organization-roots
-                   for candidate =
-                     (merge-pathnames (format nil "~A/" name)
-                                      organization-root)
-                   when (probe-file candidate)
-                     return (truename candidate))
-           when directory
-             collect directory))))
-
-(defun configure-local-source-registry (root) (asdf:initialize-source-registry `(:source-registry ,@(mapcar (lambda (directory) `(:directory ,directory)) (local-source-directories root)) :inherit-configuration)))
-
-(let ((root (project-root)))
+(let ((root (bootstrap-project-root *load-truename*)))
   (configure-local-source-registry root)
   (asdf:load-system "cl-chip8"))
 
@@ -227,7 +182,8 @@
      (getf selected (quote :serial))
      (getf selected (quote :high-water-mark)))))
 
-(let* ((warmup (positive-integer-env "CL_CHIP8_BENCH_WARMUP" 5))
+(sb-ext:with-timeout 600
+  (let* ((warmup (positive-integer-env "CL_CHIP8_BENCH_WARMUP" 5))
        (iterations (positive-integer-env "CL_CHIP8_BENCH_ITERATIONS" 2000))
        (parallel-threshold
          (positive-integer-env "CL_CHIP8_BENCH_PARALLEL_THRESHOLD" 13))
@@ -293,4 +249,4 @@
              (<= parallel-threshold dirty-row-count)
              (zerop (getf concurrent (quote :submitted))))
           (error "~A fixture did not submit any worker rows." label)))))
-  (host-kit:quit 0))
+    (host-kit:quit 0)))
