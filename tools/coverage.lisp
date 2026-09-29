@@ -238,10 +238,10 @@ loudly instead of silently widening."
                       (or head "?")
                       (or second ""))))
 
-(defparameter *coverage-minimum-expression* 73
+(defparameter *coverage-minimum-expression* 74
   "Measured expression coverage floor for the current release.
 
-The 73% floor protects the current 2267/3103 result (reported as 73.06%).
+The 74% floor protects the current 2373/3199 result (reported as 74.18%).
 The 491 tracked gaps are classified by source file in the coverage log:
 (a) testable gaps: app 28, cli 15, concurrent-render 31, control-cps 28,
 control-events 12, opcode-execution 21, config 15, quirks 9, render 9,
@@ -252,10 +252,10 @@ forms: conditions 40, opcode-data 188, opcode-dispatch 42 (270 total).
 For opcode-data/dispatch, macro expansion contains the LD-BYTE body and direct
 execution sets V0 to 1, while SB-COVER still marks the source macro forms state-2.")
 
-(defparameter *coverage-minimum-branch* 55
+(defparameter *coverage-minimum-branch* 56
   "Measured branch coverage floor for the current release.
 
-The 55% floor protects the current 168/302 result (reported as 55.63%).  It protects the measured
+The 56% floor protects the current 182/320 result (reported as 56.88%).  It protects the measured
 baseline while terminal-I/O and SB-COVER load-time/macro spans remain listed
 as explicit follow-up coverage gaps.")
 
