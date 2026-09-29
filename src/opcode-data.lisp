@@ -33,7 +33,7 @@
     (when (>= sp +call-stack-limit+)
       (error 'chip8-stack-overflow :depth sp))
     (setf (aref (chip8-machine-stack machine) sp)
-          (+ (chip8-machine-pc machine) 2)
+          (mod (+ (chip8-machine-pc machine) 2) +memory-size+)
           (chip8-machine-sp machine) (1+ sp)
           (chip8-machine-pc machine) nnn)))
 
@@ -194,7 +194,6 @@
 
 (define-chip8-opcode add-i #xf01e #xf0ff
     ((x (ldb (byte 4 8) opcode)))
-  (%vf-reset-if-needed machine)
   (setf (chip8-machine-i machine)
         (ldb (byte 16 0)
              (+ (chip8-machine-i machine)

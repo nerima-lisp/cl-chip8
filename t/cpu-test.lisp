@@ -6,7 +6,7 @@
   (execute-instruction! machine))
 (defparameter *opcode-table-cases*
   (loop for profile in '(:modern :cosmac-vip) append
-    (loop for opcode in '(#x00e0 #x00ee #x0123 #x1200 #x2200 #x3000 #x4000 #x5000
+    (loop for opcode in '(#x00e0 #x00ee #x0123 #x1200 #x2200 #x2ffe #x3000 #x4000 #x5000
                           #x6000 #x7000 #x8000 #x8001 #x8002 #x8003 #x8004 #x8005
                           #x8006 #x8007 #x800e #x9000 #xa200 #xb200 #xc0ff #xd010
                           #xe09e #xe0a1 #xf007 #xf00a #xf015 #xf018 #xf01e #xf029
@@ -35,6 +35,9 @@
     (:or-resets-vf :or :cosmac-vip #x8121
      :registers ((1 1) (2 2)) :vf 9 :pc #x202
      :results ((1 3) (15 0)))
+    (:add-i-preserves-vf :add-i :cosmac-vip #xf01e
+     :vf 9 :pc #x202 :i #x300
+     :registers ((1 5)) :results ((15 9)))
     (:skip-equal :se-byte :modern #x310a
      :registers ((1 10)) :vf 0 :pc #x204 :results nil)
     (:skip-not-equal :se-byte :modern #x310a
@@ -109,7 +112,8 @@
 
 (it-each
     ((:add-register) (:sub-register) (:subn-register) (:shr-vx) (:shr-vy)
-     (:or-preserves-vf) (:or-resets-vf) (:skip-equal) (:skip-not-equal)
+     (:or-preserves-vf) (:or-resets-vf) (:add-i-preserves-vf)
+     (:skip-equal) (:skip-not-equal)
      (:jump-v0) (:draw-clip) (:draw-wrap) (:store-increments-i)
      (:store-preserves-i) (:load-increments-i) (:load-preserves-i))
   "checks opcode semantic boundary case ~A" (name)
@@ -134,9 +138,11 @@
     (let ((m (test-machine))) (signals chip8-stack-underflow (test-opcode m #x00ee)) (signals chip8-memory-access-out-of-bounds (check-memory-access 4095 2)))))
 
 (it-each
-    ((:modern #x00e0) (:modern #x00ee) (:modern #x0123) (:modern #x1200) (:modern #x2200) (:modern #x3000) (:modern #x4000) (:modern #x5000) (:modern #x6000) (:modern #x7000) (:modern #x8000) (:modern #x8001) (:modern #x8002) (:modern #x8003) (:modern #x8004) (:modern #x8005) (:modern #x8006) (:modern #x8007) (:modern #x800e) (:modern #x9000) (:modern #xa200) (:modern #xb200) (:modern #xc0ff) (:modern #xd010) (:modern #xe09e) (:modern #xe0a1) (:modern #xf007) (:modern #xf00a) (:modern #xf015) (:modern #xf018) (:modern #xf01e) (:modern #xf029) (:modern #xf033) (:modern #xf055) (:modern #xf065) (:cosmac-vip #x00e0) (:cosmac-vip #x00ee) (:cosmac-vip #x0123) (:cosmac-vip #x1200) (:cosmac-vip #x2200) (:cosmac-vip #x3000) (:cosmac-vip #x4000) (:cosmac-vip #x5000) (:cosmac-vip #x6000) (:cosmac-vip #x7000) (:cosmac-vip #x8000) (:cosmac-vip #x8001) (:cosmac-vip #x8002) (:cosmac-vip #x8003) (:cosmac-vip #x8004) (:cosmac-vip #x8005) (:cosmac-vip #x8006) (:cosmac-vip #x8007) (:cosmac-vip #x800e) (:cosmac-vip #x9000) (:cosmac-vip #xa200) (:cosmac-vip #xb200) (:cosmac-vip #xc0ff) (:cosmac-vip #xd010) (:cosmac-vip #xe09e) (:cosmac-vip #xe0a1) (:cosmac-vip #xf007) (:cosmac-vip #xf00a) (:cosmac-vip #xf015) (:cosmac-vip #xf018) (:cosmac-vip #xf01e) (:cosmac-vip #xf029) (:cosmac-vip #xf033) (:cosmac-vip #xf055) (:cosmac-vip #xf065))
+    ((:modern #x00e0) (:modern #x00ee) (:modern #x0123) (:modern #x1200) (:modern #x2200) (:modern #x2ffe) (:modern #x3000) (:modern #x4000) (:modern #x5000) (:modern #x6000) (:modern #x7000) (:modern #x8000) (:modern #x8001) (:modern #x8002) (:modern #x8003) (:modern #x8004) (:modern #x8005) (:modern #x8006) (:modern #x8007) (:modern #x800e) (:modern #x9000) (:modern #xa200) (:modern #xb200) (:modern #xc0ff) (:modern #xd010) (:modern #xe09e) (:modern #xe0a1) (:modern #xf007) (:modern #xf00a) (:modern #xf015) (:modern #xf018) (:modern #xf01e) (:modern #xf029) (:modern #xf033) (:modern #xf055) (:modern #xf065) (:cosmac-vip #x00e0) (:cosmac-vip #x00ee) (:cosmac-vip #x0123) (:cosmac-vip #x1200) (:cosmac-vip #x2200) (:cosmac-vip #x2ffe) (:cosmac-vip #x3000) (:cosmac-vip #x4000) (:cosmac-vip #x5000) (:cosmac-vip #x6000) (:cosmac-vip #x7000) (:cosmac-vip #x8000) (:cosmac-vip #x8001) (:cosmac-vip #x8002) (:cosmac-vip #x8003) (:cosmac-vip #x8004) (:cosmac-vip #x8005) (:cosmac-vip #x8006) (:cosmac-vip #x8007) (:cosmac-vip #x800e) (:cosmac-vip #x9000) (:cosmac-vip #xa200) (:cosmac-vip #xb200) (:cosmac-vip #xc0ff) (:cosmac-vip #xd010) (:cosmac-vip #xe09e) (:cosmac-vip #xe0a1) (:cosmac-vip #xf007) (:cosmac-vip #xf00a) (:cosmac-vip #xf015) (:cosmac-vip #xf018) (:cosmac-vip #xf01e) (:cosmac-vip #xf029) (:cosmac-vip #xf033) (:cosmac-vip #xf055) (:cosmac-vip #xf065))
   "executes opcode table case ~A ~4,'0X" (profile opcode)
   (let ((m (make-chip8-machine :quirks (make-chip8-quirks :profile profile))))
+    (when (= opcode #x2ffe)
+      (setf (chip8-machine-pc m) #xffe))
     (setf (chip8-machine-sp m) 1
           (aref (chip8-machine-stack m) 0) #x200)
     (test-opcode m opcode)
@@ -146,12 +152,22 @@
             (cond
               ((= opcode #x00ee) #x200)
               ((member opcode '(#x1200 #x2200 #xb200)) #x200)
+              ((= opcode #x2ffe) #xffe)
               ((member opcode '(#x3000 #x5000 #xe0a1)) #x204)
               ((and (= opcode #xd010) (eq profile :cosmac-vip)) #x200)
               ((= opcode #xf00a) #x200)
-              (t #x202)))))
+              (t #x202)))
+    (when (= opcode #x2ffe)
+      (expect (aref (chip8-machine-stack m) 1) :to-be 0))))
 
 (describe "CPU boundary and CPS contracts"
+  (it "wraps a CALL return address at the 12-bit boundary"
+    (let ((m (make-chip8-machine)))
+      (setf (chip8-machine-pc m) #xffe)
+      (test-opcode m #x2200)
+      (expect (aref (chip8-machine-stack m) 0) :to-be 0)
+      (test-opcode m #x00ee)
+      (expect (chip8-machine-pc m) :to-be 0)))
   (it "wraps PC after the last two-byte instruction"
     (let ((m (make-chip8-machine)))
       (setf (chip8-machine-pc m) #xffe)
