@@ -29,9 +29,14 @@ nix flake check --print-build-logs
 nix fmt
 ```
 
-The flake currently declares `x86_64-linux` outputs. On another host, make the
-pinned sibling dependencies available in the expected `CL_SOURCE_REGISTRY`
-tree and use the direct SBCL commands below.
+The flake declares `x86_64-linux` and `aarch64-darwin` outputs. The Timendus
+ROM suite is available as `.#timendus` and is deliberately not copied into the
+repository because it is GPL-3.0 licensed. Set `CHIP8_TIMENDUS_DIR` to its
+store path when running ROM tests:
+
+```shell
+export CHIP8_TIMENDUS_DIR="$(nix build --no-link --print-out-paths .#timendus)"
+```
 
 The direct commands load dependencies from `CL_SOURCE_REGISTRY`; they do not
 install missing systems. If a dependency cannot be found, run the commands
@@ -60,13 +65,13 @@ build use the `x86_64-linux` outputs described above.
 Run the test system directly with:
 
 ```shell
-sbcl --script run-tests.lisp
+/nix/store/bv38kxd78jkqh1qwj30a8fl9z97m5pb8-coreutils-9.11/bin/timeout --kill-after=30s 600s sbcl --script run-tests.lisp
 ```
 
 The coverage workflow is:
 
 ```shell
-sbcl --script tools/coverage.lisp
+/nix/store/bv38kxd78jkqh1qwj30a8fl9z97m5pb8-coreutils-9.11/bin/timeout --kill-after=30s 1800s sbcl --script tools/coverage.lisp
 ```
 
 It writes the generated report under `coverage/`. The source selection and
@@ -79,7 +84,7 @@ explicit when interpreting a result.
 paths across four fixed fixtures of increasing dirty-row count:
 
 ```shell
-sbcl --script bench/render.lisp
+/nix/store/bv38kxd78jkqh1qwj30a8fl9z97m5pb8-coreutils-9.11/bin/timeout --kill-after=30s 600s sbcl --script bench/render.lisp
 ```
 
 Four environment variables tune the run. Each falls back to its default when
