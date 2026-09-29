@@ -38,6 +38,15 @@ jobs:
       - name: Check flake
         run: nix flake check --print-build-logs
 
+      # Keep the measured runtime-coverage baseline as a separate, visible
+      # gate.  The coverage script also checks its executable-span classifier
+      # and preserves the expression/branch floors documented in tools/coverage.lisp.
+      - name: Check coverage
+        run: |
+          timendus_dir="$(nix build .#timendus --no-link --print-out-paths)"
+          CHIP8_TIMENDUS_DIR="$timendus_dir/bin" \
+            timeout 900 nix develop --command sbcl --script tools/coverage.lisp
+
       # Catches stray conflict markers and whitespace errors that compile fine.
       - name: Check diff hygiene
         run: git diff --check

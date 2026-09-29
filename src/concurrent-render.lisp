@@ -49,9 +49,7 @@ timeout before propagating the original condition."
             (%make-render-row-snapshot
              0
              (make-array +display-width+ :element-type 'bit)
-             (make-array +display-width+ :element-type 'bit)
-             0
-             0)))))
+             (make-array +display-width+ :element-type 'bit))))))
 
 (defun %make-render-result-buffer ()
   "Allocate the reusable string buffer for rendered rows."
@@ -176,7 +174,8 @@ executor shutdown operation."
             nil
             snapshot-buffer
             result-buffer
-            job-buffer)))
+            job-buffer
+            (make-chip8-render-state))))
     (%start-render-workers
      executor
      jobs-channel

@@ -1,125 +1,66 @@
 # Development
 
-The repository uses its Nix flake for dependencies, tests, the executable,
-documentation, and CI checks. The implementation is SBCL-only.
+The project uses Nix for dependencies, tests, the executable, documentation,
+and CI. The implementation targets SBCL on `x86_64-linux` and
+`aarch64-darwin`.
 
-## Repository layout
+## Layout
 
-- `src/` contains the interpreter and terminal runtime.
-- `t/` contains the `cl-weave` test system.
+- `src/` contains machine state, CPU execution, state transitions, terminal I/O, and rendering.
+- `t/` contains the test system.
 - `run-tests.lisp` is the direct test entry point.
-- `tools/coverage.lisp` runs the coverage workflow.
-- `bench/` contains the render benchmark script.
-- `docs/` contains this MkDocs site.
+- `tools/coverage.lisp` runs coverage.
+- `bench/` contains the rendering benchmark.
+- `docs/` contains the MkDocs site.
 
-The ASDF file defines the `cl-chip8` system and its `cl-chip8/test` test
-system. Runtime dependencies and pinned development inputs are declared in
-`flake.nix`.
+## Tests and checks
 
-## Reproducible workflow
+Run the direct suite with an explicit time limit:
 
-From the repository root, the standard Nix workflow is:
-
-```shell
-nix develop
-nix run .#test
-nix run .#cl-chip8 -- path/to/rom.ch8
-nix build .#docs --print-build-logs
-nix flake check --print-build-logs
-nix fmt
+```sh
+timeout 900 sbcl --script run-tests.lisp
 ```
 
-The flake currently declares `x86_64-linux` outputs. On another host, make the
-pinned sibling dependencies available in the expected `CL_SOURCE_REGISTRY`
-tree and use the direct SBCL commands below.
+The Timendus ROM directory is supplied through `CHIP8_TIMENDUS_DIR`. When
+dependencies are outside the Nix shell, set `CL_SOURCE_REGISTRY` to the parent
+tree containing the checkout and its sibling systems:
 
-The direct commands load dependencies from `CL_SOURCE_REGISTRY`; they do not
-install missing systems. If a dependency cannot be found, run the commands
-inside `nix develop` or provide a registry containing the pinned sibling
-checkouts before treating the test result as a code failure.
-
-## Updating pinned inputs
-
-`flake.lock` records the exact revisions used by the Nix workflow. Update only
-the inputs intended for the change, then review the lock diff and rerun the
-repository checks:
-
-```shell
-nix flake update nixpkgs treefmt-nix
-git diff -- flake.lock
-nix flake check --print-build-logs
-nix build .#docs --print-build-logs
-git diff --check
+```sh
+CHIP8_TIMENDUS_DIR=/path/to/timendus timeout 900 sbcl --script run-tests.lisp
 ```
 
-Keep the lock diff limited to the requested inputs. The Nix checks and docs
-build use the `x86_64-linux` outputs described above.
+Run coverage with a time limit:
 
-## Tests and coverage
-
-Run the test system directly with:
-
-```shell
-sbcl --script run-tests.lisp
+```sh
+timeout 1800 sbcl --script tools/coverage.lisp
 ```
 
-The coverage workflow is:
+Coverage currently reports 78.02% expression coverage and 65.00% branch
+coverage, with stable integer floors of 78% and 65%. The current run reports
+439 tracked executable gaps across 28 measured source reports. The runtime
+terminal loop is outside the automated test scope; key handling is verified by
+in-process tests. The detailed per-form gap classification and the opcode
+macro-expansion evidence are maintained in `tools/coverage.lisp`; the coverage
+log prints every tracked gap.
+The aggregate floors are the CI gate.
 
-```shell
-sbcl --script tools/coverage.lisp
+Run the flake checks and documentation build with:
+
+```sh
+timeout 1800 nix flake check
+timeout 900 nix build .#docs
 ```
 
-It writes the generated report under `coverage/`. The source selection and
-coverage thresholds are defined in `tools/coverage.lisp`; keep those rules
-explicit when interpreting a result.
+The documentation build uses MkDocs strict mode, so broken links and missing
+navigation entries fail the build.
 
-## Render benchmark
+## Benchmark
 
-`bench/render.lisp` times the baseline, partial-serial, and concurrent render
-paths across four fixed fixtures of increasing dirty-row count:
+The renderer benchmark compares serial and concurrent output as well as timing:
 
-```shell
-sbcl --script bench/render.lisp
+```sh
+timeout 900 sbcl --script bench/render.lisp
 ```
 
-Four environment variables tune the run. Each falls back to its default when
-unset or unparseable, and any value below 1 is clamped to 1:
-
-| Variable | Default | Effect |
-|---|---|---|
-| `CL_CHIP8_BENCH_WARMUP` | 5 | Warm-up iterations discarded before timing. |
-| `CL_CHIP8_BENCH_ITERATIONS` | 2000 | Timed iterations per path. |
-| `CL_CHIP8_BENCH_PARALLEL_THRESHOLD` | 13 | Dirty-row count at which the concurrent path becomes eligible. |
-| `CL_CHIP8_BENCH_PARALLELISM` | 8 | Worker count for the pipeline under test. |
-
-Treat the output as a local measurement, not a published figure. The result
-depends on the host, its core count, and the load on it at the time, so a
-number from one machine does not carry to another. Run the benchmark before and
-after a change on the same machine and compare those two runs.
-
-The benchmark also compares every selected renderer's screen with the
-baseline, so a timing improvement is useful only when the output comparison
-passes. `submitted=0` is a valid result: full dirty frames and partial frames
-below the eligibility gates intentionally use the serial path. For a change
-to display or rendering code, inspect both the equality checks and the
-`submitted`/`completed`/`serial` counters instead of treating a reported
-speedup as universal.
-
-When run from a linked Git worktree, the benchmark resolves that checkout
-first and searches nearby sibling checkout roots for the pinned Lisp
-dependencies. Set `CL_SOURCE_REGISTRY` explicitly when the dependencies live
-elsewhere.
-
-## Documentation checks
-
-Build the site through the flake with:
-
-```shell
-nix build .#docs --print-build-logs
-```
-
-The MkDocs configuration uses strict mode. Keep all public symbols, examples,
-compatibility decisions, and navigation entries synchronized with the source.
-Use `--print-build-logs` (or its `-L` shorthand) to stream build logs while
-diagnosing a documentation failure.
-Use `git diff --check` to catch whitespace errors before submitting a change.
+Treat timings as host-specific measurements. A useful change must preserve the
+renderer output comparison as well as the measured performance.

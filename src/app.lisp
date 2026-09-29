@@ -1,175 +1,135 @@
-;;;; Realtime terminal loop for the fixed 64x32 CHIP-8 framebuffer.
 (in-package #:cl-chip8)
 
-(defparameter +default-clock-hz+ 700
-  "Default CPU instructions executed per second when --clock-hz is not given.
-Timers always step at 60Hz regardless of this value -- see STEP-TIMERS! and
-%INSTRUCTIONS-PER-TICK below.")
-
-(defstruct (chip8-app (:constructor make-chip8-app))
-  "Runtime state for the realtime tick loop.
-
-The actual CHIP-8 machine state (registers, memory, display, timers, keys)
-lives in *RULEBASE*/*MEMORY*/*DISPLAY*, not here. This struct only carries what
-the loop itself needs. INSTRUCTION-REMAINDER accumulates CPU work between 60Hz
-ticks so the total scheduled work is exactly CLOCK-HZ per 60 ticks. ERROR is
-nil for a normal run; %ADVANCE-CHIP8! sets it (and QUITP) when
-EXECUTE-INSTRUCTION! signals mid-run, for example for a malformed ROM. Its
-handler case and cli.lisp %RUN-HANDLER report the error after RUN returns and
-the terminal is restored. SOUND-PULSE-REMAINDER limits terminal bell output
-while the CHIP-8 sound timer is active."
-  renderer
-  decoder
-  render-pipeline
-  (clock-hz +default-clock-hz+ :type (integer 1 *))
-  (instruction-remainder 0 :type (integer 0 59))
-  (sound-pulse-remainder 0 :type (integer 0 5))
-  (quitp nil :type boolean)
-  (error nil :type (or null condition)))
-
 (defun quit-key-event-p (event)
-  "True when EVENT should stop the emulator.
-
-EVENT is a decoded cl-tty-kit KEY-EVENT. Ctrl-C decodes to :CONTROL-C under
-raw mode because ISIG is cleared, so it arrives as input rather than SIGINT."
   (and (eq (key-event-type event) :special)
-       (not (null (member (key-event-code event) (list :escape :control-c))))))
+       (member (key-event-code event) '(:escape :control-c))))
 
 (defun %read-available-string (stream)
-  "Return every character currently buffered on STREAM, without blocking, as
-a string."
   (with-output-to-string (out)
-    (loop for char = (read-char-no-hang stream nil nil)
-          while char
-          do (write-char char out))))
+    (loop for character = (read-char-no-hang stream nil nil)
+          while character do (write-char character out))))
 
 (defun %poll-input-events (decoder stream)
-  "Feed any input currently available on STREAM through DECODER, returning the
- decoded cl-tty-kit KEY-EVENTs. An empty poll flushes DECODER's pending input,
- allowing a standalone Escape to decode on the following tick."
-  (let ((chunk (%read-available-string stream)))
-    (if (plusp (length chunk))
-        (decode-input-chunk decoder chunk)
-        (cl-tty-kit:flush-input-decoder decoder))))
+  (let ((input (%read-available-string stream)))
+    (if (plusp (length input))
+        (decode-input-chunk decoder input)
+        (decode-input-chunk decoder "" :eof nil))))
 
 (defun %instructions-per-tick (app)
-  "Return the CPU work for one 1/60-second tick from APP.
-
-Retaining the integer remainder schedules exactly CLOCK-HZ instructions over
-every 60 consecutive ticks, including clock rates below 60Hz."
-  (multiple-value-bind
-        (instructions remainder)
+  (multiple-value-bind (instructions remainder)
       (floor (+ (chip8-app-instruction-remainder app)
-                (chip8-app-clock-hz app))
-             60)
+                (chip8-app-clock-hz app)) 60)
     (setf (chip8-app-instruction-remainder app) remainder)
     instructions))
 
+(defun %mapped-key (event)
+  (and (eq (key-event-type event) :character)
+       (cdr (assoc (char-downcase (key-event-code event)) +keypad-mapping+))))
+
+(defun %apply-control-key! (app event)
+  (let ((character (and (eq (key-event-type event) :character)
+                        (char-downcase (key-event-code event))))
+        (special (and (eq (key-event-type event) :special)
+                      (key-event-code event))))
+    (cond
+      ((and character (char= character #\p))
+       (setf (chip8-app-state-machine app)
+             (step-chip8-control-state
+              (chip8-app-state-machine app)
+              (if (chip8-app-paused-p app) :resume :pause)))
+       (setf (chip8-app-paused-p app) (not (chip8-app-paused-p app)))
+       t)
+      ((and character (char= character #\o))
+       (when (chip8-app-paused-p app)
+         (setf (chip8-app-paused-p app) nil)
+         (setf (chip8-app-state-machine app)
+               (step-chip8-control-state
+                (chip8-app-state-machine app) :resume)))
+       t)
+      ((and character (char= character #\n))
+       (when (chip8-app-paused-p app)
+         (setf (chip8-app-paused-p app) nil)
+         (step-chip8-app! app)
+         (setf (chip8-app-paused-p app) t)
+         (setf (chip8-app-state-machine app)
+               (step-chip8-control-state
+                (chip8-app-state-machine app) :step)))
+       t)
+      ((eq special :backspace)
+       (chip8-reset! (chip8-app-machine app))
+       (setf (chip8-app-paused-p app) nil
+             (chip8-app-state-machine app) (make-chip8-control-state-machine))
+       t)
+      (t nil))))
+
 (defun %apply-key-event! (app event)
-  "Apply one decoded KEY-EVENT to APP: set CHIP8-APP-QUITP on a quit key, and
-always forward it to the keypad regardless (a quit key is simply not in
-+KEYPAD-MAPPING+, so KEYPAD-APPLY-KEY-EVENT! ignores it harmlessly). Returns
-APP."
-  (when (quit-key-event-p event)
-    (setf (chip8-app-quitp app) t))
-  (keypad-apply-key-event! event)
+  (cond
+    ((quit-key-event-p event)
+     (setf (chip8-app-quit-p app) t)
+     (setf (chip8-app-state-machine app)
+           (step-chip8-control-state (chip8-app-state-machine app) :quit)))
+    ((%apply-control-key! app event) app)
+    ((%mapped-key event)
+     (let ((key (%mapped-key event)))
+       (if (eq (key-event-kind event) :release)
+           (progn
+             (chip8-key-up! (chip8-app-machine app) key)
+             (when (string= (chip8-control-state (chip8-app-state-machine app)) "waiting-key")
+               (resume-chip8-app app (make-chip8-control-event :key-release key))))
+           (progn
+             (chip8-key-down! (chip8-app-machine app) key)
+             (when (string= (chip8-control-state (chip8-app-state-machine app)) "waiting-key")
+               (resume-chip8-app app (make-chip8-control-event :key-press key))))))))
   app)
 
 (defun %apply-key-events! (app events)
-  "Apply %APPLY-KEY-EVENT! to each of EVENTS in order. Returns APP."
-  (dolist (event events app)
-    (%apply-key-event! app event)))
+  (dolist (event events app) (%apply-key-event! app event)))
 
 (defun %advance-chip8! (app)
-  "Advance APP by one tick, mutating it in place.
-
-Poll input, step timers, run scheduled CPU instructions unless input requested
-exit, and then step keypad hold countdowns. Execution errors are saved on APP
-and end the loop after terminal cleanup."
-  (%apply-key-events!
-    app
-    (%poll-input-events (chip8-app-decoder app) *standard-input*))
-  ;; A timer value written by FX15/FX18 must remain visible for this frame.
-  (step-timers!)
-  (unless (chip8-app-quitp app)
-    (handler-case
-        (loop repeat (%instructions-per-tick app)
-              do (execute-instruction!))
-      (error (condition)
-        (setf (chip8-app-error app) condition)
-        (setf (chip8-app-quitp app) t))))
-  (keypad-step!)
+  (%apply-key-events! app (%poll-input-events (chip8-app-decoder app) *standard-input*))
+  (unless (chip8-app-quit-p app)
+    (when (string= (chip8-control-state (chip8-app-state-machine app)) "ready")
+      (setf (chip8-app-state-machine app)
+            (step-chip8-control-state (chip8-app-state-machine app) :start)))
+    (when (string= (chip8-control-state (chip8-app-state-machine app)) "waiting-display")
+      (resume-chip8-app app (make-chip8-control-event :tick)))
+    (unless (member (chip8-control-state (chip8-app-state-machine app))
+                    '("paused" "waiting-key" "waiting-display" "finished" "error")
+                    :test #'string=)
+      (step-chip8-app! app)))
   app)
 
 (defun %render-chip8-app! (app)
-  "Render one frame for APP, including a rate-limited terminal bell while sound is active."
-  (let ((screen (renderer-screen (chip8-app-renderer app))))
+  (let ((screen (renderer-screen (chip8-app-renderer app)))
+        (framebuffer (chip8-framebuffer-snapshot (chip8-app-machine app)))
+        (sound-active-p (plusp (chip8-machine-sound-timer (chip8-app-machine app)))))
     (if (chip8-app-render-pipeline app)
-        (render-chip8-concurrently! screen (chip8-app-render-pipeline app))
-        (render-chip8! screen)))
-  (concatenate (quote string)
-               (%sound-bell-prefix app)
-               (renderer-render (chip8-app-renderer app))))
+        (render-chip8-concurrently! screen framebuffer (chip8-app-render-pipeline app)
+                                    :sound-active-p sound-active-p)
+        (render-chip8! screen framebuffer (chip8-app-render-state app)
+                       :sound-active-p sound-active-p))
+    (renderer-render (chip8-app-renderer app))))
 
 (defun %chip8-app-finished-p (app)
-  (chip8-app-quitp app))
+  (or (chip8-app-quit-p app)
+      (member (chip8-control-state (chip8-app-state-machine app))
+              '("finished" "error") :test #'string=)))
 
-(defun run (&key rom-path (clock-hz +default-clock-hz+) (stream *standard-output*))
-  "Load ROM-PATH, reset the machine, and run it until Escape or Ctrl-C.
-
-CLOCK-HZ is the target CPU instructions per second; timers always step at a
-fixed 60Hz regardless. The terminal is put in raw mode on the alternate
-screen with the cursor hidden, and restored on the way out. Return the final
-CHIP8-APP."
-  (reset-cpu-state!)
-  (memory-reset!)
-  (display-reset!)
-  (load-fontset-into-memory!)
-  (load-rom-file! rom-path)
-  (keypad-reset!)
-  (with-chip8-render-pipeline (render-pipeline)
-    (let ((app
-           (make-chip8-app
-             :renderer
-             (make-renderer +screen-width+ +screen-height+)
-             :decoder
-             (make-input-decoder)
-             :render-pipeline
-             render-pipeline
-             :clock-hz
-             clock-hz)))
-      (with-raw-mode
-        ()
+(defun run (&key rom-path (clock-hz +default-clock-hz+)
+                 (quirks (make-chip8-quirks)) (stream *standard-output*))
+  (let ((machine (make-chip8-machine :quirks quirks)))
+    (load-rom-file machine rom-path)
+    (let ((app (make-chip8-app
+                :machine machine :state-machine (make-chip8-control-state-machine)
+                :renderer (make-renderer +screen-width+ +screen-height+)
+                :render-state (make-chip8-render-state)
+                :decoder (make-input-decoder) :clock-hz clock-hz
+                :started-at (get-internal-real-time))))
+      (with-raw-mode ()
         (with-terminal-session
-          (session-stream
-           :stream
-           stream
-           :hide-cursor
-           t
-           :alternate-screen
-           t
-           :keyboard-enhancements
-           10)
-          (tick-loop-run-realtime
-           app
-           (function %advance-chip8!)
-           (function %render-chip8-app!)
-           (function %chip8-app-finished-p)
-           :stream
-           session-stream
-           :interval
-           1/60)))
+            (session-stream :stream stream :hide-cursor t :alternate-screen t
+                            :keyboard-enhancements 10)
+          (tick-loop-run-realtime app #'%advance-chip8! #'%render-chip8-app!
+                                   #'%chip8-app-finished-p
+                                   :stream session-stream :interval 1/60)))
       app)))
-
-(defun %sound-bell-prefix (app)
-  "Return a rate-limited terminal BEL while the CHIP-8 sound timer is active."
-  (cond
-    ((not (sound-timer-active-p))
-     (setf (chip8-app-sound-pulse-remainder app) 0)
-     "")
-    ((zerop (chip8-app-sound-pulse-remainder app))
-     (setf (chip8-app-sound-pulse-remainder app) 5)
-     (string #\Bell))
-    (t
-     (decf (chip8-app-sound-pulse-remainder app))
-     "")))

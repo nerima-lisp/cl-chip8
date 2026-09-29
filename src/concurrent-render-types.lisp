@@ -10,23 +10,19 @@
   'sb-thread:semaphore)
 
 (deftype render-lock ()
-  'lock)
+  'cl-concurrent-kit:lock)
 
 (defstruct (render-row-snapshot
             (:constructor
              %make-render-row-snapshot
              (terminal-row
               top-pixels
-              bottom-pixels
-              top-generation
-              bottom-generation)))
+              bottom-pixels)))
   (terminal-row 0 :type display-terminal-row)
   (top-pixels (make-array +display-width+ :element-type 'bit)
               :type display-row-bits)
   (bottom-pixels (make-array +display-width+ :element-type 'bit)
-                 :type display-row-bits)
-  (top-generation 0 :type (unsigned-byte 64))
-  (bottom-generation 0 :type (unsigned-byte 64)))
+                 :type display-row-bits))
 
 (defstruct (render-batch-job
             (:constructor
@@ -54,7 +50,8 @@
               closed-p
               snapshot-buffer
               result-buffer
-              job-buffer)))
+              job-buffer
+              state)))
   (executor nil :type (or null render-executor))
   (jobs-channel nil :type (or null render-channel))
   (completion-semaphore nil :type (or null render-semaphore))
@@ -68,7 +65,8 @@
   (closed-p nil :type boolean)
   (snapshot-buffer nil :type (or null (vector t 16)))
   (result-buffer nil :type (or null (vector t 16)))
-  (job-buffer nil :type (or null (vector t *))))
+  (job-buffer nil :type (or null (vector t *)))
+  (state (make-chip8-render-state) :type chip8-render-state))
 
 (defconstant +concurrent-render-minimum-snapshots+ 9 "Minimum partial batch that splits into multiple persistent CCK jobs.")
 (defconstant +concurrent-render-default-parallelism+ 8 "Default number of persistent render workers.")

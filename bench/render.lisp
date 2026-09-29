@@ -1,57 +1,15 @@
 ;;;; bench/render.lisp -- deterministic baseline/concurrent render comparison.
 (require :asdf)
 
-(defun script-directory ()
-  (make-pathname
-   :name
-   nil
-   :type
-   nil
-   :defaults
-   (or
-    *load-truename*
-    *compile-file-truename*
-    (error "Unable to determine the script location"))))
-
-(defun project-root ()
-  (truename (merge-pathnames #p"../" (script-directory))))
-
-(defun local-source-directories
-    (root)
-  (let ((organization-roots
-          (remove-duplicates
-           (list
-            (truename (merge-pathnames #p"../" root))
-            (truename (merge-pathnames #p"../../" root))
-            (truename (merge-pathnames #p"../../../" root)))
-           :test #'equal)))
-    (cons
-     (truename root)
-     (loop for name in (list
-                        "cl-prolog-kit"
-                        "cl-tty-kit"
-                        "cl-cli"
-                        "cl-concurrent-kit"
-                        "cl-boundary-kit"
-                        "cl-date-kit"
-                        "cl-host-kit"
-                        "cl-codec-kit"
-                        "cl-weave")
-           for directory =
-             (loop for organization-root in organization-roots
-                   for candidate =
-                     (merge-pathnames (format nil "~A/" name)
-                                      organization-root)
-                   when (probe-file candidate)
-                     return (truename candidate))
-           when directory
-             collect directory))))
-
-(defun configure-local-source-registry (root) (asdf:initialize-source-registry `(:source-registry ,@(mapcar (lambda (directory) `(:directory ,directory)) (local-source-directories root)) :ignore-inherited-configuration)))
-
-(let ((root (project-root)))
+(let* ((script-path *load-truename*)
+       (project-root (truename
+                      (merge-pathnames #p"../"
+                                       (uiop:pathname-directory-pathname script-path))))
+       (bootstrap (merge-pathnames #p"tools/bootstrap.lisp" project-root)))
+  (load bootstrap)
+  (let ((root (truename project-root)))
   (configure-local-source-registry root)
-  (asdf:load-system "cl-chip8"))
+    (asdf:load-system "cl-chip8")))
 
 (defun positive-integer-env (name default)
   (let ((value (host-kit:getenv name))) (if value (handler-case (max 1 (parse-integer value)) (parse-error () default)) default)))
@@ -59,38 +17,38 @@
 (defun monotonic-seconds ()
   (/ (get-internal-real-time) internal-time-units-per-second))
 
-(defun paint-dense-fixture! ()
+(defun paint-dense-fixture! (framebuffer)
   (dotimes (y cl-chip8:+display-height+)
     (dotimes (x cl-chip8:+display-width+)
       (when (zerop (mod (+ (* x 3) y) 11))
-        (setf (aref cl-chip8::*display* y x) 1)))))
+        (setf (aref framebuffer y x) 1)))))
 
 (defun prepare-fixture! (dense-p)
-  (cl-chip8:reset-cpu-state!)
-  (cl-chip8:display-reset!)
-  (when dense-p
-    (paint-dense-fixture!))
-  (cl-chip8::display-mark-all-dirty!))
+  (let ((machine (cl-chip8:make-chip8-machine)))
+    (let ((framebuffer (cl-chip8:chip8-framebuffer machine)))
+      (when dense-p
+        (paint-dense-fixture! framebuffer))
+      framebuffer)))
 
-(defun advance-fixture! (frame dirty-row-count)
-  (if (= dirty-row-count (truncate cl-chip8:+display-height+ 2)) (cl-chip8::display-mark-all-dirty!)
-    (dotimes (offset dirty-row-count)
-      (let ((terminal-row (mod (+ frame offset) (truncate cl-chip8:+display-height+ 2))))
-        (cl-chip8:display-xor-pixel!
-         (mod (+ (* frame 7) (* offset 13)) cl-chip8:+display-width+)
-         (* 2 terminal-row))))))
+(defun advance-fixture! (framebuffer frame dirty-row-count)
+  (dotimes (offset dirty-row-count)
+    (let ((terminal-row (mod (+ frame offset) (truncate cl-chip8:+display-height+ 2)))
+          (x (mod (+ (* frame 7) (* offset 13)) cl-chip8:+display-width+)))
+      (dotimes (scanline 2)
+        (let ((y (+ (* 2 terminal-row) scanline)))
+          (setf (aref framebuffer y x) (logxor 1 (aref framebuffer y x))))))))
 
-(defun render-frame! (mode screen pipeline frame dirty-row-count)
-  (advance-fixture! frame dirty-row-count)
+(defun render-frame! (mode screen framebuffer pipeline state frame dirty-row-count)
+  (advance-fixture! framebuffer frame dirty-row-count)
   (ecase mode
-    (:baseline (cl-chip8:render-chip8! screen))
+    (:baseline (cl-chip8:render-chip8! screen framebuffer state))
     ((:partial-serial :concurrent)
-     (cl-chip8:render-chip8-concurrently! screen pipeline))))
+     (cl-chip8:render-chip8-concurrently! screen framebuffer pipeline))))
 
-(defun measure-render-mode (mode screen pipeline dirty-row-count warmup iterations)
+(defun measure-render-mode (mode screen framebuffer pipeline state dirty-row-count warmup iterations)
   "Measure ITERATIONS after WARMUP and report measured counter deltas."
   (dotimes (frame warmup)
-    (render-frame! mode screen pipeline frame dirty-row-count))
+    (render-frame! mode screen framebuffer pipeline state frame dirty-row-count))
   (let* ((submitted-before
            (if pipeline
                (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
@@ -105,12 +63,7 @@
                0))
          (started-at (monotonic-seconds)))
     (dotimes (frame iterations)
-      (render-frame!
-       mode
-       screen
-       pipeline
-       (+ warmup frame)
-       dirty-row-count))
+      (render-frame! mode screen framebuffer pipeline state (+ warmup frame) dirty-row-count))
     (list
      :seconds
      (- (monotonic-seconds) started-at)
@@ -137,14 +90,17 @@
          0))))
 
 (defun run-mode (mode dense-p dirty-row-count warmup iterations parallel-threshold parallelism)
-  (prepare-fixture! dense-p)
-  (let ((screen
-         (cl-tty-kit:make-screen cl-chip8:+screen-width+ cl-chip8:+screen-height+)))
+  (let ((framebuffer (prepare-fixture! dense-p))
+        (screen
+         (cl-tty-kit:make-screen cl-chip8:+screen-width+ cl-chip8:+screen-height+))
+        (state (cl-chip8::make-chip8-render-state)))
     (if (eq mode :baseline)
         (measure-render-mode
          mode
          screen
+         framebuffer
          nil
+         state
          dirty-row-count
          warmup
          iterations)
@@ -158,7 +114,9 @@
           (measure-render-mode
            mode
            screen
+           framebuffer
            pipeline
+           state
            dirty-row-count
            warmup
            iterations)))))
@@ -227,7 +185,8 @@
      (getf selected (quote :serial))
      (getf selected (quote :high-water-mark)))))
 
-(let* ((warmup (positive-integer-env "CL_CHIP8_BENCH_WARMUP" 5))
+(sb-ext:with-timeout 600
+  (let* ((warmup (positive-integer-env "CL_CHIP8_BENCH_WARMUP" 5))
        (iterations (positive-integer-env "CL_CHIP8_BENCH_ITERATIONS" 2000))
        (parallel-threshold
          (positive-integer-env "CL_CHIP8_BENCH_PARALLEL_THRESHOLD" 13))
@@ -293,4 +252,4 @@
              (<= parallel-threshold dirty-row-count)
              (zerop (getf concurrent (quote :submitted))))
           (error "~A fixture did not submit any worker rows." label)))))
-  (host-kit:quit 0))
+    (host-kit:quit 0)))

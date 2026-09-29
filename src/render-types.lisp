@@ -1,6 +1,11 @@
 ;;;; src/render-types.lisp -- terminal rendering constants and lookup data.
 (in-package #:cl-chip8)
 
+(deftype column () '(integer 0 63))
+(deftype row () '(integer 0 31))
+(deftype terminal-row () '(integer 0 15))
+(deftype row-bits () '(simple-array bit (64)))
+
 (defconstant +screen-width+ (+ +display-width+ 2)
   "Terminal screen width: the 64-pixel-wide playfield plus a 1-cell border on
 each side.")
@@ -28,3 +33,29 @@ terminal row, plus a 1-cell border on each side.")
 (declaim (type (integer 0 *) +playfield-origin-x+)
          (type (integer 0 *) +playfield-origin-y+)
          (type (simple-array character (4)) +half-block-character-table+))
+
+(defstruct (chip8-render-state (:constructor make-chip8-render-state))
+  (framebuffer nil :type (or null display-framebuffer))
+  (sound-active-p nil :type boolean)
+  (frame-count 0 :type (unsigned-byte 64)))
+
+(defun %copy-framebuffer (framebuffer)
+  (declare (type display-framebuffer framebuffer))
+  (let ((copy (make-array '(32 64) :element-type 'bit)))
+    (dotimes (y +display-height+ copy)
+      (dotimes (x +display-width+)
+        (setf (aref copy y x) (aref framebuffer y x))))))
+
+(defun %changed-terminal-rows (state framebuffer)
+  (declare (type chip8-render-state state) (type display-framebuffer framebuffer))
+  (let ((previous (chip8-render-state-framebuffer state))
+        (rows (make-array +display-terminal-row-count+
+                          :element-type 'bit :initial-element 0)))
+    (dotimes (terminal-row +display-terminal-row-count+ rows)
+      (let ((y0 (ash terminal-row 1)))
+        (when (or (null previous)
+                  (loop for y from y0 to (1+ y0)
+                        thereis (loop for x below +display-width+
+                                      thereis (not (eql (aref previous y x)
+                                                      (aref framebuffer y x))))))
+          (setf (sbit rows terminal-row) 1))))))
