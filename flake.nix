@@ -9,6 +9,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    cl-prolog-kit = {
+      url = "github:nerima-lisp/cl-prolog-kit/v1.5.0";
+      flake = false;
+    };
+
     cl-tty-kit = {
       url = "github:nerima-lisp/cl-tty-kit/v1.6.1";
       flake = false;
@@ -72,6 +77,11 @@
       flake = false;
     };
 
+    cl-dataflow-kit = {
+      url = "github:nerima-lisp/cl-dataflow-kit/v1.2.0";
+      flake = false;
+    };
+
     cl-log-kit = {
       url = "github:nerima-lisp/cl-log-kit/v2.2.0";
       flake = false;
@@ -98,6 +108,7 @@
       self,
       nixpkgs,
       cl-nix-forge,
+      cl-prolog-kit,
       cl-tty-kit,
       cl-cli,
       cl-concurrent-kit,
@@ -109,6 +120,7 @@
       paredit-cli,
       treefmt-nix,
       cl-parser-kit,
+      cl-dataflow-kit,
       cl-log-kit,
       cl-toml-kit,
       cl-observability-kit,
@@ -174,45 +186,49 @@
               dateKit
             ];
           };
+          prologKit = ctx.cl.lispDerivation {
+            pname = "cl-prolog-kit";
+            version = ctx.cl.fromAsdSystem "${cl-prolog-kit}/cl-prolog-kit.asd";
+            src = cl-prolog-kit;
+            lispSystem = "cl-prolog-kit";
+          };
           parserKit = ctx.cl.lispDerivation {
             pname = "cl-parser-kit";
             version = ctx.cl.fromAsdSystem "${cl-parser-kit}/cl-parser-kit.asd";
             src = cl-parser-kit;
             lispSystem = "cl-parser-kit";
           };
+          dataflowKit = ctx.cl.lispDerivation {
+            pname = "cl-dataflow-kit";
+            version = ctx.cl.fromAsdSystem "${cl-dataflow-kit}/cl-dataflow-kit.asd";
+            src = cl-dataflow-kit;
+            lispSystem = "cl-dataflow-kit";
+            lispDependencies = [ prologKit concurrentKit ];
+          };
           logKit = ctx.cl.lispDerivation {
             pname = "cl-log-kit";
             version = ctx.cl.fromAsdSystem "${cl-log-kit}/cl-log-kit.asd";
             src = cl-log-kit;
             lispSystem = "cl-log-kit";
-            lispDependencies = [
-              dateKit
-              concurrentKit
-              hostKit
-            ];
+            lispDependencies = [ dateKit concurrentKit hostKit ];
           };
           tomlKit = ctx.cl.lispDerivation {
             pname = "cl-toml-kit";
             version = ctx.cl.fromAsdSystem "${cl-toml-kit}/cl-toml-kit.asd";
             src = cl-toml-kit;
             lispSystem = "cl-toml-kit";
-            lispDependencies = [
-              parserKit
-              dateKit
-            ];
+            lispDependencies = [ parserKit dateKit ];
           };
           observabilityKit = ctx.cl.lispDerivation {
             pname = "cl-observability-kit";
             version = ctx.cl.fromAsdSystem "${cl-observability-kit}/cl-observability-kit.asd";
             src = cl-observability-kit;
             lispSystem = "cl-observability-kit";
-            lispDependencies = [
-              concurrentKit
-              boundaryKit
-            ];
+            lispDependencies = [ concurrentKit boundaryKit ];
           };
         in
         [
+          prologKit
           (ctx.cl.lispDerivation {
             pname = "cl-tty-kit";
             version = ctx.cl.fromAsdSystem "${cl-tty-kit}/cl-tty-kit.asd";
@@ -233,6 +249,7 @@
           dateKit
           concurrentKit
           hostKit
+          dataflowKit
           logKit
           tomlKit
           observabilityKit
@@ -261,9 +278,7 @@
       treefmt.evalModule = treefmt-nix.lib.evalModule;
 
       extraOutputs = ctx: {
-        packages.timendus = ctx.pkgs.runCommand "timendus-chip8-test-suite" { } ''
-          cp -r ${timendus-chip8-test-suite} "$out"
-        '';
+        packages.timendus = timendus-chip8-test-suite;
         checks = {
           paredit-lint = paredit-cli.lib.${ctx.system}.mkLintCheck {
             inherit (ctx) src;
@@ -272,14 +287,6 @@
 
           build = ctx.executable;
         };
-      };
-
-      overrideOutputs = ctx: {
-        checks.default = ctx.generated.checks.default.overrideAttrs (old: {
-          preCheck = (old.preCheck or "") + ''
-            export CHIP8_TIMENDUS_DIR=${timendus-chip8-test-suite}/bin
-          '';
-        });
       };
     };
 }
