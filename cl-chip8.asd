@@ -66,6 +66,7 @@
   :depends-on ("cl-chip8" "cl-weave" "cl-tty-kit"
                "cl-toml-kit" "cl-log-kit" "cl-observability-kit"
                "cl-concurrent-kit"
+               "cl-json-kit"
                "cl-date-kit"
                "cl-host-kit")
   :pathname "t"
