@@ -62,6 +62,41 @@
       (expect (search "cl-chip8:" output) :to-be-truthy)
       (expect (search path output) :to-be-truthy))))
 
+(describe "the cl-chip8 CLI termination boundary"
+  (it "logs a non-zero instruction count when run returns"
+    (let* ((rom-path (format nil "/tmp/cl-chip8-cli-metrics-~D.ch8" (random 1000000)))
+           (log-path (format nil "/tmp/cl-chip8-cli-metrics-~D.json" (random 1000000)))
+           (machine (cl-chip8:make-chip8-machine))
+           (app (cl-chip8::make-chip8-app
+                 :machine machine
+                 :started-at (- (get-internal-real-time)
+                                internal-time-units-per-second)))
+           (invocation (parse-argv *app*
+                                   (list "cl-chip8" "--log" log-path rom-path)))
+           (original-run (symbol-function 'cl-chip8:run)))
+      (unwind-protect
+           (progn
+             (with-open-file (stream rom-path :direction :output :if-exists :supersede
+                                      :element-type '(unsigned-byte 8))
+               (write-byte 0 stream))
+             (setf (cl-chip8:chip8-machine-instructions machine) 7)
+             (setf (symbol-function 'cl-chip8:run)
+                   (lambda (&key rom-path clock-hz quirks stream)
+                     (declare (ignore rom-path clock-hz quirks stream))
+                     app))
+             (let ((error-output (make-string-output-stream)))
+               (let ((*error-output* error-output))
+                 (let ((status (cl-chip8::%run-handler invocation)))
+                   (unless (zerop status)
+                     (error "CLI handler returned ~D: ~A" status
+                            (get-output-stream-string error-output))))))
+             (let ((contents (uiop:read-file-string log-path)))
+               (expect (search "chip8_instructions_total" contents) :to-be-truthy)
+               (expect (search ":7" contents) :to-be-truthy)))
+        (setf (symbol-function 'cl-chip8:run) original-run)
+        (when (probe-file rom-path) (delete-file rom-path))
+        (when (probe-file log-path) (delete-file log-path))))))
+
 (describe "the cl-chip8 app spec: --help and --version"
   (it "exits 0 on --help without starting the emulator"
     (let ((output (with-output-to-string (out)

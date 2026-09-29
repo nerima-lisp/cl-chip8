@@ -64,6 +64,7 @@
   ;; Test framework and direct test dependencies.
   :depends-on ("cl-chip8" "cl-weave" "cl-tty-kit"
                "cl-toml-kit" "cl-log-kit" "cl-observability-kit"
+               "cl-json-kit"
                "cl-concurrent-kit"
                "cl-json-kit"
                "cl-date-kit"

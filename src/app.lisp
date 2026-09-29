@@ -106,7 +106,8 @@
     (if (chip8-app-render-pipeline app)
         (render-chip8-concurrently! screen framebuffer (chip8-app-render-pipeline app)
                                     :sound-active-p sound-active-p)
-        (render-chip8! screen framebuffer :sound-active-p sound-active-p))
+        (render-chip8! screen framebuffer (chip8-app-render-state app)
+                       :sound-active-p sound-active-p))
     (renderer-render (chip8-app-renderer app))))
 
 (defun %chip8-app-finished-p (app)
@@ -121,6 +122,7 @@
     (let ((app (make-chip8-app
                 :machine machine :state-machine (make-chip8-control-state-machine)
                 :renderer (make-renderer +screen-width+ +screen-height+)
+                :render-state (make-chip8-render-state)
                 :decoder (make-input-decoder) :clock-hz clock-hz
                 :started-at (get-internal-real-time))))
       (with-raw-mode ()

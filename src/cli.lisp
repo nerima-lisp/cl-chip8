@@ -25,7 +25,8 @@ enter its terminal session."
              (cli (list :rom (getf options :rom-path)
                         :clock_hz (getf options :clock-hz)
                         :quirks (getf options :quirks)
-                        :log (getf options :log)))
+                        :log (or (getf options :log)
+                                 (getf options :log-path))))
              (config (make-chip8-config-from-sources
                       :toml-path (getf options :config-path) :cli cli))
              (logger (make-chip8-logger :path (chip8-config-log-path config)))
@@ -68,15 +69,18 @@ enter its terminal session."
                                   (finalize-chip8-metrics!
                                    metrics
                                    :machine (and app (chip8-app-machine app))
+                                   :render-pipeline
+                                   (and app (chip8-app-render-pipeline app))
                                    :effective-hz
                                    (when (and app (chip8-app-started-at app))
                                      (let ((elapsed (- (get-internal-real-time)
                                                        (chip8-app-started-at app))))
                                        (when (plusp elapsed)
-                                         (/ (* (chip8-machine-instructions
-                                                (chip8-app-machine app))
-                                               internal-time-units-per-second)
-                                            elapsed)))))))
+                                         (float
+                                          (/ (* (chip8-machine-instructions
+                                                 (chip8-app-machine app))
+                                                internal-time-units-per-second)
+                                             elapsed))))))))
                  result)
             (flush-chip8-logger logger)
             (close-chip8-logger logger))))
