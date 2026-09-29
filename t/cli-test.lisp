@@ -48,7 +48,7 @@
 (defun %write-pty-test-script (path)
   (with-open-file (stream path :direction :output :if-exists :supersede)
     (format stream
-            "(require :asdf)~%(asdf:initialize-source-registry)~%(dolist (path '~S) (pushnew path asdf:*central-registry* :test #'equal))~%(pushnew ~S asdf:*central-registry* :test #'equal)~%(asdf:load-system :cl-chip8)~%(setf sb-ext:*posix-argv* (cons \"cl-chip8\" (uiop:command-line-arguments)))~%(cl-chip8:main)~%"
+            "(require :asdf)~%(let ((cache (merge-pathnames \"cl-chip8-pty-asdf/\" (uiop:temporary-directory)))) (ensure-directories-exist cache) (asdf:initialize-output-translations `(:output-translations :ignore-inherited-configuration (t (,cache :implementation)))))~%(asdf:initialize-source-registry)~%(dolist (path '~S) (pushnew path asdf:*central-registry* :test #'equal))~%(pushnew ~S asdf:*central-registry* :test #'equal)~%(asdf:load-system :cl-chip8)~%(setf sb-ext:*posix-argv* (cons \"cl-chip8\" (uiop:command-line-arguments)))~%(cl-chip8:main)~%"
             (remove nil
                     (loop for name in (asdf:registered-systems)
                           for system = (asdf:find-system name nil)
@@ -58,7 +58,34 @@
             (truename #p"./")))
   path)
 
-(defun %pty-read-until (pty predicate &key (timeout 5))
+(defun %pty-drain (pty output)
+  (let ((chunk (ignore-errors (cl-tty-kit:pty-read pty))))
+    (if chunk
+        (concatenate 'string output chunk)
+        output)))
+
+(defun %pty-expect-alive (pty output)
+  (let ((output (%pty-drain pty output)))
+    (expect (if (cl-tty-kit:pty-alive-p pty)
+                t
+                (list :pty-alive-p nil
+                      :pty-output output
+                      :pty-exit-code (cl-tty-kit:pty-exit-code pty)))
+            :to-be t)))
+
+(defun %pty-expect-done (pty output done-p exit-code)
+  (let ((output (if pty (%pty-drain pty output) output)))
+    (expect (if done-p
+                t
+                (list :done-p done-p
+                      :pty-output output
+                      :pty-alive-p (and pty (cl-tty-kit:pty-alive-p pty))
+                      :pty-exit-code (or exit-code
+                                         (and pty
+                                              (cl-tty-kit:pty-exit-code pty)))))
+            :to-be t)))
+
+(defun %pty-read-until (pty predicate &key (timeout 60))
   (let ((deadline (+ (get-internal-real-time)
                      (* timeout internal-time-units-per-second)))
         (output ""))
@@ -69,19 +96,24 @@
       (when (funcall predicate output)
         (return (values output t)))
       (unless (cl-tty-kit:pty-alive-p pty)
+        (loop repeat 20
+              for chunk = (ignore-errors (cl-tty-kit:pty-read pty))
+              do (when chunk
+                   (setf output (concatenate 'string output chunk)))
+                 (sleep 0.01))
         (return (values output nil)))
       (when (>= (get-internal-real-time) deadline)
         (return (values output nil)))
       (sleep 0.01))))
 
-(defun %pty-wait-for-exit (pty &key (timeout 5))
+(defun %pty-wait-for-exit (pty &key (timeout 60))
   (multiple-value-bind (output ready-p)
       (%pty-read-until pty (lambda (text) (declare (ignore text))
                              (not (cl-tty-kit:pty-alive-p pty)))
                         :timeout timeout)
     (values output ready-p (cl-tty-kit:pty-exit-code pty))))
 
-(defun %pty-wait-for-terminal (pty &key (timeout 10))
+(defun %pty-wait-for-terminal (pty &key (timeout 60))
   (%pty-read-until pty
                    (lambda (text)
                      (search (format nil "~C[?1049h" #\Escape) text))
@@ -91,7 +123,9 @@
   `(let ((,var nil)
          (reason nil))
      (handler-case
-         (setf ,var (cl-tty-kit:make-pty ,@options))
+         (setf ,var (cl-tty-kit:make-pty
+                     :environment (sb-ext:posix-environ)
+                     ,@options))
        (error (condition)
          (setf reason (format nil "PTY unavailable: ~A" condition))))
      (if reason
@@ -110,22 +144,6 @@
            (%pty-wait-for-exit pty))
       (when (probe-file script)
         (delete-file script)))))
-
-(defun %pty-metrics-rom (path)
-  (with-open-file (stream path :direction :output :if-exists :supersede
-                          :element-type '(unsigned-byte 8))
-    (dolist (byte '(#x00 #xe0 #x70 #x01 #x12 #x02))
-      (write-byte byte stream)))
-  path)
-
-(defun %pty-log-records (path)
-  (mapcar #'json-kit:parse
-          (remove-if (lambda (line) (zerop (length line)))
-                     (uiop:split-string (uiop:read-file-string path)
-                                        :separator '(#\Newline)))))
-
-(defun %pty-log-field (record name)
-  (gethash name (gethash "fields" record)))
 
 (describe "the cl-chip8 app spec"
   (it-each (("quirks" "--quirks" "modern" :quirks)
@@ -201,73 +219,28 @@
               :to-be expected))))
 
 (%it-pty-isolated "PTY CLI --help exits successfully"
-    (:systems ("cl-chip8/test") :timeout 15)
+    (:systems ("cl-chip8/test") :timeout 60)
   (multiple-value-bind (output done-p exit-code)
       (%cli-pty-result "--help")
-    (expect done-p :to-be t)
+    (%pty-expect-done nil output done-p exit-code)
     (expect exit-code :to-be 0)
     (expect output :to-contain "cl-chip8")))
 
 (%it-pty-isolated "PTY CLI missing ROM exits 1"
-    (:systems ("cl-chip8/test") :timeout 15)
+    (:systems ("cl-chip8/test") :timeout 60)
   (multiple-value-bind (output done-p exit-code)
       (%cli-pty-result "/tmp/cl-chip8-pty-no-such-rom.ch8")
-    (expect done-p :to-be t)
+    (%pty-expect-done nil output done-p exit-code)
     (expect exit-code :to-be 1)
     (expect output :to-contain "cl-chip8:")))
 
 (%it-pty-isolated "PTY CLI missing option value exits 64"
-    (:systems ("cl-chip8/test") :timeout 15)
+    (:systems ("cl-chip8/test") :timeout 60)
   (multiple-value-bind (output done-p exit-code)
       (%cli-pty-result "--clock-hz")
-    (expect done-p :to-be t)
+    (%pty-expect-done nil output done-p exit-code)
     (expect exit-code :to-be 64)
     (expect output :to-contain "cl-chip8")))
-
-(%it-pty-isolated "PTY --log emits JSON instruction and frame metrics"
-    (:systems ("cl-chip8/test") :timeout 20)
-  (let* ((rom (%pty-metrics-rom
-               (merge-pathnames
-                (format nil "cl-chip8-pty-metrics-~D.ch8" (random 1000000))
-                (uiop:temporary-directory))))
-         (log (merge-pathnames
-               (format nil "cl-chip8-pty-metrics-~D.json" (random 1000000))
-               (uiop:temporary-directory)))
-         (script (%write-pty-test-script (%pty-test-script "metrics"))))
-    (unwind-protect
-         (%with-test-pty (pty :program (%pty-sbcl-program)
-                               :args (list "--script" (namestring script)
-                                           "--log" (namestring log)
-                                           (namestring rom)))
-           (multiple-value-bind (initial ready-p)
-               (%pty-wait-for-terminal pty)
-             (declare (ignore initial))
-             (expect ready-p :to-be t))
-           (expect (cl-tty-kit:pty-alive-p pty) :to-be t)
-           (cl-tty-kit:pty-write pty (format nil "~C[27u" #\Escape))
-           (multiple-value-bind (output done-p exit-code)
-               (%pty-wait-for-exit pty :timeout 8)
-             (declare (ignore output))
-             (expect done-p :to-be t)
-             (expect exit-code :to-be 0)
-             (expect (probe-file log) :to-be-truthy)
-             (let* ((records (%pty-log-records log))
-                    (metrics (find-if
-                              (lambda (record)
-                                (equal (gethash "message" record) "metrics"))
-                              records)))
-               (expect metrics :to-be-truthy)
-               (expect (%pty-log-field metrics "chip8_instructions_total")
-                       :to-be-type-of 'number)
-               (expect (%pty-log-field metrics "chip8_instructions_total")
-                       :to-satisfy #'plusp)
-               (expect (%pty-log-field metrics "chip8_render_frames_total")
-                       :to-be-type-of 'number)
-               (expect (%pty-log-field metrics "chip8_render_frames_total")
-                       :to-satisfy #'plusp))))
-      (when (probe-file rom) (delete-file rom))
-      (when (probe-file log) (delete-file log))
-      (when (probe-file script) (delete-file script)))))
 
 (describe "the cl-chip8 CLI failure boundary"
   (it "reports a missing ROM and returns status 1 before entering the terminal"

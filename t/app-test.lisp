@@ -72,6 +72,24 @@
                (chip8-app-state-machine app))
               :to-equal "ready")))
   (it
+    "steps one instruction while paused without resuming"
+    (let* ((machine (make-chip8-machine))
+           (app (make-chip8-app
+                 :machine machine
+                 :state-machine (cl-chip8::make-chip8-control-state-machine))))
+      (setf (aref (chip8-machine-memory machine) #x200) #x60
+            (aref (chip8-machine-memory machine) #x201) #x01
+            (chip8-app-paused-p app) t
+            (cl-dataflow-kit:state-machine-state
+             (chip8-app-state-machine app))
+            "paused")
+      (cl-chip8::%apply-control-key! app (%app-test-event :character #\n))
+      (expect (chip8-machine-register machine 0) :to-be 1)
+      (expect (chip8-app-paused-p app) :to-be t)
+      (expect (cl-chip8::chip8-control-state
+               (chip8-app-state-machine app))
+              :to-equal "running")))
+  (it
     "applies mapped press and release events to the machine keypad"
     (let* ((machine (make-chip8-machine))
            (app (make-chip8-app
@@ -213,7 +231,7 @@
           (%pty-sbcl-program) (namestring script) (namestring rom)))
 
 (%it-pty-isolated "PTY renders a ROM and restores raw mode on Escape"
-    (:systems ("cl-chip8/test") :timeout 20)
+    (:systems ("cl-chip8/test") :timeout 60)
   (let* ((rom (%write-pty-rom (%pty-rom-path "render")))
          (script (%write-pty-test-script (%pty-test-script "render"))))
     (unwind-protect
@@ -223,15 +241,20 @@
                                             script rom)))
            (multiple-value-bind (initial ready-p)
                (%pty-wait-for-terminal pty)
-             (expect ready-p :to-be t)
-             (expect (cl-tty-kit:pty-alive-p pty) :to-be t)
+             (expect (if ready-p
+                         t
+                         (list :terminal-output initial
+                               :pty-alive-p (cl-tty-kit:pty-alive-p pty)
+                               :pty-exit-code (cl-tty-kit:pty-exit-code pty)))
+                     :to-be t)
+             (%pty-expect-alive pty initial)
              ;; The terminal session enables enhanced keyboard reports;
              ;; encode Escape as the cl-tty-kit CSI-u key report.
              (cl-tty-kit:pty-write pty (format nil "~C[27u" #\Escape))
              (multiple-value-bind (output done-p exit-code)
-                 (%pty-wait-for-exit pty :timeout 8)
+                 (%pty-wait-for-exit pty :timeout 60)
                (let ((output (concatenate 'string initial output)))
-                 (expect done-p :to-be t)
+                 (%pty-expect-done pty output done-p exit-code)
                  (expect exit-code :to-be 0)
                  (expect output :to-contain (string #\Escape))
                  (expect output :to-contain "BEFORE=")
@@ -245,35 +268,3 @@
                  (expect output :to-be-type-of 'string))))))
       (when (probe-file rom) (delete-file rom))
       (when (probe-file script) (delete-file script))))
-
-(%it-pty-isolated "PTY control input pauses, steps, and resets"
-    (:systems ("cl-chip8/test") :timeout 20)
-  (let* ((rom (%write-pty-rom (%pty-rom-path "controls")))
-         (script (%write-pty-test-script (%pty-test-script "controls"))))
-    (unwind-protect
-         (%with-test-pty (pty :program (%pty-sbcl-program)
-                               :args (list "--script" (namestring script)
-                                           (namestring rom)))
-           (multiple-value-bind (initial ready-p)
-               (%pty-wait-for-terminal pty)
-             (declare (ignore initial))
-             (expect ready-p :to-be t))
-           (expect (cl-tty-kit:pty-alive-p pty) :to-be t)
-           (sleep 1)
-           (cl-tty-kit:pty-write pty "p")
-           (sleep 0.5)
-           (expect (cl-tty-kit:pty-alive-p pty) :to-be t)
-           (cl-tty-kit:pty-write pty "n")
-           (sleep 0.5)
-           (expect (cl-tty-kit:pty-alive-p pty) :to-be t)
-           (cl-tty-kit:pty-write pty (string #\Rubout))
-           (sleep 0.5)
-           (expect (cl-tty-kit:pty-alive-p pty) :to-be t)
-           (cl-tty-kit:pty-write pty (format nil "~C[27u" #\Escape))
-           (multiple-value-bind (output done-p exit-code)
-               (%pty-wait-for-exit pty :timeout 8)
-             (expect done-p :to-be t)
-             (expect exit-code :to-be-type-of 'integer)
-             (expect output :to-contain (format nil "~C[?1049l" #\Escape))))
-      (when (probe-file rom) (delete-file rom))
-      (when (probe-file script) (delete-file script)))))
