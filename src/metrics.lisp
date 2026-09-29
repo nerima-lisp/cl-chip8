@@ -59,9 +59,6 @@
 (defun record-chip8-instruction! (metrics)
   (chip8-metric-add metrics "chip8_instructions_total"))
 
-(defun record-chip8-error! (metrics)
-  (chip8-metric-add metrics "chip8.errors.total"))
-
 (defun flush-chip8-metrics! (metrics)
   "Apply pending values once, normally from the run termination boundary."
   (check-type metrics chip8-metrics)

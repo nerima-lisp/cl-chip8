@@ -155,7 +155,7 @@
                    "fx0a_completion" "memory_i" "vf_reset"))
       (multiple-value-bind (value presentp) (%source-value toml-chip8 key)
         (when presentp
-      (%validate-override key value)
+          (%validate-override key value)
           (setf (getf overrides (intern (string-upcase key) :keyword)) value))))
     (when log-path (%require-type log-path #'stringp "expected a string" "logging.path"
                                   (or source-name "configuration")))
