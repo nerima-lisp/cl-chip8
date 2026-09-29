@@ -71,6 +71,7 @@
   :pathname "t"
   :serial t
   :components ((:file "package") (:file "cpu-test") (:file "memory-test")
+               (:file "mutation-test")
                (:file "display-test") (:file "fontset-test") (:file "keypad-test")
                (:file "timers-test") (:file "rom-test")
                (:file "render-test") (:file "concurrency-test")

@@ -48,19 +48,9 @@ whose coverage is measured by dedicated tests."
    (lambda (name)
      (merge-pathnames (format nil "src/~A.lisp" name) root))
    (list
-    ;; Real-terminal I/O is unavailable to the headless coverage process.
-    "app"
-    ;; %RUN-HANDLER opens a terminal after loading the ROM.
-    "cli"
     ;; DEFPACKAGE and nothing else (src/package.lisp:17). A package
     ;; definition is a load-time form with no branch a test can take.
     "package"
-    ;; DEFCONSTANT/DEFVAR declarations only (src/memory-types.lisp:6-14).
-    "memory-types"
-    ;; DEFVAR/DEFCONSTANT declarations only (src/state-types.lisp:6-20).
-    "state-types"
-    ;; DEFPARAMETER/DEFVAR declarations only (src/keypad-types.lisp:6-19).
-    "keypad-types"
     ;; DEFCONSTANT/DEFVAR declarations plus the WITH-DISPLAY-LOCK macro
     ;; (src/display-types.lisp:4-33); the macro body runs at macroexpansion
     ;; time, so no test run can attribute it.
@@ -246,10 +236,9 @@ loudly instead of silently widening."
                       (or head "?")
                       (or second ""))))
 
-(defparameter *coverage-minimum-expression* 95
+(defparameter *coverage-minimum-expression* 100
   "Expression-coverage percentage the run must reach. Bound once and used both
-to gate the run and print the same enforced minimum. The margin is small
-enough to expose a meaningful loss of covered code.")
+  to gate the run and print the same enforced minimum.")
 
 (defparameter *coverage-minimum-branch* 100
   "Branch-coverage percentage the run must reach. See

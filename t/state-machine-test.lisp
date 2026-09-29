@@ -11,6 +11,99 @@
 (defun wait-kind (machine)
   (cl-chip8::chip8-wait-state-kind (chip8-machine-waiting machine)))
 
+(defparameter *generated-control-transitions*
+  '(("ready" :start "running") ("ready" :quit "finished")
+    ("ready" :error "error") ("running" :key-wait "waiting-key")
+    ("running" :display-wait "waiting-display") ("running" :pause "paused")
+    ("running" :quit "finished") ("running" :error "error")
+    ("waiting-key" :key-press "running")
+    ("waiting-key" :key-release "running") ("waiting-key" :pause "paused")
+    ("waiting-key" :quit "finished") ("waiting-key" :error "error")
+    ("waiting-display" :tick "running") ("waiting-display" :pause "paused")
+    ("waiting-display" :quit "finished") ("waiting-display" :error "error")
+    ("paused" :step "running") ("paused" :resume "running")
+    ("paused" :quit "finished") ("paused" :error "error")))
+
+(defparameter *generated-control-states*
+  '("ready" "running" "waiting-key" "waiting-display" "paused"
+    "finished" "error"))
+
+(defparameter *generated-control-events*
+  '(:start :quit :error :key-wait :display-wait :pause :key-press
+    :key-release :tick :step :resume))
+
+(defun generated-transition (state event)
+  (let* ((machine (getf state :machine))
+         (current (cl-chip8::chip8-control-state machine))
+         (transition (find-if (lambda (entry)
+                               (and (string= current (first entry))
+                                    (eql event (second entry))))
+                             *generated-control-transitions*)))
+    (if transition
+        (list :machine
+              (cl-chip8::step-chip8-control-state
+               (cl-dataflow-kit:copy-state-machine machine)
+               event)
+              :signaled nil)
+        (handler-case
+            (progn
+              (cl-chip8::step-chip8-control-state
+               (cl-dataflow-kit:copy-state-machine machine)
+               event)
+              (list :machine machine :signaled nil))
+          (error () (list :machine machine :signaled t))))))
+
+(cl-weave:it-property
+ "generated control traces accept only declared transitions"
+ ((trace
+    (cl-weave:gen-state-machine
+     (list :machine (cl-chip8::make-chip8-control-state-machine))
+     #'generated-transition
+     (cl-weave:gen-member
+      '(:start :quit :error :key-wait :display-wait :pause :key-press
+        :key-release :tick :step :resume))
+     :min-length 1 :max-length 16)))
+ (let ((events (getf trace :events))
+       (states (getf trace :states)))
+   (expect (length states) :to-be (1+ (length events)))
+   (loop for event in events
+         for before in states
+         for after in (rest states)
+         for current = (cl-chip8::chip8-control-state
+                        (getf before :machine))
+         for transition = (find-if (lambda (entry)
+                                     (and (string= current (first entry))
+                                          (eql event (second entry))))
+                                   *generated-control-transitions*)
+         do (if transition
+                (progn
+                  (expect (getf after :signaled) :to-be nil)
+                  (expect (cl-chip8::chip8-control-state
+                           (getf after :machine))
+                          :to-equal (third transition)))
+                (progn
+                  (expect (getf after :signaled) :to-be-truthy)
+                  (expect (cl-chip8::chip8-control-state
+                           (getf after :machine))
+                          :to-equal current))))))
+
+(it "checks every declared and undeclared state/event pair"
+  (dolist (state *generated-control-states*)
+    (dolist (event *generated-control-events*)
+      (let* ((transition (find-if (lambda (entry)
+                                    (and (string= state (first entry))
+                                         (eql event (second entry))))
+                                  *generated-control-transitions*))
+             (machine (cl-chip8::make-chip8-control-state-machine)))
+        (setf (cl-dataflow-kit:state-machine-state machine) state)
+        (if transition
+            (expect (cl-chip8::chip8-control-state
+                     (cl-chip8::step-chip8-control-state machine event))
+                    :to-equal
+                    (third transition))
+            (signals error
+              (cl-chip8::step-chip8-control-state machine event)))))))
+
 (describe
   "control state transition table"
   (it

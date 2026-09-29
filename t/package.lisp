@@ -8,9 +8,17 @@
   (:export #:run-tests))
 (in-package #:cl-chip8/test)
 (defun run-tests (&rest args)
-  (declare (ignore args))
-  (let ((cl-weave:*snapshot-directory* (truename #p"t/"))
-        (cl-weave:*snapshot-file-name* "timendus.snapshots"))
-    (unless (run-all :reporter :spec :pass-with-no-tests nil)
-      (error "cl-chip8 test suite failed")))
+  (let* ((lock (merge-pathnames #p".timendus.snapshots.lock"
+                                (truename #p"t/")))
+         (lock-existed (probe-file lock)))
+    (unwind-protect
+         (let ((cl-weave:*snapshot-directory* (truename #p"t/"))
+               (cl-weave:*snapshot-file-name* "timendus.snapshots"))
+           (unless (apply #'run-all
+                          :reporter :spec
+                          :pass-with-no-tests nil
+                          args)
+             (error "cl-chip8 test suite failed")))
+      (when (and (not lock-existed) (probe-file lock))
+        (delete-file lock))))
   t)

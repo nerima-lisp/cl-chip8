@@ -12,6 +12,110 @@
                           #xe09e #xe0a1 #xf007 #xf00a #xf015 #xf018 #xf01e #xf029
                           #xf033 #xf055 #xf065)
           collect (list profile opcode))))
+
+(defparameter *opcode-semantic-cases*
+  '((:add-register :add-register :modern #x8124
+     :registers ((1 200) (2 56)) :vf 9 :pc #x202
+     :results ((1 0) (15 1)))
+    (:sub-register :sub-register :modern #x8125
+     :registers ((1 10) (2 20)) :vf 9 :pc #x202
+     :results ((1 246) (15 0)))
+    (:subn-register :subn-register :modern #x8127
+     :registers ((1 10) (2 20)) :vf 0 :pc #x202
+     :results ((1 10) (15 1)))
+    (:shr-vx :shr :modern #x8126
+     :registers ((1 3) (2 128)) :vf 9 :pc #x202
+     :results ((1 1) (15 1)))
+    (:shr-vy :shr :cosmac-vip #x8126
+     :registers ((1 3) (2 128)) :vf 9 :pc #x202
+     :results ((1 64) (15 0)))
+    (:or-preserves-vf :or :modern #x8121
+     :registers ((1 1) (2 2)) :vf 9 :pc #x202
+     :results ((1 3) (15 9)))
+    (:or-resets-vf :or :cosmac-vip #x8121
+     :registers ((1 1) (2 2)) :vf 9 :pc #x202
+     :results ((1 3) (15 0)))
+    (:skip-equal :se-byte :modern #x310a
+     :registers ((1 10)) :vf 0 :pc #x204 :results nil)
+    (:skip-not-equal :se-byte :modern #x310a
+     :registers ((1 9)) :vf 0 :pc #x202 :results nil)
+    (:jump-v0 :jp-v0 :modern #xb123
+     :registers ((0 5)) :vf 0 :pc #x128 :results nil)
+    (:draw-clip :draw :modern #xd011
+     :registers ((0 63) (1 31)) :vf 0 :pc #x202 :i #x300
+     :memory ((#x300 #xc0)) :pixels ((31 63 1) (31 0 0)) :results nil)
+    (:draw-wrap :draw :modern #xd011
+      :registers ((0 63) (1 31)) :vf 0 :pc #x202 :i #x300
+      :overrides (:clipping :wrap) :memory ((#x300 #xc0))
+      :pixels ((31 63 1) (31 0 1)) :results nil)
+    (:store-increments-i :store-registers :modern #xf155
+      :registers ((0 10) (1 20)) :vf 0 :pc #x202 :i #x300 :i-result #x300
+      :memory-results ((#x300 10) (#x301 20)) :results nil)
+    (:store-preserves-i :store-registers :cosmac-vip #xf155
+      :registers ((0 10) (1 20)) :vf 0 :pc #x202 :i #x300 :i-result #x302
+      :memory-results ((#x300 10) (#x301 20)) :results nil)
+    (:load-increments-i :load-registers :modern #xf165
+      :vf 0 :pc #x202 :i #x300 :i-result #x300
+      :memory ((#x300 10) (#x301 20))
+      :results ((0 10) (1 20)))
+    (:load-preserves-i :load-registers :cosmac-vip #xf165
+      :vf 0 :pc #x202 :i #x300 :i-result #x302
+      :memory ((#x300 10) (#x301 20))
+      :results ((0 10) (1 20)))))
+
+(defun semantic-case-machine (case)
+  (let ((machine
+          (make-chip8-machine
+           :quirks
+           (apply #'make-chip8-quirks
+                  :profile (third case)
+                  (getf (cddddr case) :overrides)))))
+    (dolist (entry (getf (cddddr case) :registers))
+      (setf (chip8-machine-register machine (first entry)) (second entry)))
+    (setf (chip8-machine-register machine 15) (getf (cddddr case) :vf)
+          (chip8-machine-i machine)
+          (or (getf (cddddr case) :i-initial)
+              (getf (cddddr case) :i)
+              0))
+    (dolist (entry (getf (cddddr case) :memory))
+      (setf (aref (chip8-machine-memory machine) (first entry)) (second entry)))
+    machine))
+
+(defun assert-semantic-case (case executor)
+  (let ((machine (semantic-case-machine case)))
+    (if (functionp executor)
+        (funcall executor machine (fourth case))
+        (test-opcode machine (fourth case)))
+    (expect (chip8-machine-pc machine) :to-be (getf (cddddr case) :pc))
+    (dolist (result (getf (cddddr case) :results))
+      (expect (chip8-machine-register machine (first result))
+              :to-be
+              (second result)))
+    (dolist (pixel (getf (cddddr case) :pixels))
+      (expect (aref (chip8-machine-framebuffer machine)
+                    (first pixel) (second pixel))
+              :to-be
+              (third pixel)))
+    (when (or (getf (cddddr case) :i-result)
+              (getf (cddddr case) :i))
+      (expect (chip8-machine-i machine)
+              :to-be
+              (or (getf (cddddr case) :i-result)
+                  (getf (cddddr case) :i))))
+    (dolist (entry (getf (cddddr case) :memory-results))
+      (expect (aref (chip8-machine-memory machine) (first entry))
+              :to-be
+              (second entry)))))
+
+(it-each
+    ((:add-register) (:sub-register) (:subn-register) (:shr-vx) (:shr-vy)
+     (:or-preserves-vf) (:or-resets-vf) (:skip-equal) (:skip-not-equal)
+     (:jump-v0) (:draw-clip) (:draw-wrap) (:store-increments-i)
+     (:store-preserves-i) (:load-increments-i) (:load-preserves-i))
+  "checks opcode semantic boundary case ~A" (name)
+  (assert-semantic-case
+   (find name *opcode-semantic-cases* :key #'first)
+   nil))
 (describe "typed CHIP-8 machine"
   (it "resets to the documented initial state"
     (let ((m (test-machine)))
@@ -71,7 +175,7 @@
  ((value (cl-weave:gen-integer :min 0 :max 65535)))
  (let ((m (make-chip8-machine)))
    (setf (chip8-machine-register m 0) value)
-   (expect (< (chip8-machine-register m 0) 256) :to-be-truthy)))
+   (expect (<= 0 (chip8-machine-register m 0) 255) :to-be-truthy)))
 
 (cl-weave:it-property
  "drawing the same pixel twice restores the framebuffer"
