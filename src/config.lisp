@@ -9,14 +9,24 @@
    (key :initarg :key :initform nil :reader chip8-config-error-key)
    (reason :initarg :reason :initform nil :reader chip8-config-error-reason))
   (:report
+   ;; Each clause is written out rather than folded into one ~@[...]~ control
+   ;; string: a ~@[ clause tests the argument its own body would consume and
+   ;; leaves that argument unconsumed, so a fixed five-argument control string
+   ;; silently dropped the reason and shifted the key path into its place.
    (lambda (condition stream)
-     (format stream "Invalid CHIP-8 configuration~@[ in ~A~]~@[ at ~D:~D~]~@[ for ~A~]~@[; ~A~]"
-             (chip8-config-error-source-name condition)
-             (chip8-config-error-line condition)
-             (chip8-config-error-column condition)
-             (or (chip8-config-error-path condition)
-                 (chip8-config-error-key condition))
-             (chip8-config-error-reason condition)))))
+     (format stream "Invalid CHIP-8 configuration")
+     (when (chip8-config-error-source-name condition)
+       (format stream " in ~A" (chip8-config-error-source-name condition)))
+     (when (chip8-config-error-line condition)
+       (format stream " at ~D" (chip8-config-error-line condition))
+       (when (chip8-config-error-column condition)
+         (format stream ":~D" (chip8-config-error-column condition))))
+     (let ((key-path (or (chip8-config-error-path condition)
+                         (chip8-config-error-key condition))))
+       (when key-path
+         (format stream " for ~A" key-path)))
+     (when (chip8-config-error-reason condition)
+       (format stream "; ~A" (chip8-config-error-reason condition))))))
 
 (defparameter +default-chip8-clock-hz+ 700)
 
@@ -76,7 +86,7 @@
     (%config-error reason :source-name source :path key :key key))
   value)
 
-(defun %validate-override (key value)
+(defun %validate-override (key value source-name)
   (let ((valid (case key
                  ("display_wait" (or (eq value t) (null value)))
                  ("clipping" (member value '("clip" "wrap") :test #'string=))
@@ -87,7 +97,8 @@
                  ("vf_reset" (member value '("preserve" "reset") :test #'string=))
                  (otherwise t))))
     (unless valid
-      (%config-error "invalid value" :path (format nil "chip8.~A" key) :key key))))
+      (%config-error "invalid value" :source-name source-name
+                     :path (format nil "chip8.~A" key) :key key))))
 
 (defun %validate-toml (table source-name)
   (unless (hash-table-p table)
@@ -144,7 +155,8 @@
          (profile (or (%value (list defaults toml-chip8 cli) "quirks") "modern"))
          (clock (or (%value (list defaults toml-chip8 cli) "clock_hz")
                     +default-chip8-clock-hz+))
-         (log-path (%value (list defaults toml-logging cli) "log"))
+         (log-path (or (%value (list cli) "log")
+                       (%value (list toml-logging) "path")))
          (rom-path (%value (list defaults toml cli) "rom"))
          (overrides nil))
     (%require-type profile (lambda (x) (member x '("modern" "cosmac-vip") :test #'string=))
@@ -155,7 +167,7 @@
                    "fx0a_completion" "memory_i" "vf_reset"))
       (multiple-value-bind (value presentp) (%source-value toml-chip8 key)
         (when presentp
-          (%validate-override key value)
+          (%validate-override key value (or source-name "configuration"))
           (setf (getf overrides (intern (string-upcase key) :keyword)) value))))
     (when log-path (%require-type log-path #'stringp "expected a string" "logging.path"
                                   (or source-name "configuration")))
