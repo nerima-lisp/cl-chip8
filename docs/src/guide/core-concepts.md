@@ -1,76 +1,99 @@
 # Core Concepts
 
-cl-chip8 models a classic CHIP-8 machine as a small stateful runtime. A ROM
-is loaded at address `0x200`; the machine has 4,096 bytes of memory, sixteen
-8-bit registers, a 16-bit `I` register, a call stack, a 64x32 monochrome
-display, a sixteen-key keypad, and delay and sound timers.
+cl-chip8 models a CHIP-8 machine as a typed, mutable `chip8-machine` value.
+The machine contains 4,096 bytes of memory, sixteen 8-bit registers, a 16-bit
+`I` register, a sixteen-entry call stack, a 64x32 monochrome framebuffer, a
+sixteen-key keypad, delay and sound timers, compatibility settings, and an
+instruction counter. A ROM loads at address `0x200`.
 
 ## State and execution
 
-The CPU facts live in a [cl-prolog-kit](https://github.com/nerima-lisp/cl-prolog-kit)
-rulebase. The public facts are `v(Index, Value)`, `i-register(Value)`,
-`pc(Value)`, `call-stack(List)`, `delay-timer(Value)`, `sound-timer(Value)`,
-and `key-down(Key)`. Memory and display pixels use Lisp arrays because they
-are dense structures that need direct indexed access.
+Create and reset a machine with `make-chip8-machine`:
 
-One instruction follows this boundary:
+```lisp
+(let ((machine (cl-chip8:make-chip8-machine)))
+  (cl-chip8:load-rom-file machine #p"path/to/rom.ch8")
+  (cl-chip8:execute-instruction! machine))
+```
+
+Reset clears memory, registers, stack, timers, keypad, framebuffer, and
+execution state, then restores the built-in fontset. `load-rom` loads an octet
+vector, while `load-rom-file` loads a regular file and checks its size and
+short-read conditions.
+
+The low-level execution boundary is explicit:
 
 1. `fetch-opcode` reads two bytes at the program counter.
-2. `decode-opcode` returns the family and hexadecimal fields of the opcode.
-3. `execute-instruction!` resolves the corresponding declarative rule and
-   advances the machine state.
+2. `execute-instruction!` decodes and executes one instruction.
+3. `step-timers!` decrements the delay and sound timers by one tick.
 
-The CPU clock and timer clock are separate. `run` executes instructions at
-the requested clock rate, while `step-timers!` decrements both timers at the
-fixed 60 Hz CHIP-8 rate.
+The terminal application calls `step-timers!` at 60 Hz and schedules the
+configured number of CPU instructions across those ticks. The CPU rate and
+timer rate are therefore independent.
 
-## Reset and embedding
+## Headless execution
 
-An embedding that drives the machine manually should initialize the state
-before loading a ROM:
+The headless helpers make waits observable without opening a terminal:
 
 ```lisp
-(cl-chip8:reset-cpu-state!)
-(cl-chip8:memory-reset!)
-(cl-chip8:display-reset!)
-(cl-chip8:load-fontset-into-memory!)
-(cl-chip8:load-rom-file! #p"/path/to/rom.ch8")
-(cl-chip8:keypad-reset!)
+(let ((machine (cl-chip8:make-chip8-machine)))
+  (cl-chip8:load-rom-file machine #p"path/to/rom.ch8")
+  (let ((result (cl-chip8:chip8-run-ticks machine 60
+                                           :instructions-per-tick 12)))
+    (cl-chip8:chip8-run-result-status result)))
 ```
 
-Call `execute-instruction!` for CPU steps and `step-timers!` at 60 Hz.
+`chip8-run-instructions` executes up to a requested instruction count.
+`chip8-run-ticks` advances timers and executes instructions for a requested
+number of ticks. Both return a `chip8-run-result` with a status, the number of
+instructions executed, the machine, and a continuation when execution is
+waiting.
 
-There is no exported function for delivering input. Key-event decoding belongs
-to the terminal layer, so a headless embedding drives the keypad by asserting
-and retracting `key-down` facts directly against `*rulebase*`. The query
-builtins come from `cl-prolog-kit`, which `cl-chip8` imports but does not
-re-export, so name that package explicitly:
+For example, this loads `LD V0, 1` and executes one instruction:
 
 ```lisp
-;; Press CHIP-8 key 5.
-(cl-prolog-kit:query-prolog cl-chip8:*rulebase*
-                        '(cl-prolog-kit:assertz (cl-chip8:key-down 5)))
-
-;; The interpreter now sees it: EX9E/EXA1/FX0A all read this fact.
-(cl-chip8:key-down-p 5)   ; => true
-(cl-chip8:pressed-keys)   ; => (5)
-
-;; Release it.
-(cl-prolog-kit:query-prolog cl-chip8:*rulebase*
-                        '(cl-prolog-kit:retract (cl-chip8:key-down 5)))
+(let* ((machine (cl-chip8:make-chip8-machine))
+       (bytes (make-array 2 :element-type '(unsigned-byte 8)
+                          :initial-contents '(#x60 #x01))))
+  (cl-chip8:load-rom machine bytes)
+  (let ((result (cl-chip8:chip8-run-instructions machine 1)))
+    (list (cl-chip8:chip8-run-result-status result)
+          (cl-chip8:chip8-machine-register machine 0))))
+;; => (:COMPLETED 1)
 ```
 
-Both the functor `cl-chip8:key-down` and the builtins `cl-prolog-kit:assertz` and
-`cl-prolog-kit:retract` must be those exact symbols: the engine dispatches on
-symbol identity, so a same-named symbol interned in another package will not
-match. Do not call the internal key-hold countdown machinery; it belongs to
-the terminal layer, and a fact you asserted yourself has no countdown entry to
-advance. The [API reference](../reference/api.md) lists the lower-level
-functions and their conditions.
+An instruction can wait for a key or for a display tick. Resume a waiting
+machine with `chip8-resume!`:
 
-## Declarative opcode semantics
+```lisp
+(cl-chip8:chip8-resume! machine '(:key-down 5))
+;; For a display wait:
+(cl-chip8:chip8-resume! machine :tick)
+```
 
-The opcode table is expressed as Prolog clauses. Lisp foreign predicates
-bridge operations that need dense array access, bit iteration, randomness, or
-Lisp condition signaling. This keeps instruction selection declarative while
-leaving memory and display operations direct and bounded.
+Keypad state is managed directly on the machine:
+
+```lisp
+(cl-chip8:chip8-key-down! machine 5)
+(cl-chip8:key-down-p machine 5)
+(cl-chip8:pressed-keys machine)
+(cl-chip8:chip8-key-up! machine 5)
+```
+
+## Compatibility profiles
+
+`make-chip8-machine` defaults to the `modern` profile. Pass a
+`chip8-quirks` value to choose another profile or override individual
+behaviors. The built-in `cosmac-vip` profile changes the documented shift,
+load/store, display-wait, clipping, jump-register, and key-wait behavior.
+The [Compatibility reference](../reference/compatibility.md) lists each
+instruction-level difference.
+
+## Rendering
+
+`chip8-framebuffer` returns a snapshot of the machine framebuffer. The
+terminal application passes that snapshot to `render-chip8!` together with a
+terminal screen and render state. Applications that need worker-based row
+conversion can use `render-chip8-concurrently!` with a render pipeline.
+Display reads are snapshot-based, and terminal screen mutations remain on the
+caller thread.

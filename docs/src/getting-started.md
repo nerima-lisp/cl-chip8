@@ -1,31 +1,30 @@
 # Getting Started
 
-cl-chip8 runs CHIP-8 ROMs in a terminal. It supports SBCL and is packaged as a
-Nix flake.
+cl-chip8 runs CHIP-8 ROMs in a terminal. It supports SBCL and is packaged as
+a Nix flake.
 
 ## Prerequisites
 
 - **SBCL.** The implementation is SBCL-only.
-- **`x86_64-linux` for any `nix` command.** The flake declares
-  `systems = [ "x86_64-linux" ]`, so `nix run`, `nix build`, `nix develop`, and
-  `nix flake check` all fail on any other system -- on macOS with `does not
-  provide attribute 'packages.aarch64-darwin.<name>'`. On those hosts, load the
-  system through SBCL and ASDF directly, or use an `x86_64-linux` remote
-  builder.
-- **A live terminal.** `run` puts the terminal into raw mode on the alternate
-  screen, so it is not usable from a script with redirected I/O.
+- **Nix on a supported system.** The flake provides `x86_64-linux` and
+  `aarch64-darwin` outputs. On other systems, load the system through SBCL and
+  ASDF directly or use a Nix remote builder.
+- **A live terminal.** `run` enters raw mode on the alternate screen, so it is
+  not usable from a script with redirected terminal input or output.
 
 ## Run a ROM from the command line
 
-The quickest path from a checkout, on `x86_64-linux`:
+From a checkout:
 
 ```sh
 nix run .#cl-chip8 -- path/to/rom.ch8
 ```
 
-That builds and runs the `cl-chip8` command, which takes one required ROM path
-and an optional `--clock-hz`. See the [Terminal guide](guide/terminal.md) for
-the keypad layout, the command-line options, and the exit codes.
+The command takes one required ROM path. Use `--clock-hz` for a positive
+instruction rate, `--quirks` to select `modern` or `cosmac-vip`, `--config` to
+load a TOML configuration file, and `--log` to select a logging destination or
+level. See the [Terminal guide](guide/terminal.md) for keyboard controls,
+rendering, and exit codes.
 
 ## Add the flake input
 
@@ -33,44 +32,39 @@ From a consuming flake, point at the released tag:
 
 ```nix
 inputs.cl-chip8 = {
-  url = "github:nerima-lisp/cl-chip8/v0.1.2";
+  url = "github:nerima-lisp/cl-chip8/v0.2.0";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
 
-While developing against an unreleased change, swap the `url` for
+While developing against an unreleased change, use
 `path:../cl-chip8` and point it at a local checkout.
 
-## Add the system dependency
+## Load the system with ASDF
+
+Declare the dependency in your system:
 
 ```lisp
 (defsystem "my-chip8-tool"
   :depends-on ("cl-chip8"))
 ```
 
-## Put the system on ASDF's source registry
-
-Declaring the flake input does not by itself make `cl-chip8` loadable: the
-input is a Nix dependency, while `asdf:load-system` resolves names through
-ASDF's own source registry. Take one of these routes.
-
-Inside a Nix shell built from the flake, `CL_SOURCE_REGISTRY` is exported for
-you and nothing further is needed:
+ASDF must be able to find `cl-chip8` and its dependencies. Inside the Nix
+development shell, `CL_SOURCE_REGISTRY` is configured for you:
 
 ```sh
 nix develop
 ```
 
-Outside Nix, point the registry at the directory holding the checkout and its
-siblings before loading. Either export the variable, where the trailing `//`
-means "search this tree recursively" and the trailing `:` means "then fall back
-to the inherited configuration":
+Outside Nix, point the registry at the parent directory that contains the
+checkout and its sibling dependencies:
 
 ```sh
 export CL_SOURCE_REGISTRY="/path/to/checkouts//:"
 ```
 
-or register the tree from Lisp:
+The trailing `//` searches recursively and the trailing `:` preserves the
+inherited configuration. You can configure the same registry from Lisp:
 
 ```lisp
 (asdf:initialize-source-registry
@@ -79,13 +73,10 @@ or register the tree from Lisp:
    :ignore-inherited-configuration))
 ```
 
-Point either form at the *parent* of the checkouts, not at `cl-chip8` itself.
-`cl-chip8` depends directly on the sibling `nerima-lisp` systems `cl-prolog-kit`,
-`cl-tty-kit`, `cl-cli`, `cl-concurrent-kit`, `cl-date-kit`, and `cl-host-kit`
-(plus SBCL's bundled `sb-posix`), and those systems have dependencies of their
-own, so every one of them must be resolvable. The repository's own
-`run-tests.lisp` registers exactly this tree, and skips doing so when
-`CL_SOURCE_REGISTRY` is already set.
+The direct runtime dependencies are `cl-tty-kit`, `cl-dataflow-kit`, `cl-cli`,
+`cl-toml-kit`, `cl-log-kit`, `cl-observability-kit`, `cl-concurrent-kit`,
+`cl-date-kit`, and `cl-host-kit`. Make each dependency available through the
+registry before loading the system.
 
 ## Run a ROM from Lisp
 
@@ -94,16 +85,14 @@ own, so every one of them must be resolvable. The repository's own
 (cl-chip8:run :rom-path #p"/path/to/rom.ch8")
 ```
 
-`run` initializes the CPU, memory, display, fontset, ROM, and keypad before
-entering the terminal loop. Every argument is a keyword; there is no positional
-ROM parameter. It needs a live terminal, resets all global machine state on
-entry -- so it is not re-entrant -- and returns a `chip8-app` rather than
-signaling a mid-run failure, which is read back with `cl-chip8:chip8-app-error`.
-See the [Terminal guide](guide/terminal.md) for keyboard, rendering, sound, and
-command-line behavior.
+`run` creates a fresh machine, initializes its memory, fontset, display, and
+keypad, loads the ROM at `0x200`, and enters the terminal loop. It returns a
+`chip8-app` after the session ends. Runtime errors captured by the application
+are available through `cl-chip8:chip8-app-error`. ROM loading errors are
+signaled before the terminal session starts.
 
 ## Next steps
 
-- Learn the state model and execution boundary in [Core Concepts](guide/core-concepts.md).
-- See keyboard, rendering, sound, and CLI behavior in the [Terminal guide](guide/terminal.md).
-- Check fixed instruction behavior and platform limits in [Compatibility](reference/compatibility.md).
+- Learn the machine state and execution boundary in [Core Concepts](guide/core-concepts.md).
+- See keyboard, rendering, controls, and CLI behavior in the [Terminal guide](guide/terminal.md).
+- Check instruction behavior, profiles, and platform limits in [Compatibility](reference/compatibility.md).
