@@ -132,15 +132,9 @@ The final ERROR clause classifies unexpected interpreter conditions as faults
 instead of swallowing them. The machine retains the last ROM's state; callers
 reset it before reading anything."
   (handler-case
-      (progn
-        (reset-cpu-state!)
-        (memory-reset!)
-        (display-reset!)
-        (load-fontset-into-memory!)
-        (load-rom-file! path)
-        (keypad-reset!)
-        (dotimes (instruction budget)
-          (execute-instruction!))
+      (let ((machine (make-chip8-machine)))
+        (load-rom-file machine path)
+        (chip8-run-instructions machine budget)
         (values :completed nil))
     (chip8-rom-too-large (condition)
       (values :too-large condition))
@@ -164,9 +158,7 @@ last ROM's memory image."
       (loop for rom in roms
             collect (multiple-value-bind (outcome condition) (%run-corpus-rom rom budget)
                       (list rom outcome condition)))
-    (reset-cpu-state!)
-    (memory-reset!)
-    (display-reset!)))
+    nil))
 
 (defun %printable-corpus-name (path)
   "Return PATH's filename with control characters replaced by `.'.

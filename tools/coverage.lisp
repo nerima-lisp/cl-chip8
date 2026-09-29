@@ -56,7 +56,9 @@ covered by the same handler."
   (let ((warning-count 0)
         (app-warning-count 0)
         (app-source (truename (merge-pathnames #p"src/app.lisp" root))))
-    (handler-bind
+    (let ((asdf:*compile-file-warnings-behaviour* :error)
+          (asdf:*compile-file-failure-behaviour* :error))
+      (handler-bind
         ((warning
            (lambda (condition)
              (incf warning-count)
@@ -66,10 +68,10 @@ covered by the same handler."
                    (incf app-warning-count)
                    (muffle-warning condition))
                  (error condition)))))
-      (prog1 (funcall thunk)
-        (format t "~&Compilation warning gate: ~D warning~:P; ~D excluded from src/app.lisp.~%"
-                warning-count
-                app-warning-count)))))
+        (prog1 (funcall thunk)
+          (format t "~&Compilation warning gate: ~D warning~:P; ~D excluded from src/app.lisp.~%"
+                  warning-count
+                  app-warning-count))))))
 
 (let ((root (project-root)))
   (configure-local-source-registry root))

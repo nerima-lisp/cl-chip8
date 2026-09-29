@@ -59,38 +59,38 @@
 (defun monotonic-seconds ()
   (/ (get-internal-real-time) internal-time-units-per-second))
 
-(defun paint-dense-fixture! ()
+(defun paint-dense-fixture! (framebuffer)
   (dotimes (y cl-chip8:+display-height+)
     (dotimes (x cl-chip8:+display-width+)
       (when (zerop (mod (+ (* x 3) y) 11))
-        (setf (aref cl-chip8::*display* y x) 1)))))
+        (setf (aref framebuffer y x) 1)))))
 
 (defun prepare-fixture! (dense-p)
-  (cl-chip8:reset-cpu-state!)
-  (cl-chip8:display-reset!)
-  (when dense-p
-    (paint-dense-fixture!))
-  (cl-chip8::display-mark-all-dirty!))
+  (let ((machine (cl-chip8:make-chip8-machine)))
+    (let ((framebuffer (cl-chip8:chip8-framebuffer machine)))
+      (when dense-p
+        (paint-dense-fixture! framebuffer))
+      framebuffer)))
 
-(defun advance-fixture! (frame dirty-row-count)
-  (if (= dirty-row-count (truncate cl-chip8:+display-height+ 2)) (cl-chip8::display-mark-all-dirty!)
-    (dotimes (offset dirty-row-count)
-      (let ((terminal-row (mod (+ frame offset) (truncate cl-chip8:+display-height+ 2))))
-        (cl-chip8:display-xor-pixel!
-         (mod (+ (* frame 7) (* offset 13)) cl-chip8:+display-width+)
-         (* 2 terminal-row))))))
+(defun advance-fixture! (framebuffer frame dirty-row-count)
+  (dotimes (offset dirty-row-count)
+    (let ((terminal-row (mod (+ frame offset) (truncate cl-chip8:+display-height+ 2)))
+          (x (mod (+ (* frame 7) (* offset 13)) cl-chip8:+display-width+)))
+      (dotimes (scanline 2)
+        (let ((y (+ (* 2 terminal-row) scanline)))
+          (setf (aref framebuffer y x) (logxor 1 (aref framebuffer y x))))))))
 
-(defun render-frame! (mode screen pipeline state frame dirty-row-count)
-  (advance-fixture! frame dirty-row-count)
+(defun render-frame! (mode screen framebuffer pipeline state frame dirty-row-count)
+  (advance-fixture! framebuffer frame dirty-row-count)
   (ecase mode
-    (:baseline (cl-chip8:render-chip8! screen cl-chip8::*display* state))
+    (:baseline (cl-chip8:render-chip8! screen framebuffer state))
     ((:partial-serial :concurrent)
-     (cl-chip8:render-chip8-concurrently! screen cl-chip8::*display* pipeline))))
+     (cl-chip8:render-chip8-concurrently! screen framebuffer pipeline))))
 
-(defun measure-render-mode (mode screen pipeline state dirty-row-count warmup iterations)
+(defun measure-render-mode (mode screen framebuffer pipeline state dirty-row-count warmup iterations)
   "Measure ITERATIONS after WARMUP and report measured counter deltas."
   (dotimes (frame warmup)
-    (render-frame! mode screen pipeline state frame dirty-row-count))
+    (render-frame! mode screen framebuffer pipeline state frame dirty-row-count))
   (let* ((submitted-before
            (if pipeline
                (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
@@ -105,7 +105,7 @@
                0))
          (started-at (monotonic-seconds)))
     (dotimes (frame iterations)
-      (render-frame! mode screen pipeline state (+ warmup frame) dirty-row-count))
+      (render-frame! mode screen framebuffer pipeline state (+ warmup frame) dirty-row-count))
     (list
      :seconds
      (- (monotonic-seconds) started-at)
@@ -132,14 +132,15 @@
          0))))
 
 (defun run-mode (mode dense-p dirty-row-count warmup iterations parallel-threshold parallelism)
-  (prepare-fixture! dense-p)
-  (let ((screen
+  (let ((framebuffer (prepare-fixture! dense-p))
+        (screen
          (cl-tty-kit:make-screen cl-chip8:+screen-width+ cl-chip8:+screen-height+))
-        (state (cl-chip8:make-chip8-render-state)))
+        (state (cl-chip8::make-chip8-render-state)))
     (if (eq mode :baseline)
         (measure-render-mode
          mode
          screen
+         framebuffer
          nil
          state
          dirty-row-count
@@ -155,6 +156,7 @@
           (measure-render-mode
            mode
            screen
+           framebuffer
            pipeline
            state
            dirty-row-count

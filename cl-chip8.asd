@@ -73,6 +73,8 @@
   :components ((:file "package") (:file "cpu-test") (:file "memory-test")
                (:file "display-test") (:file "fontset-test") (:file "keypad-test")
                (:file "timers-test") (:file "rom-test")
+               (:file "render-test") (:file "concurrency-test")
+               (:file "corpus-test")
                (:file "config-test") (:file "cli-test")
                (:file "logging-metrics-test") (:file "app-test")
                (:file "state-machine-test"))
