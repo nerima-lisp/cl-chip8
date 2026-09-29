@@ -5,18 +5,18 @@
 ;;;; the handler without entering raw mode.
 (in-package #:cl-chip8/test)
 
-(defun %pty-test-script (name)
+(defun %cli-test-script (name)
   (merge-pathnames
-   (format nil "cl-chip8-pty-~A-~D.lisp" name (random 1000000))
+   (format nil "cl-chip8-cli-~A-~D.lisp" name (random 1000000))
    (uiop:temporary-directory)))
 
-(defun %pty-sbcl-program ()
+(defun %cli-sbcl-program ()
   (namestring sb-ext:*runtime-pathname*))
 
-(defun %write-pty-test-script (path)
+(defun %write-cli-test-script (path)
   (with-open-file (stream path :direction :output :if-exists :supersede)
     (format stream
-            "(require :asdf)~%(let ((cache (merge-pathnames \"cl-chip8-pty-asdf/\" (uiop:temporary-directory)))) (ensure-directories-exist cache) (asdf:initialize-output-translations `(:output-translations :ignore-inherited-configuration (t (,cache :implementation)))))~%(asdf:initialize-source-registry)~%(dolist (path '~S) (pushnew path asdf:*central-registry* :test #'equal))~%(pushnew ~S asdf:*central-registry* :test #'equal)~%(asdf:load-system :cl-chip8)~%(setf sb-ext:*posix-argv* (cons \"cl-chip8\" (uiop:command-line-arguments)))~%(cl-chip8:main)~%"
+            "(require :asdf)~%(let ((cache (merge-pathnames \"cl-chip8-cli-asdf/\" (uiop:temporary-directory)))) (ensure-directories-exist cache) (asdf:initialize-output-translations `(:output-translations :ignore-inherited-configuration (t (,cache :implementation)))))~%(asdf:initialize-source-registry)~%(dolist (path '~S) (pushnew path asdf:*central-registry* :test #'equal))~%(pushnew ~S asdf:*central-registry* :test #'equal)~%(asdf:load-system :cl-chip8)~%(setf sb-ext:*posix-argv* (cons \"cl-chip8\" (uiop:command-line-arguments)))~%(cl-chip8:main)~%"
             (remove nil
                     (loop for name in (asdf:registered-systems)
                           for system = (asdf:find-system name nil)
@@ -27,11 +27,11 @@
   path)
 
 (defun %cli-process-result (&rest argv)
-  (let ((script (%write-pty-test-script (%pty-test-script "cli"))))
+  (let ((script (%write-cli-test-script (%cli-test-script "cli"))))
     (unwind-protect
          (multiple-value-bind (output error-output exit-code)
              (uiop:run-program
-              (append (list (%pty-sbcl-program) "--script" (namestring script))
+              (append (list (%cli-sbcl-program) "--script" (namestring script))
                       argv)
               :output :string :error-output :string :ignore-error-status t)
            (values output error-output exit-code))
@@ -118,7 +118,7 @@
       (expect exit-code :to-be 0)
       (expect output :to-contain "cl-chip8")
       (expect error-output :to-equal "")))
-  (it-each (("missing ROM" ("/tmp/cl-chip8-pty-no-such-rom.ch8") 1)
+  (it-each (("missing ROM" ("/tmp/cl-chip8-cli-no-such-rom.ch8") 1)
             ("missing option value" ("--clock-hz") 64))
       "reports ~A on stderr and exits ~D"
       (label argv expected)
