@@ -48,6 +48,7 @@
                 #:render-display-into-screen!
                 #:render-sound-indicator-into-screen!
                 ;; render-pipeline tuning knobs and telemetry counters
+                #:+concurrent-render-default-parallelism+
                 #:chip8-render-pipeline-parallelism
                 #:chip8-render-pipeline-parallel-threshold
                 #:chip8-render-pipeline-shutdown-timeout

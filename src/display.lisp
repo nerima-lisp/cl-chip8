@@ -30,7 +30,7 @@
   "Mark every pixel row dirty, advance its generation, and return *DISPLAY*."
   (with-display-lock
    (dotimes (y +display-height+ *display*)
-     (declare (type display-row y))
+     (declare (type display-row-limit y))
      (setf (sbit *display-dirty-rows* y) 1)
      (setf (aref *display-row-generations* y)
            (%next-display-generation (aref *display-row-generations* y))))
@@ -78,7 +78,7 @@
      (setf (row-major-aref *display* i) 0))
    (fill *display-dirty-rows* 1)
    (dotimes (y +display-height+)
-     (declare (type display-row y))
+     (declare (type display-row-limit y))
      (setf (aref *display-row-generations* y)
            (%next-display-generation (aref *display-row-generations* y))))
    (setf *display-dirty-terminal-row-count* +display-terminal-row-count+)

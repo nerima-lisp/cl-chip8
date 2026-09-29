@@ -50,6 +50,10 @@
   (it "copies Vx into the delay timer"
     (set-register! 0 42)
     (run-instruction! #xF015)
+    (expect (delay-timer-value) :to-be 42))
+  (it "copies VF into the delay timer"
+    (set-register! 15 42)
+    (run-instruction! #xFF15)
     (expect (delay-timer-value) :to-be 42)))
 
 (describe "FX18 LD ST, Vx"

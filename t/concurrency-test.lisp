@@ -250,7 +250,7 @@
 (describe
  "concurrent render failure propagation"
  (before-each (reset-cpu-state!) (display-reset!))
- (it "propagates row worker failures to the caller" (let ((pipeline (make-chip8-render-pipeline :parallelism 1 :parallel-threshold 1))) (unwind-protect (signals error (cl-chip8::%render-snapshots-concurrently (vector (cl-chip8::%make-render-row-snapshot 0 :invalid :invalid 0 0)) pipeline)) (close-chip8-render-pipeline pipeline))))
+ (it "propagates row worker failures to the caller" (let ((pipeline (make-chip8-render-pipeline :parallelism 1 :parallel-threshold 1))) (unwind-protect (signals error (cl-chip8::%render-snapshots-concurrently (vector :invalid) pipeline)) (close-chip8-render-pipeline pipeline))))
  (it "signals when the job channel closes before submission" (let ((pipeline (make-chip8-render-pipeline :parallelism 1 :parallel-threshold 1))) (unwind-protect (progn (cl-concurrent-kit:close-channel (cl-chip8::chip8-render-pipeline-jobs-channel pipeline)) (signals error (cl-chip8::%render-snapshots-concurrently (vector (cl-chip8::%make-render-row-snapshot 0 (make-array +display-width+ :element-type (quote bit) :initial-element 0) (make-array +display-width+ :element-type (quote bit) :initial-element 0) 0 0)) pipeline))) (close-chip8-render-pipeline pipeline))))
  (it
   "signals when the job channel is full before submission"

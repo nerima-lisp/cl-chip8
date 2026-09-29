@@ -33,7 +33,7 @@
           (render-row-snapshot-bottom-generation snapshot)
           (aref *display-row-generations* (1+ y0)))
     (dotimes (x +display-width+)
-      (declare (type display-column x))
+      (declare (type display-column-limit x))
       (setf (sbit top-pixels x) (%display-pixel-value x y0)
             (sbit bottom-pixels x) (%display-pixel-value x (1+ y0))))
     snapshot))
@@ -50,7 +50,7 @@
     (when snapshot-buffer
       (setf (fill-pointer snapshots) 0))
     (dotimes (terminal-row +display-terminal-row-count+)
-      (declare (type display-terminal-row terminal-row))
+      (declare (type display-terminal-row-limit terminal-row))
       (let ((y0 (ash terminal-row 1)))
         (declare (type display-row y0))
         (when (or (plusp (sbit *display-dirty-rows* y0))
@@ -82,7 +82,7 @@
                         (make-string +display-width+))))
     (declare (type string characters))
     (dotimes (x +display-width+)
-      (declare (type display-column x))
+      (declare (type display-column-limit x))
       (setf (char characters x)
             (half-block-character
              (sbit (render-row-snapshot-top-pixels snapshot) x)
@@ -254,7 +254,7 @@
           (with-screen-batch
               (screen)
             (dotimes (terminal-row +display-terminal-row-count+)
-              (declare (type display-terminal-row terminal-row))
+              (declare (type display-terminal-row-limit terminal-row))
               (let ((y0 (ash terminal-row 1)))
                 (declare (type display-row y0))
                 (when (or (plusp (sbit *display-dirty-rows* y0))

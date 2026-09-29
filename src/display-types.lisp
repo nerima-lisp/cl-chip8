@@ -13,6 +13,11 @@
 (deftype display-column () '(integer 0 63))
 (deftype display-row () '(integer 0 31))
 (deftype display-terminal-row () '(integer 0 15))
+;; SBCL type-checks a DOTIMES count against the loop variable's declared type,
+;; so a loop that walks a full extent needs a type that admits the bound.
+(deftype display-column-limit () '(integer 0 64))
+(deftype display-row-limit () '(integer 0 32))
+(deftype display-terminal-row-limit () '(integer 0 16))
 (deftype display-row-bits () '(simple-array bit (64)))
 (deftype display-dirty-rows () '(simple-array bit (32)))
 (deftype display-framebuffer () '(simple-array bit (32 64)))

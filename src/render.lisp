@@ -33,7 +33,7 @@
     (declare (type string characters)
              (type display-row y0))
     (dotimes (x +display-width+)
-      (declare (type display-column x))
+      (declare (type display-column-limit x))
       (setf (char characters x)
             (half-block-character
              (%display-pixel-value x y0)
@@ -49,7 +49,7 @@
   "Blit *DISPLAY* into SCREEN without acquiring the display lock or batching SCREEN."
   (declare (type (or null (vector t 16)) reusable-characters))
   (dotimes (terminal-row +display-terminal-row-count+)
-    (declare (type display-terminal-row terminal-row))
+    (declare (type display-terminal-row-limit terminal-row))
     (%render-display-row-into-screen!
      screen
      terminal-row
@@ -63,7 +63,7 @@
                                       :initial-element nil)))
               (declare (type (simple-array t (16)) buffer))
               (dotimes (terminal-row (length buffer) buffer)
-                (declare (type display-terminal-row terminal-row))
+                (declare (type display-terminal-row-limit terminal-row))
                 (setf (aref buffer terminal-row)
                       (make-string +display-width+)))))))
 

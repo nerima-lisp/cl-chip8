@@ -61,7 +61,7 @@
    (check-type resolved-vy integer)
    (check-type resolved-n chip8-nibble)
    (check-memory-access resolved-i resolved-n)
-   (let ((base (the chip8-memory-index resolved-i))
+   (let* ((base (the chip8-memory-index resolved-i))
          (origin-x (the display-column (mod resolved-vx +display-width+)))
          (origin-y (the display-row (mod resolved-vy +display-height+)))
          (visible-rows
@@ -110,7 +110,7 @@
     (check-memory-access resolved-i (1+ resolved-x))
     (let ((base (the chip8-memory-index resolved-i)))
       (dotimes (index (1+ resolved-x))
-        (declare (type chip8-register-index index))
+        (declare (type chip8-register-index-limit index))
         (let* ((solution (query-prolog-first rulebase (list 'v index '?value)))
                (value (solution-binding '?value solution)))
           (check-type value chip8-octet)
@@ -130,7 +130,7 @@
     (check-memory-access resolved-i (1+ resolved-x))
     (let ((base (the chip8-memory-index resolved-i)))
       (dotimes (index (1+ resolved-x))
-        (declare (type chip8-register-index index))
+        (declare (type chip8-register-index-limit index))
         (let ((value (aref *memory*
                            (the chip8-memory-index (+ base index)))))
           (declare (type chip8-octet value))

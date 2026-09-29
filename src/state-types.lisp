@@ -22,4 +22,7 @@ number.")
 (deftype chip8-nibble () '(unsigned-byte 4))
 (deftype chip8-opcode () '(unsigned-byte 16))
 (deftype chip8-register-index () '(integer 0 15))
+;; SBCL type-checks a DOTIMES count against the loop variable's declared type;
+;; FX55 and FX65 run the count up to 16 when X is VF.
+(deftype chip8-register-index-limit () '(integer 0 16))
 (deftype chip8-key () '(integer 0 15))

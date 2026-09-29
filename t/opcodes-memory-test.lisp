@@ -194,6 +194,15 @@
       (expect (aref *memory* #x300) :to-be 10)
       (expect (aref *memory* #x301) :to-be 20)
       (expect (aref *memory* #x302) :to-be 30)
+      (expect (i-register-value) :to-be #x300)))
+  (it "stores V0..VF at I without changing I"
+    (dotimes (index +register-count+)
+      (set-register! index (1+ (* 10 index))))
+    (set-i-register! #x300)
+    (run-instruction! #xFF55)
+    (with-soft-assertions
+      (expect (aref *memory* #x300) :to-be 1)
+      (expect (aref *memory* #x30F) :to-be 151)
       (expect (i-register-value) :to-be #x300))))
 
 (describe "FX65 LD Vx, [I]"
@@ -208,6 +217,15 @@
       (expect (register-value 0) :to-be 10)
       (expect (register-value 1) :to-be 20)
       (expect (register-value 2) :to-be 30)
+      (expect (i-register-value) :to-be #x300)))
+  (it "loads V0..VF from I without changing I"
+    (dotimes (index +register-count+)
+      (setf (aref *memory* (+ #x300 index)) (1+ (* 10 index))))
+    (set-i-register! #x300)
+    (run-instruction! #xFF65)
+    (with-soft-assertions
+      (expect (register-value 0) :to-be 1)
+      (expect (register-value 15) :to-be 151)
       (expect (i-register-value) :to-be #x300))))
 
 (describe "memory bounds checking near the top of the address space"

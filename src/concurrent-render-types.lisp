@@ -10,7 +10,7 @@
   'sb-thread:semaphore)
 
 (deftype render-lock ()
-  'lock)
+  'cl-concurrent-kit:lock)
 
 (defstruct (render-row-snapshot
             (:constructor

@@ -58,6 +58,11 @@ repeating the bounds arithmetic at every AREF site."
            :span span))
   (values))
 
+(defun %checked-memory-index (address)
+  "Validate ADDRESS as a single-byte access and return its specialized index."
+  (check-memory-access address 1)
+  (the chip8-memory-index address))
+
 ;;; Prolog-callable memory primitives.
 
 (define-foreign-predicate (memory-read address value) (rulebase environment depth emit)
