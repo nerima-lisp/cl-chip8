@@ -16,6 +16,9 @@
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
   :depends-on ("cl-tty-kit"
                "cl-cli"     ; command-line parsing
+               "cl-toml-kit"
+               "cl-log-kit"
+               "cl-observability-kit"
                "cl-concurrent-kit" ; render workers
                "cl-date-kit"
                "cl-host-kit"
@@ -24,7 +27,8 @@
   :pathname "src"
   :serial t
   ;; Source files live under src/.
-  :components ((:file "package") (:file "conditions") (:file "types") (:file "quirks")
+  :components ((:file "package") (:file "conditions") (:file "config")
+               (:file "logging") (:file "metrics") (:file "types") (:file "quirks")
                (:file "machine-types") (:file "machine") (:file "memory") (:file "fontset")
                (:file "display-types") (:file "display") (:file "opcode-data")
                (:file "opcode-dispatch") (:file "opcode-execution") (:file "opcode-cps")
@@ -55,6 +59,7 @@
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
   ;; Test framework and direct test dependencies.
   :depends-on ("cl-chip8" "cl-weave" "cl-tty-kit"
+               "cl-toml-kit" "cl-log-kit" "cl-observability-kit"
                "cl-concurrent-kit"
                "cl-date-kit"
                "cl-host-kit")
@@ -62,7 +67,9 @@
   :serial t
   :components ((:file "package") (:file "cpu-test") (:file "memory-test")
                (:file "display-test") (:file "fontset-test") (:file "keypad-test")
-               (:file "timers-test") (:file "rom-test"))
+               (:file "timers-test") (:file "rom-test")
+               (:file "config-test") (:file "cli-test")
+               (:file "logging-metrics-test"))
   ;; Resolve RUN-TESTS without package-qualified symbols during ASDF read.
   :perform (test-op (op system)
              (declare (ignore op system))
