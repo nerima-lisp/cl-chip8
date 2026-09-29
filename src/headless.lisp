@@ -32,7 +32,9 @@
       (setf result
             (chip8-run-instructions machine instructions-per-tick
                                     :on-wait on-wait))
-      (when (eq (chip8-run-result-status result) :waiting)
+      (when (and (eq (chip8-run-result-status result) :waiting)
+                 (eq (chip8-wait-state-kind (chip8-machine-waiting machine))
+                     :key))
         (return)))
     (let ((wait (chip8-machine-waiting machine)))
       (make-chip8-run-result
