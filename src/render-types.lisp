@@ -28,3 +28,33 @@ terminal row, plus a 1-cell border on each side.")
 (declaim (type (integer 0 *) +playfield-origin-x+)
          (type (integer 0 *) +playfield-origin-y+)
          (type (simple-array character (4)) +half-block-character-table+))
+
+(defstruct (render-cache (:constructor %make-render-cache))
+  (framebuffer nil :type (or null display-framebuffer))
+  (sound-active-p nil :type boolean))
+
+(defvar *render-caches* (make-hash-table :test #'eq :weakness :key))
+(defvar *render-caches-lock* (make-lock :name "cl-chip8 render caches"))
+
+(defun %render-cache-for-screen (screen)
+  (with-lock-held (*render-caches-lock*)
+    (or (gethash screen *render-caches*)
+        (setf (gethash screen *render-caches*) (%make-render-cache)))))
+
+(defun %copy-framebuffer (framebuffer)
+  (declare (type display-framebuffer framebuffer))
+  (adjust-array (copy-seq framebuffer) '(32 64)))
+
+(defun %changed-terminal-rows (cache framebuffer)
+  (declare (type render-cache cache) (type display-framebuffer framebuffer))
+  (let ((previous (render-cache-framebuffer cache))
+        (rows (make-array +display-terminal-row-count+
+                          :element-type 'bit :initial-element 0)))
+    (dotimes (terminal-row +display-terminal-row-count+ rows)
+      (let ((y0 (ash terminal-row 1)))
+        (when (or (null previous)
+                  (loop for y from y0 to (1+ y0)
+                        thereis (loop for x below +display-width+
+                                      thereis (not (eql (aref previous y x)
+                                                      (aref framebuffer y x))))))
+          (setf (sbit rows terminal-row) 1))))))

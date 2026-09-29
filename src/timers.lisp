@@ -25,3 +25,7 @@ per 60Hz tick. Returns no values."
   (%decrement-timer-fact! 'delay-timer)
   (%decrement-timer-fact! 'sound-timer)
   (values))
+
+(defun sound-timer-active-p ()
+  (let ((solution (query-prolog-first *rulebase* '(sound-timer ?value))))
+    (plusp (solution-binding '?value solution))))

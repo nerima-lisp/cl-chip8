@@ -105,8 +105,11 @@ and end the loop after terminal cleanup."
   "Render one frame for APP, including a rate-limited terminal bell while sound is active."
   (let ((screen (renderer-screen (chip8-app-renderer app))))
     (if (chip8-app-render-pipeline app)
-        (render-chip8-concurrently! screen (chip8-app-render-pipeline app))
-        (render-chip8! screen)))
+        (render-chip8-concurrently!
+         screen *display* (chip8-app-render-pipeline app)
+         :sound-active-p (sound-timer-active-p))
+        (render-chip8! screen *display*
+                       :sound-active-p (sound-timer-active-p))))
   (concatenate (quote string)
                (%sound-bell-prefix app)
                (renderer-render (chip8-app-renderer app))))

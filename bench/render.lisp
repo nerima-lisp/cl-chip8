@@ -83,9 +83,9 @@
 (defun render-frame! (mode screen pipeline frame dirty-row-count)
   (advance-fixture! frame dirty-row-count)
   (ecase mode
-    (:baseline (cl-chip8:render-chip8! screen))
+    (:baseline (cl-chip8:render-chip8! screen cl-chip8::*display*))
     ((:partial-serial :concurrent)
-     (cl-chip8:render-chip8-concurrently! screen pipeline))))
+     (cl-chip8:render-chip8-concurrently! screen cl-chip8::*display* pipeline))))
 
 (defun measure-render-mode (mode screen pipeline dirty-row-count warmup iterations)
   "Measure ITERATIONS after WARMUP and report measured counter deltas."

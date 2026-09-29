@@ -17,16 +17,12 @@
              %make-render-row-snapshot
              (terminal-row
               top-pixels
-              bottom-pixels
-              top-generation
-              bottom-generation)))
+              bottom-pixels)))
   (terminal-row 0 :type display-terminal-row)
   (top-pixels (make-array +display-width+ :element-type 'bit)
               :type display-row-bits)
   (bottom-pixels (make-array +display-width+ :element-type 'bit)
-                 :type display-row-bits)
-  (top-generation 0 :type (unsigned-byte 64))
-  (bottom-generation 0 :type (unsigned-byte 64)))
+                 :type display-row-bits))
 
 (defstruct (render-batch-job
             (:constructor
