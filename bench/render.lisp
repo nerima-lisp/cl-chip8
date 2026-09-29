@@ -80,17 +80,17 @@
          (mod (+ (* frame 7) (* offset 13)) cl-chip8:+display-width+)
          (* 2 terminal-row))))))
 
-(defun render-frame! (mode screen pipeline frame dirty-row-count)
+(defun render-frame! (mode screen pipeline state frame dirty-row-count)
   (advance-fixture! frame dirty-row-count)
   (ecase mode
-    (:baseline (cl-chip8:render-chip8! screen cl-chip8::*display*))
+    (:baseline (cl-chip8:render-chip8! screen cl-chip8::*display* state))
     ((:partial-serial :concurrent)
      (cl-chip8:render-chip8-concurrently! screen cl-chip8::*display* pipeline))))
 
-(defun measure-render-mode (mode screen pipeline dirty-row-count warmup iterations)
+(defun measure-render-mode (mode screen pipeline state dirty-row-count warmup iterations)
   "Measure ITERATIONS after WARMUP and report measured counter deltas."
   (dotimes (frame warmup)
-    (render-frame! mode screen pipeline frame dirty-row-count))
+    (render-frame! mode screen pipeline state frame dirty-row-count))
   (let* ((submitted-before
            (if pipeline
                (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
@@ -105,12 +105,7 @@
                0))
          (started-at (monotonic-seconds)))
     (dotimes (frame iterations)
-      (render-frame!
-       mode
-       screen
-       pipeline
-       (+ warmup frame)
-       dirty-row-count))
+      (render-frame! mode screen pipeline state (+ warmup frame) dirty-row-count))
     (list
      :seconds
      (- (monotonic-seconds) started-at)
@@ -139,12 +134,14 @@
 (defun run-mode (mode dense-p dirty-row-count warmup iterations parallel-threshold parallelism)
   (prepare-fixture! dense-p)
   (let ((screen
-         (cl-tty-kit:make-screen cl-chip8:+screen-width+ cl-chip8:+screen-height+)))
+         (cl-tty-kit:make-screen cl-chip8:+screen-width+ cl-chip8:+screen-height+))
+        (state (cl-chip8:make-chip8-render-state)))
     (if (eq mode :baseline)
         (measure-render-mode
          mode
          screen
          nil
+         state
          dirty-row-count
          warmup
          iterations)
@@ -159,6 +156,7 @@
            mode
            screen
            pipeline
+           state
            dirty-row-count
            warmup
            iterations)))))

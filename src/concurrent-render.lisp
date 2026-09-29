@@ -174,7 +174,8 @@ executor shutdown operation."
             nil
             snapshot-buffer
             result-buffer
-            job-buffer)))
+            job-buffer
+            (make-chip8-render-state))))
     (%start-render-workers
      executor
      jobs-channel

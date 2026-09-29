@@ -19,27 +19,33 @@
     (setf (aref *display* 0 3) 1)
     (setf (aref *display* 1 3) 1)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-display-into-screen! screen)
+      (render-chip8! screen *display* (make-chip8-render-state))
       (expect (cell-char (screen-cell screen (+ +playfield-origin-x+ 3) +playfield-origin-y+))
               :to-be (code-char #x2588))))
   (it "blits a clear pixel pair as a space"
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-display-into-screen! screen)
+      (render-chip8! screen *display* (make-chip8-render-state))
       (expect (cell-char (screen-cell screen +playfield-origin-x+ +playfield-origin-y+))
               :to-be #\Space))))
 
 (describe "render-sound-indicator-into-screen!"
   (before-each
     (reset-cpu-state!))
+  (it "reports whether the sound timer is active"
+    (with-soft-assertions
+      (set-sound-timer! 0)
+      (expect (sound-timer-active-p) :to-be nil)
+      (set-sound-timer! 1)
+      (expect (sound-timer-active-p) :to-be t)))
   (it "styles the top-left corner in reverse video while the sound timer is nonzero"
     (set-sound-timer! 5)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-sound-indicator-into-screen! screen)
+      (render-sound-indicator-into-screen! screen t)
       (expect (cell-style (screen-cell screen 0 0)) :to-equal '(:reverse))))
   (it "leaves the top-left corner unstyled once the sound timer is 0"
     (set-sound-timer! 0)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-sound-indicator-into-screen! screen)
+      (render-sound-indicator-into-screen! screen nil)
       (expect (cell-style (screen-cell screen 0 0)) :to-be nil))))
 
 (describe "render-chip8!"
@@ -51,7 +57,7 @@
     (setf (aref *display* 1 3) 1)
     (set-sound-timer! 5)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-chip8! screen)
+      (render-chip8! screen *display* (make-chip8-render-state))
       (with-soft-assertions
         (expect (cell-char (screen-cell screen (+ +playfield-origin-x+ 3) +playfield-origin-y+))
                 :to-be (code-char #x2588))
@@ -66,7 +72,7 @@
   (it "puts display pixel (0,0) at screen cell (1,1), one row and column inside the border"
     (display-xor-pixel! 0 0)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-chip8! screen)
+      (render-chip8! screen *display* (make-chip8-render-state))
       (with-soft-assertions
         ;; upper half block: top pixel of the pair set, bottom clear
         (expect (cell-char (screen-cell screen 1 1)) :to-be (code-char #x2580))
@@ -76,6 +82,6 @@
   (it "puts the bottom-right display pixel (63,31) at screen cell (64,16)"
     (display-xor-pixel! 63 31)
     (let ((screen (make-screen +screen-width+ +screen-height+)))
-      (render-chip8! screen)
+      (render-chip8! screen *display* (make-chip8-render-state))
       ;; lower half block: bottom pixel of the pair set, top clear
       (expect (cell-char (screen-cell screen 64 16)) :to-be (code-char #x2584)))))

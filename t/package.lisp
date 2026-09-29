@@ -45,7 +45,8 @@
                 #:+playfield-origin-x+
                 #:+playfield-origin-y+
                 #:half-block-character
-                #:render-display-into-screen!
+                #:make-chip8-render-state
+                #:render-sound-indicator-into-screen!
                 #:render-sound-indicator-into-screen!
                 ;; render-pipeline tuning knobs and telemetry counters
                 #:+concurrent-render-default-parallelism+

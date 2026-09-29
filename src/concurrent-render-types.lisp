@@ -50,7 +50,8 @@
               closed-p
               snapshot-buffer
               result-buffer
-              job-buffer)))
+              job-buffer
+              state)))
   (executor nil :type (or null render-executor))
   (jobs-channel nil :type (or null render-channel))
   (completion-semaphore nil :type (or null render-semaphore))
@@ -64,7 +65,8 @@
   (closed-p nil :type boolean)
   (snapshot-buffer nil :type (or null (vector t 16)))
   (result-buffer nil :type (or null (vector t 16)))
-  (job-buffer nil :type (or null (vector t *))))
+  (job-buffer nil :type (or null (vector t *)))
+  (state (make-chip8-render-state) :type chip8-render-state))
 
 (defconstant +concurrent-render-minimum-snapshots+ 9 "Minimum partial batch that splits into multiple persistent CCK jobs.")
 (defconstant +concurrent-render-default-parallelism+ 8 "Default number of persistent render workers.")

@@ -19,6 +19,7 @@ handler case and cli.lisp %RUN-HANDLER report the error after RUN returns and
 the terminal is restored. SOUND-PULSE-REMAINDER limits terminal bell output
 while the CHIP-8 sound timer is active."
   renderer
+  render-state
   decoder
   render-pipeline
   (clock-hz +default-clock-hz+ :type (integer 1 *))
@@ -108,7 +109,7 @@ and end the loop after terminal cleanup."
         (render-chip8-concurrently!
          screen *display* (chip8-app-render-pipeline app)
          :sound-active-p (sound-timer-active-p))
-        (render-chip8! screen *display*
+        (render-chip8! screen *display* (chip8-app-render-state app)
                        :sound-active-p (sound-timer-active-p))))
   (concatenate (quote string)
                (%sound-bell-prefix app)
@@ -135,6 +136,8 @@ CHIP8-APP."
            (make-chip8-app
              :renderer
              (make-renderer +screen-width+ +screen-height+)
+             :render-state
+             (make-chip8-render-state)
              :decoder
              (make-input-decoder)
              :render-pipeline

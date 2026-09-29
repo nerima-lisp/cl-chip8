@@ -156,6 +156,13 @@
    ;; -- Rendering --
    #:+screen-width+
    #:+screen-height+
+   #:+playfield-origin-x+
+   #:+playfield-origin-y+
+   #:half-block-character
+   #:chip8-render-state
+   #:chip8-render-state-p
+   #:make-chip8-render-state
+   #:render-sound-indicator-into-screen!
    #:sound-timer-active-p
    #:render-chip8!
 
