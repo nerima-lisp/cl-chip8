@@ -137,9 +137,8 @@
               (signals error
               (cl-chip8::step-chip8-control-state machine event)))))))
 
-(cl-weave:it-isolated
+(it
     "maps every key event variant through the control-event table"
-    (:systems ("cl-chip8/test") :timeout 20)
   (dolist (case *control-event-cases*)
     (destructuring-bind (type code expected-type) case
       (let ((event (and type
@@ -158,9 +157,8 @@
                         :to-equal code))
               (expect control-event :to-be nil)))))))
 
-(cl-weave:it-isolated
+(it
     "drives every control-cps event across each wait state"
-    (:systems ("cl-chip8/test") :timeout 20)
   (dolist (case *control-cps-wait-cases*)
     (destructuring-bind (wait-kind type expected-result expected-wait) case
       (let* ((app (%control-cps-test-app wait-kind))

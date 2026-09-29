@@ -199,8 +199,7 @@ signals none instead."
   ;; One row per schema key, plus the positive-integer boundary below one.
   ;; Each row must signal through the real TOML loading path and identify the
   ;; schema path, so a table entry cannot pass by merely returning a value.
-  (cl-weave:it-isolated "rejects every invalid configuration key value"
-      (:systems ("cl-chip8/test") :timeout 30)
+  (it "rejects every invalid configuration key value"
     (dolist (case
              '(("profile type" "[chip8]~%quirks = ~S" "legacy"
                 "chip8.quirks" "profile must be modern or cosmac-vip")
@@ -238,8 +237,7 @@ signals none instead."
   ;; The TOML override names are intentionally different from the structure
   ;; accessors. This table proves that every registered override reaches its
   ;; corresponding observable slot on the resulting quirks object.
-  (cl-weave:it-isolated "applies every TOML quirks override slot"
-      (:systems ("cl-chip8/test") :timeout 30)
+  (it "applies every TOML quirks override slot"
     (dolist (case
              '(("vf_reset" chip8-quirks-vf-behavior "reset" :reset)
                ("memory_i" chip8-quirks-memory-i "increment" :increment)

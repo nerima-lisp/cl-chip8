@@ -38,9 +38,8 @@
                 (cl-tty-kit:screen-cell screen 1 1))
                 :to-be (code-char #x2580))))))
 
-(cl-weave:it-isolated
+(it
     "observes the worker render path through pipeline counters"
-    (:systems ("cl-chip8/test") :timeout 20)
   (let ((framebuffer (%concurrency-test-framebuffer-with-rows
                      '(0 1 2 3 4 5 6 7 8)))
         (blank (make-array '(32 64) :element-type 'bit :initial-element 0))
@@ -64,9 +63,8 @@
         (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
                 :to-be serial-before)))))
 
-(cl-weave:it-isolated
+(it
     "observes the serial render path through pipeline counters"
-    (:systems ("cl-chip8/test") :timeout 20)
   (let ((framebuffer (%concurrency-test-framebuffer-with-rows '(0)))
         (blank (make-array '(32 64) :element-type 'bit :initial-element 0))
         (screen (cl-tty-kit:make-screen +screen-width+ +screen-height+)))

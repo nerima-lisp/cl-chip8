@@ -243,7 +243,6 @@
       (expect caught :to-be-type-of condition)
       (expect caught :to-be-truthy))))
 
-(cl-weave:it-isolated "reports opcode execution conditions"
-    (:systems '("cl-chip8/test") :timeout 60)
+(it "reports opcode execution conditions"
   (dolist (case *opcode-condition-cases*)
     (%condition-case case)))

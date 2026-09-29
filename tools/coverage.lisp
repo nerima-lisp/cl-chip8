@@ -238,26 +238,21 @@ loudly instead of silently widening."
                       (or head "?")
                       (or second ""))))
 
-(defparameter *coverage-minimum-expression* 74
+(defparameter *coverage-minimum-expression* 78
   "Measured expression coverage floor for the current release.
 
-The 74% floor protects the current 2373/3199 result (reported as 74.18%).
-The 491 tracked gaps are classified by source file in the coverage log:
-(a) testable gaps: app 28, cli 15, concurrent-render 31, control-cps 28,
-control-events 12, opcode-execution 21, config 15, quirks 9, render 9,
-logging 4, concurrent-render-rows 4, rom 3, opcode-cps 3, timers 2,
-headless 2, memory 2, metrics 1, state-machine 1, keypad 1 (191 total);
-(b) terminal I/O: app 18 and cli 12 (30 total); (c) SB-COVER macro/load-time
-forms: conditions 40, opcode-data 188, opcode-dispatch 42 (270 total).
-For opcode-data/dispatch, macro expansion contains the LD-BYTE body and direct
-execution sets V0 to 1, while SB-COVER still marks the source macro forms state-2.")
+The 78% floor protects the current 2495/3198 result (reported as 78.02%).
+The coverage run reports 439 tracked executable gaps across 28 measured source
+reports. PTY behavior is verified in child processes, so those paths remain
+explicit coverage gaps in the parent SB-COVER report. The complete per-form
+classification is emitted by the coverage log and report.")
 
-(defparameter *coverage-minimum-branch* 56
+(defparameter *coverage-minimum-branch* 65
   "Measured branch coverage floor for the current release.
 
-The 56% floor protects the current 182/320 result (reported as 56.88%).  It protects the measured
-baseline while terminal-I/O and SB-COVER load-time/macro spans remain listed
-as explicit follow-up coverage gaps.")
+The 65% floor protects the current 208/320 result (reported as 65.00%).
+Terminal-I/O and SB-COVER load-time/macro spans remain listed as explicit
+follow-up coverage gaps.")
 
 (defun coverage-source-manifest ()
   "Every production source file listed by ASDF for the cl-chip8 system.
