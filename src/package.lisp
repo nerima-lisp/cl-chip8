@@ -33,3 +33,6 @@
    #:make-chip8-logger #:close-chip8-logger #:chip8-log #:chip8-log-info #:chip8-log-error #:flush-chip8-logger
    #:chip8-metrics #:make-chip8-metrics #:chip8-metric-add #:chip8-metric-set #:record-chip8-instruction! #:flush-chip8-metrics! #:finalize-chip8-metrics! #:chip8-metrics-snapshot #:chip8-metrics-fields
    #:chip8-run-options #:*app* #:main #:image-entry-point))
+
+(in-package #:cl-chip8)
+(declaim (notinline chip8-machine-instructions))

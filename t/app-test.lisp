@@ -13,8 +13,7 @@
   (it
     "keeps the scheduler remainder bounded"
     (let ((app (make-chip8-app :clock-hz 700)))
-      (dotimes (i 120)
-        (declare (ignore i))
+      (loop repeat 120 do
         (cl-chip8::%instructions-per-tick app)
         (expect (< (cl-chip8::chip8-app-instruction-remainder app) 60)
                 :to-be

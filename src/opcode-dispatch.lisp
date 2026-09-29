@@ -1,6 +1,6 @@
 (in-package #:cl-chip8)
 
-(declaim (inline fetch-opcode advance-pc! dispatch-chip8-opcode))
+(declaim (inline fetch-opcode advance-pc!))
 (defun fetch-opcode (machine)
   (let ((pc (chip8-machine-pc machine)))
     (check-memory-access pc 2)

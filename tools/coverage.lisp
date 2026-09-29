@@ -46,36 +46,9 @@
                (local-source-directories root))
      :ignore-inherited-configuration)))
 
-(defun run-with-compilation-warning-gate (root thunk)
-  "Run THUNK and fail on every compilation warning except src/app.lisp.
-
-The exception is deliberately tied to this checkout's source pathname, so a
-warning from any dependency or test source remains fatal.  STYLE-WARNING and
-SBCL's undefined-name warnings are WARNING conditions and are therefore
-covered by the same handler."
-  (let ((warning-count 0)
-        (app-warning-count 0)
-        (app-source (truename (merge-pathnames #p"src/app.lisp" root))))
-    (let ((asdf:*compile-file-warnings-behaviour* :error)
-          (asdf:*compile-file-failure-behaviour* :error))
-      (handler-bind
-        ((warning
-           (lambda (condition)
-             (incf warning-count)
-             (if (and *compile-file-truename*
-                      (equal (truename *compile-file-truename*) app-source))
-                 (progn
-                   (incf app-warning-count)
-                   (muffle-warning condition))
-                 (error condition)))))
-        (prog1 (funcall thunk)
-          (format t "~&Compilation warning gate: ~D warning~:P; ~D excluded from src/app.lisp.~%"
-                  warning-count
-                  app-warning-count))))))
-
 (let ((root (project-root)))
   (configure-local-source-registry root))
-(asdf:load-system "cl-host-kit")
+(load (merge-pathnames #p"bootstrap.lisp" (script-directory)))
 
 (defun configure-isolated-output-cache (directory root)
   (let ((cache-root (merge-pathnames #p"asdf-cache/" directory))
@@ -421,10 +394,7 @@ that trips a threshold still says what it measured."
   (ensure-directories-exist directory)
   (configure-isolated-output-cache directory root)
   (format t "~&Forcing instrumented compilation...~%")
-  (run-with-compilation-warning-gate
-   root
-   (lambda ()
-     (asdf:load-system "cl-chip8/test" :force t)))
+  (compile-chip8-systems-with-warning-gate root :force t)
   (let ((runner (find-symbol "RUN-TESTS" "CL-CHIP8/TEST")))
     (unless (and runner (fboundp runner))
       (error "CL-CHIP8/TEST:RUN-TESTS is unavailable"))

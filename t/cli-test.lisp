@@ -12,6 +12,7 @@
             ("clock" "--clock-hz" "500" :clock-hz))
       "parses the ~A option"
       (label option value key)
+    (declare (ignore label))
     (let ((invocation (parse-argv *app* (list "cl-chip8" option value "game.ch8"))))
       (expect (option-value invocation key) :to-equal
               (if (eq key :clock-hz) 500 value))))
