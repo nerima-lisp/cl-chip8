@@ -278,7 +278,9 @@
       treefmt.evalModule = treefmt-nix.lib.evalModule;
 
       extraOutputs = ctx: {
-        packages.timendus = timendus-chip8-test-suite;
+        packages.timendus = ctx.pkgs.runCommand "timendus-chip8-test-suite" { } ''
+          cp -r ${timendus-chip8-test-suite} "$out"
+        '';
         checks = {
           paredit-lint = paredit-cli.lib.${ctx.system}.mkLintCheck {
             inherit (ctx) src;
