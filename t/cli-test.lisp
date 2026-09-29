@@ -13,38 +13,6 @@
 (defun %pty-sbcl-program ()
   (namestring sb-ext:*runtime-pathname*))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun %pty-unavailability-reason ()
-    (let ((pty nil))
-      (let ((reason
-              (handler-case
-                  (progn
-                    (setf pty (cl-tty-kit:make-pty :program "/bin/sh"
-                                                   :args '("-c" "exit 0")))
-                    (let ((deadline (+ (get-internal-real-time)
-                                       (* 2 internal-time-units-per-second))))
-                      (loop while (and (cl-tty-kit:pty-alive-p pty)
-                                       (< (get-internal-real-time) deadline))
-                            do (sleep 0.01)))
-                    (if (cl-tty-kit:pty-alive-p pty)
-                        "PTY probe timed out"
-                        (unless (eql (cl-tty-kit:pty-exit-code pty) 0)
-                          "PTY probe process did not exit successfully")))
-                (error (condition)
-                  (format nil "PTY unavailable: ~A" condition)))))
-        (when pty
-          (ignore-errors (cl-tty-kit:close-pty pty)))
-        reason))))
-
-(defmacro %it-pty-isolated (name &body body)
-  (let ((options (first body))
-        (forms (rest body)))
-    `(cl-weave:it-isolated ,name ,options
-       (let ((reason (%pty-unavailability-reason)))
-         (if reason
-             (skip reason)
-             (progn ,@forms))))))
-
 (defun %write-pty-test-script (path)
   (with-open-file (stream path :direction :output :if-exists :supersede)
     (format stream
@@ -58,90 +26,15 @@
             (truename #p"./")))
   path)
 
-(defun %pty-drain (pty output)
-  (let ((chunk (ignore-errors (cl-tty-kit:pty-read pty))))
-    (if chunk
-        (concatenate 'string output chunk)
-        output)))
-
-(defun %pty-expect-alive (pty output)
-  (let ((output (%pty-drain pty output)))
-    (expect (if (cl-tty-kit:pty-alive-p pty)
-                t
-                (list :pty-alive-p nil
-                      :pty-output output
-                      :pty-exit-code (cl-tty-kit:pty-exit-code pty)))
-            :to-be t)))
-
-(defun %pty-expect-done (pty output done-p exit-code)
-  (let ((output (if pty (%pty-drain pty output) output)))
-    (expect (if done-p
-                t
-                (list :done-p done-p
-                      :pty-output output
-                      :pty-alive-p (and pty (cl-tty-kit:pty-alive-p pty))
-                      :pty-exit-code (or exit-code
-                                         (and pty
-                                              (cl-tty-kit:pty-exit-code pty)))))
-            :to-be t)))
-
-(defun %pty-read-until (pty predicate &key (timeout 60))
-  (let ((deadline (+ (get-internal-real-time)
-                     (* timeout internal-time-units-per-second)))
-        (output ""))
-    (loop
-      (let ((chunk (ignore-errors (cl-tty-kit:pty-read pty))))
-        (when chunk
-          (setf output (concatenate 'string output chunk))))
-      (when (funcall predicate output)
-        (return (values output t)))
-      (unless (cl-tty-kit:pty-alive-p pty)
-        (loop repeat 20
-              for chunk = (ignore-errors (cl-tty-kit:pty-read pty))
-              do (when chunk
-                   (setf output (concatenate 'string output chunk)))
-                 (sleep 0.01))
-        (return (values output nil)))
-      (when (>= (get-internal-real-time) deadline)
-        (return (values output nil)))
-      (sleep 0.01))))
-
-(defun %pty-wait-for-exit (pty &key (timeout 60))
-  (multiple-value-bind (output ready-p)
-      (%pty-read-until pty (lambda (text) (declare (ignore text))
-                             (not (cl-tty-kit:pty-alive-p pty)))
-                        :timeout timeout)
-    (values output ready-p (cl-tty-kit:pty-exit-code pty))))
-
-(defun %pty-wait-for-terminal (pty &key (timeout 60))
-  (%pty-read-until pty
-                   (lambda (text)
-                     (search (format nil "~C[?1049h" #\Escape) text))
-                   :timeout timeout))
-
-(defmacro %with-test-pty ((var &rest options) &body body)
-  `(let ((,var nil)
-         (reason nil))
-     (handler-case
-         (setf ,var (cl-tty-kit:make-pty
-                     :environment (sb-ext:posix-environ)
-                     ,@options))
-       (error (condition)
-         (setf reason (format nil "PTY unavailable: ~A" condition))))
-     (if reason
-         (skip reason)
-         (unwind-protect
-              (progn ,@body)
-           (when ,var
-             (ignore-errors (cl-tty-kit:close-pty ,var)))))))
-
-(defun %cli-pty-result (&rest argv)
+(defun %cli-process-result (&rest argv)
   (let ((script (%write-pty-test-script (%pty-test-script "cli"))))
     (unwind-protect
-         (%with-test-pty (pty :program (%pty-sbcl-program)
-                               :args (cons "--script"
-                                           (cons (namestring script) argv)))
-           (%pty-wait-for-exit pty))
+         (multiple-value-bind (output error-output exit-code)
+             (uiop:run-program
+              (append (list (%pty-sbcl-program) "--script" (namestring script))
+                      argv)
+              :output :string :error-output :string :ignore-error-status t)
+           (values output error-output exit-code))
       (when (probe-file script)
         (delete-file script)))))
 
@@ -218,29 +111,23 @@
                        :usage-exit-code 64 :error-exit-code 1)
               :to-be expected))))
 
-(%it-pty-isolated "PTY CLI --help exits successfully"
-    (:systems ("cl-chip8/test") :timeout 60)
-  (multiple-value-bind (output done-p exit-code)
-      (%cli-pty-result "--help")
-    (%pty-expect-done nil output done-p exit-code)
-    (expect exit-code :to-be 0)
-    (expect output :to-contain "cl-chip8")))
-
-(%it-pty-isolated "PTY CLI missing ROM exits 1"
-    (:systems ("cl-chip8/test") :timeout 60)
-  (multiple-value-bind (output done-p exit-code)
-      (%cli-pty-result "/tmp/cl-chip8-pty-no-such-rom.ch8")
-    (%pty-expect-done nil output done-p exit-code)
-    (expect exit-code :to-be 1)
-    (expect output :to-contain "cl-chip8:")))
-
-(%it-pty-isolated "PTY CLI missing option value exits 64"
-    (:systems ("cl-chip8/test") :timeout 60)
-  (multiple-value-bind (output done-p exit-code)
-      (%cli-pty-result "--clock-hz")
-    (%pty-expect-done nil output done-p exit-code)
-    (expect exit-code :to-be 64)
-    (expect output :to-contain "cl-chip8")))
+(describe "the cl-chip8 CLI process exit boundary"
+  (it "prints help and exits successfully"
+    (multiple-value-bind (output error-output exit-code)
+        (%cli-process-result "--help")
+      (expect exit-code :to-be 0)
+      (expect output :to-contain "cl-chip8")
+      (expect error-output :to-equal "")))
+  (it-each (("missing ROM" ("/tmp/cl-chip8-pty-no-such-rom.ch8") 1)
+            ("missing option value" ("--clock-hz") 64))
+      "reports ~A on stderr and exits ~D"
+      (label argv expected)
+    (declare (ignore label))
+    (multiple-value-bind (output error-output exit-code)
+        (apply #'%cli-process-result argv)
+      (expect output :to-equal "")
+      (expect error-output :to-contain "cl-chip8")
+      (expect exit-code :to-be expected))))
 
 (describe "the cl-chip8 CLI failure boundary"
   (it "reports a missing ROM and returns status 1 before entering the terminal"
