@@ -15,6 +15,7 @@
   :bug-tracker "https://github.com/nerima-lisp/cl-chip8/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
   :depends-on ("cl-tty-kit"
+               "cl-dataflow-kit"
                "cl-cli"     ; command-line parsing
                "cl-toml-kit"
                "cl-log-kit"
@@ -38,6 +39,10 @@
                (:file "concurrent-render-types")
                (:file "concurrent-render-macros")
                (:file "concurrent-render") (:file "concurrent-render-rows")
+               (:file "control-events")
+               (:file "state-machine")
+               (:file "app-types")
+               (:file "control-cps")
                (:file "app")
                (:file "cli"))
   ;; Build the executable with ASDF's program-op.
@@ -69,7 +74,8 @@
                (:file "display-test") (:file "fontset-test") (:file "keypad-test")
                (:file "timers-test") (:file "rom-test")
                (:file "config-test") (:file "cli-test")
-               (:file "logging-metrics-test"))
+               (:file "logging-metrics-test") (:file "app-test")
+               (:file "state-machine-test"))
   ;; Resolve RUN-TESTS without package-qualified symbols during ASDF read.
   :perform (test-op (op system)
              (declare (ignore op system))

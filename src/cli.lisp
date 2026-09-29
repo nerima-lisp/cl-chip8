@@ -30,7 +30,7 @@ enter its terminal session."
                       :toml-path (getf options :config-path) :cli cli))
              (logger (make-chip8-logger :path (chip8-config-log-path config)))
              (metrics (make-chip8-metrics)))
-        (let ((result nil))
+        (let ((result nil) (app nil))
           (unwind-protect
                (progn
                  (setf result
@@ -43,9 +43,11 @@ enter its terminal session."
                              (chip8-log-info logger "startup"
                                              (list :rom (chip8-config-rom-path config)
                                                    :clock_hz (chip8-config-clock-hz config)
-                                                   :quirks (getf options :quirks)))
-                             (let ((app (run :rom-path (chip8-config-rom-path config)
-                                             :clock-hz (chip8-config-clock-hz config))))
+                                                   :quirks (chip8-quirks-profile
+                                                            (chip8-config-quirks config))))
+                             (setf app (run :rom-path (chip8-config-rom-path config)
+                                            :clock-hz (chip8-config-clock-hz config)
+                                            :quirks (chip8-config-quirks config)))
                                (if (chip8-app-error app)
                                    (progn
                                      (chip8-log-error logger "runtime-error"
@@ -55,7 +57,7 @@ enter its terminal session."
                                      (format *error-output* "~&cl-chip8: ~A~%"
                                              (chip8-app-error app))
                                      1)
-                                   0)))
+                                   0))
                          (error (condition)
                            (chip8-log-error logger "runtime-error"
                                             (list :error (princ-to-string condition)))
@@ -63,7 +65,8 @@ enter its terminal session."
                            1)))
                  (chip8-log-info logger "metrics"
                                  (chip8-metrics-fields
-                                  (finalize-chip8-metrics! metrics)))
+                                  (finalize-chip8-metrics!
+                                   metrics :machine (and app (chip8-app-machine app)))))
                  result)
             (flush-chip8-logger logger)
             (close-chip8-logger logger))))

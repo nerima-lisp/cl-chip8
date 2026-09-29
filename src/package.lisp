@@ -1,6 +1,12 @@
 (in-package #:cl-user)
 (defpackage #:cl-chip8
   (:use #:cl)
+  (:import-from #:cl-dataflow-kit
+                #:define-state-machine
+                #:make-state-machine
+                #:step-state-machine
+                #:state-machine-state
+                #:invalid-transition-error)
   (:import-from #:cl-tty-kit #:key-event-type #:key-event-code #:key-event-kind #:make-input-decoder #:decode-input #:decode-input-chunk #:make-renderer #:renderer-screen #:renderer-render #:renderer-resize #:screen-write-string #:with-screen-batch #:make-style #:with-raw-mode #:with-terminal-session #:tick-loop-run-realtime)
   (:import-from #:cl-cli #:make-app #:make-option #:make-positional #:run-app #:option-value #:positional-value #:current-process-argv)
   (:import-from #:cl-concurrent-kit #:make-executor #:shutdown-executor #:submit #:make-channel #:make-semaphore #:send #:try-send #:recv #:close-channel #:wait-on-semaphore #:signal-semaphore #:executor-queue-depth #:executor-high-water-mark #:make-atomic-counter #:atomic-counter-value #:atomic-counter-incf #:make-lock #:with-lock-held)
@@ -11,6 +17,11 @@
    #:chip8-quirks #:chip8-quirks-p #:make-chip8-quirks #:merge-chip8-quirks #:chip8-quirks-profile #:chip8-quirks-vf-behavior #:chip8-quirks-memory-i #:chip8-quirks-display-wait #:chip8-quirks-clipping #:chip8-quirks-shift-source #:chip8-quirks-bnnn-register #:chip8-quirks-fx0a-completion
    #:memory-reset! #:load-bytes-into-memory #:check-memory-access #:memory-read #:load-fontset-into-memory! #:display-reset! #:display-pixel-value #:display-xor-pixel! #:chip8-framebuffer #:chip8-framebuffer-snapshot #:execute-instruction! #:fetch-opcode #:step-timers! #:sound-timer-active-p #:keypad-reset! #:key-down-p #:pressed-keys #:chip8-key-down! #:chip8-key-up! #:load-rom #:load-rom-file
    #:chip8-run-result #:chip8-run-result-status #:chip8-run-result-executed #:chip8-run-result-machine #:chip8-run-result-continuation #:chip8-run-instructions #:chip8-run-ticks #:chip8-resume! #:render-chip8! #:render-chip8-concurrently! #:run
+   #:chip8-control-event #:chip8-control-event-p #:make-chip8-control-event #:chip8-control-event-type #:chip8-control-event-payload
+   #:*chip8-state-machine-definition* #:make-chip8-control-state-machine #:chip8-control-state #:step-chip8-control-state
+   #:chip8-app #:chip8-app-p #:make-chip8-app #:chip8-app-machine #:chip8-app-state-machine
+   #:chip8-app-renderer #:chip8-app-decoder #:chip8-app-render-pipeline #:chip8-app-clock-hz
+   #:chip8-app-quit-p #:chip8-app-error #:chip8-app-instruction-remainder #:chip8-app-paused-p
    #:chip8-config-error #:chip8-config-error-source-name #:chip8-config-error-line #:chip8-config-error-column #:chip8-config-error-path #:chip8-config-error-key #:chip8-config-error-reason
    #:chip8-config #:chip8-config-rom-path #:chip8-config-clock-hz #:chip8-config-quirks #:chip8-config-log-path #:merge-chip8-config #:load-chip8-config-file #:make-chip8-config-from-sources
    #:make-chip8-logger #:close-chip8-logger #:chip8-log #:chip8-log-info #:chip8-log-error #:flush-chip8-logger

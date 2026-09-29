@@ -76,10 +76,6 @@
        (%ensure-render-row-buffer))))
   screen)
 
-(defun sound-timer-active-p (&optional machine)
-  "True when MACHINE's sound timer is currently nonzero."
-  (and machine (plusp (chip8-machine-sound-timer machine))))
-
 (defun render-sound-indicator-into-screen! (screen)
   "Style SCREEN's top-left border corner in reverse video while
 SOUND-TIMER-ACTIVE-P, else plain -- the visual stand-in for CHIP-8's beep
