@@ -32,7 +32,7 @@
                (:file "logging") (:file "metrics") (:file "types") (:file "quirks")
                (:file "machine-types") (:file "machine") (:file "memory") (:file "fontset")
                (:file "display-types") (:file "display") (:file "opcode-data")
-               (:file "opcode-dispatch") (:file "opcode-execution") (:file "opcode-cps")
+               (:file "opcode-execution") (:file "opcode-dispatch") (:file "opcode-cps")
                (:file "timers") (:file "keypad") (:file "rom") (:file "headless")
                (:file "render-types")
                (:file "render")
