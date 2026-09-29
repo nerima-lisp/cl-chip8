@@ -22,8 +22,8 @@ nix run .#cl-chip8 -- path/to/rom.ch8
 
 The command takes one required ROM path. Use `--clock-hz` for a positive
 instruction rate, `--quirks` to select `modern` or `cosmac-vip`, `--config` to
-load a TOML configuration file, and `--log` to select a logging destination or
-level. See the [Terminal guide](guide/terminal.md) for keyboard controls,
+load a TOML configuration file, and `--log` to write JSON log records to a
+file. See the [Terminal guide](guide/terminal.md) for keyboard controls,
 rendering, and exit codes.
 
 ## Add the flake input

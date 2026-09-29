@@ -65,14 +65,14 @@ without a terminal.
 ## Control, rendering, and application
 
 `chip8-control-event`, `chip8-control-event-p`, `make-chip8-control-event`,
-`chip8-control-event-type`, `chip8-control-event-payload`,
+`chip8-control-event-type`, `chip8-control-event-value`,
 `*chip8-state-machine-definition*`, `make-chip8-control-state-machine`,
 `chip8-control-state`, and `step-chip8-control-state` describe events and
 state transitions.
 
 `render-chip8!`, `render-chip8-concurrently!`, and
 `with-chip8-render-pipeline` are the public rendering operations. The package
-also exports `chip8-app`, `chip8-app-p`, `make-chip8-app`,
+also exports `chip8-app`, `make-chip8-app`,
 `chip8-app-machine`, `chip8-app-state-machine`, `chip8-app-renderer`,
 `chip8-app-decoder`, `chip8-app-render-pipeline`, `chip8-app-clock-hz`,
 `chip8-app-quit-p`, `chip8-app-error`, `chip8-app-instruction-remainder`,

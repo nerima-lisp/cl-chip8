@@ -9,8 +9,8 @@ cl-chip8 path/to/rom.ch8 --clock-hz 700
 
 `--clock-hz` controls the instruction rate and defaults to 700. Delay and
 sound timers continue at 60 Hz. The `--quirks` option accepts `modern` or
-`cosmac-vip`. `--config` loads a TOML configuration file and `--log` selects a
-logging destination or level. `--help` prints the command-line interface and
+`cosmac-vip`. `--config` loads a TOML configuration file and `--log` writes
+JSON log records to the specified file. `--help` prints the command-line interface and
 `--version` reads the version from the ASDF system definition.
 
 Press Escape or Ctrl-C to leave the program.
@@ -22,7 +22,6 @@ Press Escape or Ctrl-C to leave the program.
 | `0` | The ROM ran and the program left the terminal normally. `--help` and `--version` also exit `0`. |
 | `1` | The ROM could not be loaded, or the run ended with an error. The diagnostic goes to standard error with the `cl-chip8: ` prefix. |
 | `64` | Usage error, such as a missing ROM path, an unknown option, or an invalid `--clock-hz` value. Usage text goes to standard error. |
-| `70` | An unhandled error escaped the normal command handler. |
 
 ## Keyboard layout
 
@@ -66,7 +65,7 @@ worker tasks and commits terminal changes on the caller thread.
 The command line accepts a ROM path and optional overrides:
 
 ```sh
-cl-chip8 path/to/rom.ch8 --quirks cosmac-vip --clock-hz 500 --log stderr
+cl-chip8 path/to/rom.ch8 --quirks cosmac-vip --clock-hz 500 --log /tmp/cl-chip8.log
 ```
 
 The configuration file uses TOML. The `chip8` table supports `quirks`,

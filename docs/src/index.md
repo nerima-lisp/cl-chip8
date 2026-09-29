@@ -1,9 +1,8 @@
 # cl-chip8
 
 An SBCL-only [CHIP-8](https://en.wikipedia.org/wiki/CHIP-8) interpreter for
-the terminal. Version 0.2.0 exposes a typed machine-state API, a terminal
-application, headless execution helpers, configurable compatibility profiles,
-TOML configuration, logging, and metrics.
+the terminal. See the repository [README](https://github.com/nerima-lisp/cl-chip8#readme)
+for the feature overview.
 
 From a checkout with Nix installed:
 
