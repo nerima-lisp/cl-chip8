@@ -39,6 +39,33 @@
   (it "requires the rom positional"
     (signals cl-cli:cli-missing-positional (parse-argv *app* '("cl-chip8")))))
 
+(describe "the cl-chip8 run boundary"
+  (it
+    "projects a parsed invocation into the pure run options plist"
+    (let ((invocation
+            (parse-argv *app*
+                        '("cl-chip8" "--clock-hz" "321" "--quirks"
+                          "cosmac-vip" "--config" "chip8.toml" "--log"
+                          "stderr" "game.ch8"))))
+      (expect (chip8-run-options invocation)
+              :to-equal
+              '(:rom-path "game.ch8" :clock-hz 321 :quirks "cosmac-vip"
+                :config-path "chip8.toml" :log-path "stderr")))))
+
+(describe "the cl-chip8 configuration error boundary"
+  (it
+    "turns an unreadable config path into status 1 and a diagnostic"
+    (let* ((path (format nil "/tmp/cl-chip8-cli-missing-config-~D-~D.toml"
+                         (get-universal-time) (random 1000000)))
+           (invocation (parse-argv *app*
+                                   (list "cl-chip8" "--config" path
+                                         "game.ch8")))
+           (output (with-output-to-string (stream)
+                     (let ((*error-output* stream))
+                       (expect (cl-chip8::%run-handler invocation) :to-be 1)))))
+      (expect (search "cl-chip8:" output) :to-be-truthy)
+      (expect (search path output) :to-be-truthy))))
+
 (describe "the cl-chip8 CLI exit-code mapping"
   (it-each (("missing option" ("cl-chip8" "--clock-hz") 64)
             ("invalid option" ("cl-chip8" "--clock-hz" "0" "game.ch8") 64)
