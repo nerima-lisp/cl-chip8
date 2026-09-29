@@ -1,0 +1,7 @@
+(in-package #:cl-chip8)
+(defun fetch-opcode (machine)
+  (check-memory-access (chip8-machine-pc machine) 2)
+  (logior (ash (memory-read machine (chip8-machine-pc machine)) 8)
+          (memory-read machine (1+ (chip8-machine-pc machine)))))
+(defun advance-pc! (machine &optional (amount 2))
+  (setf (chip8-machine-pc machine) (ldb (byte 16 0) (+ (chip8-machine-pc machine) amount))))

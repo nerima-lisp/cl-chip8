@@ -6,10 +6,6 @@
 ;;;; document, not code borrowed from any one of them.
 (in-package #:cl-chip8)
 
-(defconstant +fontset-address+ #x50
-  "The conventional placement for the built-in fontset, low enough to never
-collide with +ROM-LOAD-ADDRESS+ (0x200).")
-
 ;; A DEFPARAMETER, not a DEFCONSTANT: re-evaluating a DEFCONSTANT of an array
 ;; is only well-defined when the new value is EQL to the old one, and two
 ;; separately-constructed arrays with the same contents are never EQL. A
@@ -37,6 +33,5 @@ collide with +ROM-LOAD-ADDRESS+ (0x200).")
      #xF0 #x80 #xF0 #x80 #x80)) ; F
   "The 16 standard CHIP-8 hex-digit glyphs (0-F), 5 bytes each, in order.")
 
-(defun load-fontset-into-memory! ()
-  "Load +CHIP8-FONTSET+ into *MEMORY* at +FONTSET-ADDRESS+ and return it."
-  (load-bytes-into-memory +chip8-fontset+ +fontset-address+))
+(defun load-fontset-into-memory! (machine)
+  (load-bytes-into-memory machine +chip8-fontset+ +fontset-address+))

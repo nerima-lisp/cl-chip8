@@ -5,23 +5,16 @@
 
 (defsystem "cl-chip8"
   :description "A CHIP-8 (1977 COSMAC VIP instruction set) interpreter for the terminal."
-  :long-description "A CHIP-8 interpreter for the terminal whose CPU state --
-registers, program counter, call stack, and timers -- is expressed as a
-cl-prolog-kit rulebase of dynamic facts, with instruction dispatch driven by
-Prolog goal resolution rather than a conventional big-COND interpreter loop.
-Memory and the display framebuffer are plain Lisp arrays for O(1) access,
-wrapped by cl-prolog-kit:define-foreign-predicate so Prolog goals can still read
-and write them. SBCL only."
+  :long-description "A CHIP-8 interpreter for the terminal with a typed machine state and direct opcode dispatch. SBCL only."
   :author "takeokunn <bararararatty@gmail.com>"
   :maintainer "takeokunn <bararararatty@gmail.com>"
   :license "MIT"
   ;; Version consumed by flake.nix and release tooling.
-  :version "0.1.2"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-chip8"
   :bug-tracker "https://github.com/nerima-lisp/cl-chip8/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
-  :depends-on ("cl-prolog-kit"  ; CPU-state rulebase and foreign predicates
-               "cl-tty-kit" ; terminal input, rendering, and keypad
+  :depends-on ("cl-tty-kit"
                "cl-cli"     ; command-line parsing
                "cl-concurrent-kit" ; render workers
                "cl-date-kit"
@@ -31,22 +24,11 @@ and write them. SBCL only."
   :pathname "src"
   :serial t
   ;; Source files live under src/.
-  :components ((:file "package")
-               (:file "conditions")
-               (:file "memory-types")
-               (:file "memory")
-               (:file "display-types")
-               (:file "display")
-               (:file "fontset")
-               (:file "state-types")
-               (:file "state")
-               (:file "opcode-runtime")
-               (:file "opcode-foreign")
-               (:file "opcodes")
-               (:file "keypad-types")
-               (:file "keypad")
-               (:file "timers")
-               (:file "rom")
+  :components ((:file "package") (:file "conditions") (:file "types") (:file "quirks")
+               (:file "machine-types") (:file "machine") (:file "memory") (:file "fontset")
+               (:file "display-types") (:file "display") (:file "opcode-data")
+               (:file "opcode-dispatch") (:file "opcode-execution") (:file "opcode-cps")
+               (:file "timers") (:file "keypad") (:file "rom") (:file "headless")
                (:file "render-types")
                (:file "render")
                (:file "concurrent-render-types")
@@ -67,35 +49,18 @@ and write them. SBCL only."
   :author "takeokunn <bararararatty@gmail.com>"
   :maintainer "takeokunn <bararararatty@gmail.com>"
   :license "MIT"
-  :version "0.1.2"
+  :version "0.2.0"
   :homepage "https://github.com/nerima-lisp/cl-chip8"
   :bug-tracker "https://github.com/nerima-lisp/cl-chip8/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
   ;; Test framework and direct test dependencies.
-  :depends-on ("cl-chip8" "cl-weave" "cl-prolog-kit" "cl-tty-kit"
+  :depends-on ("cl-chip8" "cl-weave" "cl-tty-kit"
                "cl-concurrent-kit"
                "cl-date-kit"
                "cl-host-kit")
   :pathname "t"
   :serial t
-  :components ((:file "package")
-               (:file "memory-test")
-               (:file "display-test")
-               (:file "fontset-test")
-               (:file "state-test")
-               (:file "helpers-opcodes")
-               (:file "opcodes-flow-test")
-               (:file "opcodes-alu-test")
-               (:file "opcodes-memory-test")
-               (:file "opcodes-io-test")
-               (:file "keypad-test")
-               (:file "timers-test")
-               (:file "render-test")
-               (:file "concurrency-test")
-               (:file "rom-test")
-               (:file "corpus-test")
-               (:file "integration-test")
-               (:file "cli-test"))
+  :components ((:file "package") (:file "cpu-test"))
   ;; Resolve RUN-TESTS without package-qualified symbols during ASDF read.
   :perform (test-op (op system)
              (declare (ignore op system))
