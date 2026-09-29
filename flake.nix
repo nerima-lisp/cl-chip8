@@ -141,6 +141,8 @@
 
       root = ./.;
 
+      sourceInclude = [ ./t/timendus.snapshots ];
+
       meta = {
         description = "A CHIP-8 (1977 COSMAC VIP instruction set) interpreter for the terminal.";
         homepage = "https://github.com/nerima-lisp/cl-chip8";
