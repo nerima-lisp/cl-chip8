@@ -49,6 +49,11 @@
       flake = false;
     };
 
+    cl-json-kit = {
+      url = "github:nerima-lisp/cl-json-kit/v1.2.0";
+      flake = false;
+    };
+
     cl-weave = {
       url = "github:nerima-lisp/cl-weave/v1.3.0";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -115,6 +120,7 @@
       cl-date-kit,
       cl-codec-kit,
       cl-host-kit,
+      cl-json-kit,
       cl-weave,
       paredit-cli,
       treefmt-nix,
@@ -164,6 +170,12 @@
             version = ctx.cl.fromAsdSystem "${cl-host-kit}/cl-host-kit.asd";
             src = cl-host-kit;
             lispSystem = "cl-host-kit";
+          };
+          jsonKit = ctx.cl.lispDerivation {
+            pname = "cl-json-kit";
+            version = ctx.cl.fromAsdSystem "${cl-json-kit}/cl-json-kit.asd";
+            src = cl-json-kit;
+            lispSystem = "cl-json-kit";
           };
           boundaryKit = ctx.cl.lispDerivation {
             pname = "cl-boundary-kit";
@@ -265,6 +277,7 @@
           dateKit
           concurrentKit
           hostKit
+          jsonKit
           logKit
           tomlKit
           observabilityKit
