@@ -63,10 +63,20 @@ enter its terminal session."
                                             (list :error (princ-to-string condition)))
                            (format *error-output* "~&cl-chip8: ~A~%" condition)
                            1)))
-                 (chip8-log-info logger "metrics"
+                (chip8-log-info logger "metrics"
                                  (chip8-metrics-fields
                                   (finalize-chip8-metrics!
-                                   metrics :machine (and app (chip8-app-machine app)))))
+                                   metrics
+                                   :machine (and app (chip8-app-machine app))
+                                   :effective-hz
+                                   (when (and app (chip8-app-started-at app))
+                                     (let ((elapsed (- (get-internal-real-time)
+                                                       (chip8-app-started-at app))))
+                                       (when (plusp elapsed)
+                                         (/ (* (chip8-machine-instructions
+                                                (chip8-app-machine app))
+                                               internal-time-units-per-second)
+                                            elapsed)))))))
                  result)
             (flush-chip8-logger logger)
             (close-chip8-logger logger))))

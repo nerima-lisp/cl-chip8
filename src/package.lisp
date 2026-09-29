@@ -21,7 +21,7 @@
    #:*chip8-state-machine-definition* #:make-chip8-control-state-machine #:chip8-control-state #:step-chip8-control-state
    #:chip8-app #:chip8-app-p #:make-chip8-app #:chip8-app-machine #:chip8-app-state-machine
    #:chip8-app-renderer #:chip8-app-decoder #:chip8-app-render-pipeline #:chip8-app-clock-hz
-   #:chip8-app-quit-p #:chip8-app-error #:chip8-app-instruction-remainder #:chip8-app-paused-p
+   #:chip8-app-quit-p #:chip8-app-error #:chip8-app-instruction-remainder #:chip8-app-paused-p #:chip8-app-started-at
    #:chip8-config-error #:chip8-config-error-source-name #:chip8-config-error-line #:chip8-config-error-column #:chip8-config-error-path #:chip8-config-error-key #:chip8-config-error-reason
    #:chip8-config #:chip8-config-rom-path #:chip8-config-clock-hz #:chip8-config-quirks #:chip8-config-log-path #:merge-chip8-config #:load-chip8-config-file #:make-chip8-config-from-sources
    #:make-chip8-logger #:close-chip8-logger #:chip8-log #:chip8-log-info #:chip8-log-error #:flush-chip8-logger

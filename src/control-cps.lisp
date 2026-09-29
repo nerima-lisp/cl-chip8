@@ -5,7 +5,7 @@
         (type (and (chip8-control-event-p event)
                    (chip8-control-event-type event)))
         (key (and (chip8-control-event-p event)
-                  (chip8-control-event-value event))))
+                  (chip8-control-event-payload event))))
     (let ((wait-kind (chip8-wait-state-kind (chip8-machine-waiting machine))))
       (case type
       (:tick (when (chip8-wait-state-kind (chip8-machine-waiting machine))
@@ -33,7 +33,7 @@
                     do (return)))
         (error (condition)
           (setf (chip8-app-error app) condition
-                (chip8-app-quitp app) t))))
+                (chip8-app-quit-p app) t))))
     (let ((wait-kind (chip8-wait-state-kind (chip8-machine-waiting machine)))
           (state-machine (chip8-app-state-machine app)))
       (when (and (eq (cl-dataflow-kit:state-machine-state state-machine)

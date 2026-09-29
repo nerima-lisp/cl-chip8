@@ -58,14 +58,14 @@
       ((eq special :backspace)
        (chip8-reset! (chip8-app-machine app))
        (setf (chip8-app-paused-p app) nil
-             (chip8-app-state-machine app) (make-chip8-app-state-machine))
+             (chip8-app-state-machine app) (make-chip8-control-state-machine))
        t)
       (t nil))))
 
 (defun %apply-key-event! (app event)
   (cond
     ((quit-key-event-p event)
-     (setf (chip8-app-quitp app) t)
+     (setf (chip8-app-quit-p app) t)
      (setf (chip8-app-state-machine app)
            (step-chip8-control-state (chip8-app-state-machine app) :quit)))
     ((%apply-control-key! app event) app)
@@ -87,7 +87,7 @@
 
 (defun %advance-chip8! (app)
   (%apply-key-events! app (%poll-input-events (chip8-app-decoder app) *standard-input*))
-  (unless (chip8-app-quitp app)
+  (unless (chip8-app-quit-p app)
     (when (string= (chip8-control-state (chip8-app-state-machine app)) "ready")
       (setf (chip8-app-state-machine app)
             (step-chip8-control-state (chip8-app-state-machine app) :start)))
@@ -110,7 +110,7 @@
     (renderer-render (chip8-app-renderer app))))
 
 (defun %chip8-app-finished-p (app)
-  (or (chip8-app-quitp app)
+  (or (chip8-app-quit-p app)
       (member (chip8-control-state (chip8-app-state-machine app))
               '("finished" "error") :test #'string=)))
 
@@ -119,9 +119,10 @@
   (let ((machine (make-chip8-machine :quirks quirks)))
     (load-rom-file machine rom-path)
     (let ((app (make-chip8-app
-                :machine machine :state-machine (make-chip8-app-state-machine)
+                :machine machine :state-machine (make-chip8-control-state-machine)
                 :renderer (make-renderer +screen-width+ +screen-height+)
-                :decoder (make-input-decoder) :clock-hz clock-hz)))
+                :decoder (make-input-decoder) :clock-hz clock-hz
+                :started-at (get-internal-real-time))))
       (with-raw-mode ()
         (with-terminal-session
             (session-stream :stream stream :hide-cursor t :alternate-screen t
