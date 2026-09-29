@@ -1,12 +1,15 @@
 ;;;; bench/render.lisp -- deterministic baseline/concurrent render comparison.
 (require :asdf)
 
-(load (merge-pathnames #p"../tools/bootstrap.lisp"
-                       (bootstrap-script-directory *load-truename*)))
-
-(let ((root (bootstrap-project-root *load-truename*)))
+(let* ((script-path *load-truename*)
+       (project-root (truename
+                      (merge-pathnames #p"../"
+                                       (uiop:pathname-directory-pathname script-path))))
+       (bootstrap (merge-pathnames #p"tools/bootstrap.lisp" project-root)))
+  (load bootstrap)
+  (let ((root (truename project-root)))
   (configure-local-source-registry root)
-  (asdf:load-system "cl-chip8"))
+    (asdf:load-system "cl-chip8")))
 
 (defun positive-integer-env (name default)
   (let ((value (host-kit:getenv name))) (if value (handler-case (max 1 (parse-integer value)) (parse-error () default)) default)))

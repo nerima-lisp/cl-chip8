@@ -5,13 +5,16 @@
 
 (declaim (optimize (sb-cover:store-coverage-data 3)))
 
-(load (merge-pathnames #p"bootstrap.lisp"
-                       (merge-pathnames #p"../tools/"
-                                        (bootstrap-script-directory *load-truename*))))
-
-(let ((root (bootstrap-project-root *load-truename*)))
-  (configure-local-source-registry root))
-(load (merge-pathnames #p"bootstrap.lisp" (script-directory)))
+(defparameter *coverage-bootstrap-path*
+  (merge-pathnames #p"bootstrap.lisp"
+                   (merge-pathnames #p"../tools/"
+                                    (uiop:pathname-directory-pathname
+                                     *load-truename*))))
+(load *coverage-bootstrap-path*)
+(defparameter *coverage-project-root*
+  (bootstrap-project-root *coverage-bootstrap-path*))
+(configure-local-source-registry *coverage-project-root*)
+(load-chip8-build-dependencies)
 
 (defun configure-isolated-output-cache (directory root)
   (let ((cache-root (merge-pathnames #p"asdf-cache/" directory))
@@ -350,7 +353,7 @@ that trips a threshold still says what it measured."
             *coverage-load-time-definition-heads*)))
 
 (sb-ext:with-timeout 1800
-  (let* ((root (bootstrap-project-root *load-truename*))
+  (let* ((root *coverage-project-root*)
        (directory (coverage-directory root))
        (source-directory (merge-pathnames #p"src/" root))
        (excluded-source-files (coverage-excluded-source-files root)))

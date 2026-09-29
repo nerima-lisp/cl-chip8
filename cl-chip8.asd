@@ -66,7 +66,6 @@
                "cl-toml-kit" "cl-log-kit" "cl-observability-kit"
                "cl-json-kit"
                "cl-concurrent-kit"
-               "cl-json-kit"
                "cl-date-kit"
                "cl-host-kit")
   :pathname "t"

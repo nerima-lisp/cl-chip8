@@ -1,10 +1,46 @@
 ;;;; Shared build bootstrap and compilation-warning gate.
 (require :asdf)
 
+(defun bootstrap-script-directory (script-path)
+  (make-pathname :name nil :type nil :defaults
+                 (or script-path (error "Unable to determine the script location"))))
+
+(defun bootstrap-project-root (script-path)
+  (truename (merge-pathnames #p"../" (bootstrap-script-directory script-path))))
+
+(defun local-source-directories (root)
+  (let ((organization-roots
+          (remove-duplicates
+           (list (truename root)
+                 (truename (merge-pathnames #p"../" root))
+                 (truename (merge-pathnames #p"../../" root))
+                 (truename (merge-pathnames #p"../../../" root)))
+           :test #'equal)))
+    (remove-duplicates
+     (loop for organization-root in organization-roots
+           append (loop for name in '("cl-chip8" "cl-tty-kit" "cl-cli"
+                                      "cl-concurrent-kit" "cl-boundary-kit"
+                                      "cl-date-kit" "cl-host-kit" "cl-codec-kit"
+                                      "cl-weave" "cl-parser-kit" "cl-log-kit"
+                                      "cl-json-kit" "cl-toml-kit"
+                                      "cl-observability-kit")
+                        for directory = (merge-pathnames
+                                         (format nil "~A/" name) organization-root)
+                        when (probe-file directory) collect (truename directory)))
+     :test #'equal)))
+
+(defun configure-local-source-registry (root)
+  (unless (sb-ext:posix-getenv "CL_SOURCE_REGISTRY")
+    (asdf:initialize-source-registry
+     `(:source-registry
+       ,@(mapcar (lambda (directory) `(:directory ,directory))
+                 (local-source-directories root))
+       :ignore-inherited-configuration))))
+
 (defparameter *chip8-build-dependencies*
   '("cl-dataflow-kit" "cl-tty-kit" "cl-cli" "cl-toml-kit"
     "cl-log-kit" "cl-observability-kit" "cl-concurrent-kit"
-    "cl-date-kit" "cl-host-kit" "cl-weave"))
+    "cl-date-kit" "cl-host-kit" "cl-weave" "cl-json-kit"))
 
 (defun chip8-path-prefix-p (path root)
   (let ((path (namestring (truename path)))

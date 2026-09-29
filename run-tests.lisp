@@ -3,42 +3,18 @@
 
 (require :asdf)
 
-(defun script-directory ()
-  (make-pathname :name nil
-                 :type nil
-                 :defaults (or *load-truename*
-                               *compile-file-truename*
-                               (error "Unable to determine the script location"))))
-
-(defun configure-local-source-registry (root)
-  "Register the sibling checkout tree, unless a registry was supplied for us.
-
-`:IGNORE-INHERITED-CONFIGURATION' is what makes a developer's run reproducible:
-it pins resolution to the sibling checkouts and ignores whatever ASDF
-configuration happens to be on the machine.
-
-Under Nix it does the opposite. Each dependency is its own /nix/store path and
-the builder exports CL_SOURCE_REGISTRY naming them; ../ is /build, which holds
-only the unpacked source. Replacing the registry there discards the paths the
-derivation provided.
-
-So: honour an explicitly supplied registry, and otherwise behave as before.
-No CL_SOURCE_REGISTRY is set for a local `sbcl --script run-tests.lisp', so
-the developer path is unchanged."
-  (unless (sb-ext:posix-getenv "CL_SOURCE_REGISTRY")
-    (let ((sibling-root (truename (merge-pathnames #p"../" root))))
-      (asdf:initialize-source-registry
-       `(:source-registry (:tree ,sibling-root)
-         :ignore-inherited-configuration)))))
-
-(let ((root (script-directory)))
-  (configure-local-source-registry root))
-(sb-ext:with-timeout 600
-  (asdf:load-system "cl-host-kit")
-  (asdf:load-system "cl-weave")
-  (let ((timeout-symbol (find-symbol "*DEFAULT-TIMEOUT-MS*" "CL-WEAVE")))
-    (unless timeout-symbol
-      (error "cl-weave does not export *DEFAULT-TIMEOUT-MS*"))
-    (setf (symbol-value timeout-symbol) 600000))
-  (asdf:test-system "cl-chip8"))
+(let* ((script-path *load-truename*)
+       (project-root (truename (uiop:pathname-directory-pathname script-path)))
+       (bootstrap (merge-pathnames #p"tools/bootstrap.lisp" project-root)))
+  (load bootstrap)
+  (configure-local-source-registry project-root)
+  (sb-ext:with-timeout 600
+    (compile-chip8-systems-with-warning-gate project-root)
+    (asdf:load-system "cl-host-kit")
+    (asdf:load-system "cl-weave")
+    (let ((timeout-symbol (find-symbol "*DEFAULT-TIMEOUT-MS*" "CL-WEAVE")))
+      (unless timeout-symbol
+        (error "cl-weave does not export *DEFAULT-TIMEOUT-MS*"))
+      (setf (symbol-value timeout-symbol) 600000))
+    (asdf:test-system "cl-chip8")))
 (host-kit:quit 0)
