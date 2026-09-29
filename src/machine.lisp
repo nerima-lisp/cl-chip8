@@ -3,7 +3,8 @@
 (defun chip8-reset! (machine)
   (fill (chip8-machine-memory machine) 0) (fill (chip8-machine-v machine) 0)
   (fill (chip8-machine-stack machine) 0) (fill (chip8-machine-keypad machine) 0)
-  (fill (chip8-machine-framebuffer machine) 0)
+  (dotimes (index (* +display-width+ +display-height+))
+    (setf (row-major-aref (chip8-machine-framebuffer machine) index) 0))
   (setf (chip8-machine-i machine) 0 (chip8-machine-pc machine) +initial-pc+ (chip8-machine-sp machine) 0
         (chip8-machine-delay-timer machine) 0 (chip8-machine-sound-timer machine) 0
         (chip8-machine-waiting machine) (make-chip8-wait-state) (chip8-machine-instructions machine) 0)

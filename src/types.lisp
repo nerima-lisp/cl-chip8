@@ -6,6 +6,7 @@
 (defconstant +call-stack-limit+ 16)
 (defconstant +display-width+ 64)
 (defconstant +display-height+ 32)
+(defconstant +display-terminal-row-count+ 16)
 (defconstant +fontset-address+ #x50)
 (deftype chip8-octet () '(unsigned-byte 8))
 (deftype chip8-nibble () '(unsigned-byte 4))

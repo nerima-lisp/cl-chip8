@@ -60,7 +60,9 @@
                "cl-host-kit")
   :pathname "t"
   :serial t
-  :components ((:file "package") (:file "cpu-test"))
+  :components ((:file "package") (:file "cpu-test") (:file "memory-test")
+               (:file "display-test") (:file "fontset-test") (:file "keypad-test")
+               (:file "timers-test") (:file "rom-test"))
   ;; Resolve RUN-TESTS without package-qualified symbols during ASDF read.
   :perform (test-op (op system)
              (declare (ignore op system))
