@@ -1,37 +1,67 @@
 (in-package #:cl-chip8)
+
 (defstruct (chip8-quirks (:constructor %make-chip8-quirks))
   (profile :modern :type (member :modern :cosmac-vip))
   (vf-behavior :preserve :type (member :preserve :reset))
   (memory-i :preserve :type (member :preserve :increment))
-  (display-wait :none :type (member :none :wait)) (clipping :clip :type (member :clip :wrap))
-  (shift-source :vx :type (member :vx :vy)) (bnnn-register :v0 :type (member :v0 :vx))
+  (display-wait :none :type (member :none :wait))
+  (clipping :clip :type (member :clip :wrap))
+  (shift-source :vx :type (member :vx :vy))
+  (bnnn-register :v0 :type (member :v0 :vx))
   (fx0a-completion :press :type (member :press :release)))
+
+(defparameter *chip8-quirk-slots*
+  '((:vf-behavior . chip8-quirks-vf-behavior)
+    (:memory-i . chip8-quirks-memory-i)
+    (:display-wait . chip8-quirks-display-wait)
+    (:clipping . chip8-quirks-clipping)
+    (:shift-source . chip8-quirks-shift-source)
+    (:bnnn-register . chip8-quirks-bnnn-register)
+    (:fx0a-completion . chip8-quirks-fx0a-completion)))
+
 (defparameter *chip8-quirk-defaults*
-  '((:modern . (:preserve :preserve :none :clip :vx :v0 :press))
-    (:cosmac-vip . (:reset :increment :wait :wrap :vy :vx :release))))
+  '((:modern
+     :vf-behavior :preserve
+     :memory-i :preserve
+     :display-wait :none
+     :clipping :clip
+     :shift-source :vx
+     :bnnn-register :v0
+     :fx0a-completion :press)
+    (:cosmac-vip
+     :vf-behavior :reset
+     :memory-i :increment
+     :display-wait :wait
+     :clipping :clip
+     :shift-source :vy
+     :bnnn-register :v0
+     :fx0a-completion :release)))
+
+(defun %chip8-quirk-defaults (profile)
+  (or (cdr (assoc profile *chip8-quirk-defaults*))
+      (%config-error (format nil "unknown quirk profile: ~S" profile)
+                     :key :profile)))
+
 (defun make-chip8-quirks (&key (profile :modern) vf-behavior memory-i display-wait
                                 clipping shift-source bnnn-register fx0a-completion)
-  (let ((d (cdr (assoc profile *chip8-quirk-defaults*))))
-    (unless d (error "Unknown CHIP-8 quirk profile: ~S" profile))
-    (%make-chip8-quirks :profile profile :vf-behavior (or vf-behavior (first d))
-                        :memory-i (or memory-i (second d)) :display-wait (or display-wait (third d))
-                        :clipping (or clipping (fourth d)) :shift-source (or shift-source (fifth d))
-                        :bnnn-register (or bnnn-register (sixth d))
-                        :fx0a-completion (or fx0a-completion (seventh d)))))
+  (let ((defaults (%chip8-quirk-defaults profile))
+        (overrides (list :vf-behavior vf-behavior
+                         :memory-i memory-i
+                         :display-wait display-wait
+                         :clipping clipping
+                         :shift-source shift-source
+                         :bnnn-register bnnn-register
+                         :fx0a-completion fx0a-completion)))
+    (apply #'%make-chip8-quirks
+           :profile profile
+           (loop for entry in *chip8-quirk-slots*
+                 for slot = (car entry)
+                 append (list slot (or (getf overrides slot)
+                                       (getf defaults slot)))))))
+
 (defun merge-chip8-quirks (quirks &rest overrides)
-  (make-chip8-quirks
-   :profile (chip8-quirks-profile quirks)
-   :vf-behavior (or (getf overrides :vf-behavior)
-                    (chip8-quirks-vf-behavior quirks))
-   :memory-i (or (getf overrides :memory-i)
-                 (chip8-quirks-memory-i quirks))
-   :display-wait (or (getf overrides :display-wait)
-                     (chip8-quirks-display-wait quirks))
-   :clipping (or (getf overrides :clipping)
-                 (chip8-quirks-clipping quirks))
-   :shift-source (or (getf overrides :shift-source)
-                     (chip8-quirks-shift-source quirks))
-   :bnnn-register (or (getf overrides :bnnn-register)
-                      (chip8-quirks-bnnn-register quirks))
-   :fx0a-completion (or (getf overrides :fx0a-completion)
-                        (chip8-quirks-fx0a-completion quirks))))
+  (apply #'make-chip8-quirks
+         :profile (chip8-quirks-profile quirks)
+         (loop for (slot . accessor) in *chip8-quirk-slots*
+               append (list slot (or (getf overrides slot)
+                                     (funcall accessor quirks))))))
