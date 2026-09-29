@@ -26,10 +26,10 @@
       (setf (aref (chip8-machine-memory machine) #x1ff) 1))
     (if (string= name "5-quirks")
         (chip8-run-ticks machine 5000 :instructions-per-tick 100)
-        (loop repeat (if (member name '("3-corax+" "4-flags") :test #'string=) 5000 500) do
-          (if (cl-chip8::chip8-wait-state-kind (chip8-machine-waiting machine))
-              (chip8-resume! machine :tick)
-              (execute-instruction! machine))))
+        (loop repeat (if (member name '("3-corax+" "4-flags") :test #'string=) 5000 500)
+              for result = (chip8-run-instructions machine 1)
+              do (when (eq (chip8-run-result-status result) :waiting)
+                   (chip8-resume! machine :tick))))
     machine))
 
 (describe "Timendus CHIP-8 test suite v4.2"

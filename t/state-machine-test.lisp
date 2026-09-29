@@ -15,7 +15,7 @@
   "control state transition table"
   (it
     "walks the ready, run, pause, wait, and finished states"
-    (let ((state-machine (cl-chip8::make-chip8-control-state-machine)))
+    (let ((state-machine (cl-chip8::make-chip8-app-state-machine)))
       (dolist (transition '((:start "running") (:pause "paused")
                             (:step "running") (:key-wait "waiting-key")
                             (:key-press "running") (:display-wait "waiting-display")
@@ -27,7 +27,7 @@
                 (second transition)))))
   (it
     "rejects an event not present in the transition table"
-    (let ((state-machine (cl-chip8::make-chip8-control-state-machine)))
+    (let ((state-machine (cl-chip8::make-chip8-app-state-machine)))
       (signals error
         (cl-chip8::step-chip8-control-state state-machine :resume)))))
 
