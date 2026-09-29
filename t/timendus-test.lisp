@@ -1,0 +1,60 @@
+(in-package #:cl-chip8/test)
+
+(defun timendus-directory ()
+  (or (uiop:getenv "CHIP8_TIMENDUS_DIR")
+      (when (string= (uiop:getenv "CHIP8_TIMENDUS_SKIP") "1")
+        (skip "CHIP8_TIMENDUS_DIR is not configured"))
+      (error "CHIP8_TIMENDUS_DIR is required; set CHIP8_TIMENDUS_SKIP=1 only for non-conformance local runs")))
+
+(defun timendus-rom (name)
+  (let ((path (pathname (format nil "~A/~A.ch8" (timendus-directory) name))))
+    (unless (probe-file path)
+      (error "Timendus ROM is missing: ~A" path))
+    path))
+
+(defun framebuffer-ascii (framebuffer)
+  (with-output-to-string (out)
+    (dotimes (y +display-height+)
+      (dotimes (x +display-width+)
+        (write-char (if (plusp (aref framebuffer y x)) #\# #\.) out))
+      (terpri out))))
+
+(defun run-timendus (name profile)
+  (let ((machine (make-chip8-machine :quirks (make-chip8-quirks :profile profile))))
+    (load-rom-file machine (timendus-rom name))
+    (when (string= name "5-quirks")
+      (setf (aref (chip8-machine-memory machine) #x1ff) 1))
+    (if (string= name "5-quirks")
+        (chip8-run-ticks machine 5000 :instructions-per-tick 100)
+        (loop repeat (if (member name '("3-corax+" "4-flags") :test #'string=) 5000 500) do
+          (if (cl-chip8::chip8-wait-state-kind (chip8-machine-waiting machine))
+              (chip8-resume! machine :tick)
+              (execute-instruction! machine))))
+    machine))
+
+(describe "Timendus CHIP-8 test suite v4.2"
+  (it-each
+    (("1-chip8-logo" :modern) ("1-chip8-logo" :cosmac-vip)
+     ("2-ibm-logo" :modern) ("2-ibm-logo" :cosmac-vip)
+     ("3-corax+" :modern) ("3-corax+" :cosmac-vip)
+     ("4-flags" :modern) ("4-flags" :cosmac-vip)
+     ("5-quirks" :modern) ("5-quirks" :cosmac-vip))
+    "runs ~A under ~A and matches the framebuffer golden"
+    (name profile)
+    (expect (framebuffer-ascii (chip8-framebuffer (run-timendus name profile)))
+            :to-match-snapshot
+            (format nil "timendus/~A/~A" name profile)))
+
+  (it "injects keypad input through the headless API"
+    (let ((machine (make-chip8-machine)))
+      (load-rom-file machine (timendus-rom "6-keypad"))
+      (chip8-key-down! machine 1)
+      (chip8-run-instructions machine 200)
+      (chip8-key-up! machine 1)
+      (chip8-run-instructions machine 200)
+      (dolist (key '(2 3 12 4 5 6 13 7 8 9 14 10 0 11 15))
+        (chip8-key-down! machine key)
+        (chip8-run-instructions machine 200)
+        (chip8-key-up! machine key)
+        (chip8-run-instructions machine 200))
+      (expect (chip8-machine-instructions machine) :to-satisfy (lambda (n) (> n 100))))))

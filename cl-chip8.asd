@@ -78,7 +78,7 @@
                (:file "corpus-test")
                (:file "config-test") (:file "cli-test")
                (:file "logging-metrics-test") (:file "app-test")
-               (:file "state-machine-test"))
+               (:file "state-machine-test")
                (:file "timendus-test") (:file "benchmark-test"))
   ;; Resolve RUN-TESTS without package-qualified symbols during ASDF read.
   :perform (test-op (op system)
