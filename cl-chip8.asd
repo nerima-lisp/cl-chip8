@@ -29,7 +29,7 @@
   :serial t
   ;; Source files live under src/.
   :components ((:file "package") (:file "conditions") (:file "config")
-               (:file "logging") (:file "metrics") (:file "types") (:file "quirks")
+               (:file "logging") (:file "types") (:file "quirks")
                (:file "machine-types") (:file "machine") (:file "memory") (:file "fontset")
                (:file "display-types") (:file "display") (:file "opcode-data")
                (:file "opcode-execution") (:file "opcode-dispatch") (:file "opcode-cps")
@@ -39,6 +39,7 @@
                (:file "concurrent-render-types")
                (:file "concurrent-render-macros")
                (:file "concurrent-render") (:file "concurrent-render-rows")
+               (:file "metrics")
                (:file "control-events")
                (:file "state-machine")
                (:file "app-types")

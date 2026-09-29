@@ -2,11 +2,6 @@
 
 (in-package #:cl-chip8)
 
-(declaim (notinline chip8-render-state-frame-count
-                    chip8-render-pipeline-state
-                    chip8-render-pipeline-submitted-rows
-                    chip8-render-pipeline-serial-rows))
-
 (defstruct (chip8-metrics (:constructor %make-chip8-metrics))
   registry
   counters

@@ -38,7 +38,7 @@
           (setf (chip8-app-error app) condition
                 (chip8-app-quit-p app) t)
           (setf (chip8-app-state-machine app)
-                 (step-chip8-control-state
+                (step-chip8-control-state
                  (chip8-app-state-machine app) :error)))))
     (let ((wait-kind (chip8-wait-state-kind (chip8-machine-waiting machine)))
           (state-machine (chip8-app-state-machine app)))
