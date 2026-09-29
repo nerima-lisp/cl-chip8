@@ -15,4 +15,4 @@
    #:chip8-config #:chip8-config-rom-path #:chip8-config-clock-hz #:chip8-config-quirks #:chip8-config-log-path #:merge-chip8-config #:load-chip8-config-file #:make-chip8-config-from-sources
    #:make-chip8-logger #:close-chip8-logger #:chip8-log #:chip8-log-info #:chip8-log-error #:flush-chip8-logger
    #:chip8-metrics #:make-chip8-metrics #:chip8-metric-add #:chip8-metric-set #:record-chip8-instruction! #:record-chip8-error! #:flush-chip8-metrics! #:finalize-chip8-metrics! #:chip8-metrics-snapshot #:chip8-metrics-fields
-   #:chip8-run-options #:main #:image-entry-point))
+   #:chip8-run-options #:*app* #:main #:image-entry-point))
