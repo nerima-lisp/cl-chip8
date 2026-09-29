@@ -1,6 +1,11 @@
 ;;;; src/render-types.lisp -- terminal rendering constants and lookup data.
 (in-package #:cl-chip8)
 
+(deftype column () '(integer 0 63))
+(deftype row () '(integer 0 31))
+(deftype terminal-row () '(integer 0 15))
+(deftype row-bits () '(simple-array bit (64)))
+
 (defconstant +screen-width+ (+ +display-width+ 2)
   "Terminal screen width: the 64-pixel-wide playfield plus a 1-cell border on
 each side.")

@@ -31,8 +31,37 @@ the developer path is unchanged."
        `(:source-registry (:tree ,sibling-root)
          :ignore-inherited-configuration)))))
 
+(defun run-with-compilation-warning-gate (root thunk)
+  "Run THUNK and fail on every compilation warning except src/app.lisp.
+
+The exception is deliberately tied to this checkout's source pathname, so a
+warning from any dependency or test source remains fatal.  STYLE-WARNING and
+SBCL's undefined-name warnings are WARNING conditions and are therefore
+covered by the same handler."
+  (let ((warning-count 0)
+        (app-warning-count 0)
+        (app-source (truename (merge-pathnames #p"src/app.lisp" root))))
+    (handler-bind
+        ((warning
+           (lambda (condition)
+             (incf warning-count)
+             (if (and *compile-file-truename*
+                      (equal (truename *compile-file-truename*) app-source))
+                 (progn
+                   (incf app-warning-count)
+                   (muffle-warning condition))
+                 (error condition)))))
+      (prog1 (funcall thunk)
+        (format t "~&Compilation warning gate: ~D warning~:P; ~D excluded from src/app.lisp.~%"
+                warning-count
+                app-warning-count)))))
+
 (let ((root (script-directory)))
   (configure-local-source-registry root))
 (asdf:load-system "cl-host-kit")
-(asdf:test-system "cl-chip8")
+(let ((root (script-directory)))
+  (run-with-compilation-warning-gate
+   root
+   (lambda ()
+     (asdf:test-system "cl-chip8"))))
 (host-kit:quit 0)
