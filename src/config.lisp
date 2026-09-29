@@ -28,15 +28,20 @@
      (when (chip8-config-error-reason condition)
        (format stream "; ~A" (chip8-config-error-reason condition))))))
 
-(defparameter +default-chip8-clock-hz+ 700)
+;; The clock default is defined before this file's merge function because ASDF
+;; loads configuration before the application structure.
+(defconstant +default-clock-hz+ 700)
 
-;; The schema is data; validation below is deliberately independent of it.
+;; Each entry is (TOML-NAME TYPE). TYPE supplies both validation and the
+;; normalized value consumed by the configuration merger.
 (defparameter +chip8-config-schema+
   '(("chip8" . (("quirks" . :profile) ("clock_hz" . :positive-integer)
-                 ("display_wait" . :boolean) ("clipping" . :clipping)
-                 ("shift_source" . :shift-source) ("bnnn_register" . :bnnn-register)
-                 ("fx0a_completion" . :fx0a-completion)
-                 ("memory_i" . :memory-i) ("vf_reset" . :vf-reset)))
+                 ("display_wait" . :boolean) ("clipping" . (:enum "clip" "wrap"))
+                 ("shift_source" . (:enum "vx" "vy"))
+                 ("bnnn_register" . (:enum "v0" "vx"))
+                 ("fx0a_completion" . (:enum "press" "release"))
+                 ("memory_i" . (:enum "preserve" "increment"))
+                 ("vf_reset" . (:enum "preserve" "reset"))))
     ("logging" . (("path" . :string)))))
 
 (defstruct (chip8-config (:constructor %make-chip8-config) (:copier nil))
@@ -72,7 +77,10 @@
 (defun %validate-keys (source allowed source-name prefix)
   (dolist (key (%source-keys source))
     (unless (member key allowed :test #'string=)
-      (%config-error "unknown key" :source-name source-name
+      (%config-error (if source-name
+                        "unknown key; cl-toml-kit does not retain source positions for valid keys"
+                        "unknown key")
+                     :source-name source-name
                      :path (if prefix (format nil "~A.~A" prefix key) key)
                      :key key))))
 
@@ -86,34 +94,53 @@
     (%config-error reason :source-name source :path key :key key))
   value)
 
-(defun %validate-override (key value source-name)
-  (let ((valid (case key
-                 ("display_wait" (or (eq value t) (null value)))
-                 ("clipping" (member value '("clip" "wrap") :test #'string=))
-                 ("shift_source" (member value '("vx" "vy") :test #'string=))
-                 ("bnnn_register" (member value '("v0" "vx") :test #'string=))
-                 ("fx0a_completion" (member value '("press" "release") :test #'string=))
-                 ("memory_i" (member value '("preserve" "increment") :test #'string=))
-                 ("vf_reset" (member value '("preserve" "reset") :test #'string=))
-                 (otherwise t))))
-    (unless valid
-      (%config-error "invalid value" :source-name source-name
-                     :path (format nil "chip8.~A" key) :key key))))
+(defun %schema-entry (section key)
+  (cdr (assoc key (cdr (assoc section +chip8-config-schema+ :test #'string=))
+             :test #'string=)))
+
+(defun %schema-keys (section)
+  (mapcar #'car (cdr (assoc section +chip8-config-schema+ :test #'string=))))
+
+(defun %schema-sections ()
+  (mapcar #'car +chip8-config-schema+))
+
+(defun %schema-value (section key value source-name)
+  (let ((type (%schema-entry section key))
+        (path (format nil "~A.~A" section key)))
+    (unless type
+      (%config-error "unknown key" :source-name source-name :path path :key key))
+    (cond
+      ((eq type :profile)
+       (%require-type value (lambda (x) (and (stringp x)
+                                             (member x '("modern" "cosmac-vip")
+                                                      :test #'string=)))
+                      "profile must be modern or cosmac-vip" path source-name))
+      ((eq type :positive-integer)
+       (%require-type value (lambda (x) (and (integerp x) (>= x 1)))
+                      "expected a positive integer" path source-name))
+      ((eq type :boolean)
+       (%require-type value (lambda (x) (or (eq x t) (null x)))
+                      "expected a boolean" path source-name))
+      ((eq type :string)
+       (%require-type value #'stringp "expected a string" path source-name))
+      ((and (consp type) (eq (car type) :enum))
+       (if (and (stringp value) (member value (cdr type) :test #'string=))
+           (intern (string-upcase value) :keyword)
+           (%config-error "invalid value" :source-name source-name
+                          :path path :key key)))
+      (t (%config-error "unsupported schema type" :source-name source-name
+                        :path path :key key)))))
 
 (defun %validate-toml (table source-name)
   (unless (hash-table-p table)
     (%config-error "TOML document is not a table" :source-name source-name))
-  (%validate-keys table '("chip8" "logging") source-name nil)
-  (dolist (section '("chip8" "logging"))
+  (%validate-keys table (%schema-sections) source-name nil)
+  (dolist (section (%schema-sections))
     (multiple-value-bind (value presentp) (%hash-value table section)
       (when presentp
         (unless (hash-table-p value)
           (%config-error "section must be a table" :source-name source-name :path section))
-        (%validate-keys value
-                        (if (string= section "chip8")
-                            (mapcar #'car (cdr (assoc section +chip8-config-schema+ :test #'string=)))
-                            '("path"))
-                        source-name section))))
+        (%validate-keys value (%schema-keys section) source-name section))))
   table)
 
 (defun %parse-toml-file (pathname)
@@ -154,23 +181,22 @@
          (toml-logging (and (hash-table-p toml) (gethash "logging" toml)))
          (profile (or (%value (list defaults toml-chip8 cli) "quirks") "modern"))
          (clock (or (%value (list defaults toml-chip8 cli) "clock_hz")
-                    +default-chip8-clock-hz+))
+                   +default-clock-hz+))
          (log-path (or (%value (list cli) "log")
                        (%value (list toml-logging) "path")))
          (rom-path (%value (list defaults toml cli) "rom"))
          (overrides nil))
-    (%require-type profile (lambda (x) (member x '("modern" "cosmac-vip") :test #'string=))
-                   "profile must be modern or cosmac-vip" "chip8.quirks" (or source-name "configuration"))
-    (%require-type clock (lambda (x) (and (integerp x) (>= x 1)))
-                   "expected a positive integer" "chip8.clock_hz" (or source-name "configuration"))
-    (dolist (key '("display_wait" "clipping" "shift_source" "bnnn_register"
-                   "fx0a_completion" "memory_i" "vf_reset"))
+    (setf profile (%schema-value "chip8" "quirks" profile (or source-name "configuration"))
+          clock (%schema-value "chip8" "clock_hz" clock (or source-name "configuration")))
+    (dolist (key (remove-if (lambda (key) (member key '("quirks" "clock_hz") :test #'string=))
+                            (%schema-keys "chip8")))
       (multiple-value-bind (value presentp) (%source-value toml-chip8 key)
         (when presentp
-          (%validate-override key value (or source-name "configuration"))
-          (setf (getf overrides (intern (string-upcase key) :keyword)) value))))
-    (when log-path (%require-type log-path #'stringp "expected a string" "logging.path"
-                                  (or source-name "configuration")))
+          (setf (getf overrides (intern (string-upcase key) :keyword))
+                (%schema-value "chip8" key value (or source-name "configuration"))))))
+    (when log-path
+      (setf log-path (%schema-value "logging" "path" log-path
+                                    (or source-name "configuration"))))
     (%make-chip8-config :rom-path rom-path :clock-hz clock
                         :quirks (%profile-quirks profile overrides)
                         :log-path log-path)))

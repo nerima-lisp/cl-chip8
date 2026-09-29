@@ -57,8 +57,41 @@ signals none instead."
     (cl-chip8:chip8-config-error (condition) condition)))
 
 (describe "CHIP-8 configuration"
+  (it "reports the source file and key when TOML lacks key positions"
+    (let ((path (merge-pathnames
+                 (format nil "cl-chip8-unknown-key-~D.toml" (random 1000000))
+                 (uiop:temporary-directory))))
+      (unwind-protect
+           (progn
+             (with-open-file (stream path :direction :output
+                                     :if-exists :supersede
+                                     :if-does-not-exist :create)
+               (write-string (format nil "[chip8]~%unknown = true~%") stream))
+             (let ((condition (handler-case
+                                  (cl-chip8:load-chip8-config-file path)
+                                (cl-chip8:chip8-config-error (condition)
+                                  condition))))
+               (expect condition :to-be-type-of 'cl-chip8:chip8-config-error)
+               (expect (cl-chip8:chip8-config-error-line condition) :to-be nil)
+               (expect (cl-chip8:chip8-config-error-path condition)
+                       :to-equal "chip8.unknown")
+               (expect (princ-to-string condition) :to-contain (namestring path))
+               (expect (princ-to-string condition)
+                       :to-contain "does not retain source positions")))
+        (when (probe-file path) (delete-file path)))))
+  (it "uses the shared clock default"
+    (let ((config (cl-chip8:merge-chip8-config)))
+      (expect (cl-chip8:chip8-config-clock-hz config)
+              :to-be cl-chip8::+default-clock-hz+)
+      (expect (cl-chip8:chip8-app-clock-hz (cl-chip8:make-chip8-app))
+              :to-be cl-chip8::+default-clock-hz+)))
+
+  (it "keeps the app predicate internal"
+    (expect (nth-value 1 (find-symbol "CHIP8-APP-P" :cl-chip8))
+            :to-be :internal))
+
   (it-each ((700 700) (1200 1200))
-      "takes the TOML clock_hz value ~A over the 600 Hz default"
+      "takes the TOML clock_hz value ~A over the configured default"
       (value expected)
     (let* ((chip8 (%config-table "clock_hz" value))
            (config (cl-chip8:merge-chip8-config

@@ -1,7 +1,5 @@
 (in-package #:cl-chip8)
 
-(defparameter +default-clock-hz+ 700)
-
 (defstruct (chip8-app (:constructor make-chip8-app))
   machine state-machine renderer render-state decoder render-pipeline
   (clock-hz +default-clock-hz+ :type (integer 1 *))
