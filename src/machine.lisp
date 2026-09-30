@@ -1,5 +1,11 @@
 (in-package #:cl-chip8)
-(defun make-chip8-machine (&key (quirks (make-chip8-quirks))) (chip8-reset! (%make-chip8-machine :quirks quirks)))
+(defun make-chip8-machine (&key (quirks (make-chip8-quirks)) (random-seed nil random-seed-p))
+  ;; This project targets SBCL; SB-EXT:SEED-RANDOM-STATE provides integer seeding.
+  (chip8-reset!
+   (%make-chip8-machine :quirks quirks
+                        :random-state (if random-seed-p
+                                          (sb-ext:seed-random-state random-seed)
+                                          (make-random-state t)))))
 (defun chip8-reset! (machine)
   (fill (chip8-machine-memory machine) 0) (fill (chip8-machine-v machine) 0)
   (fill (chip8-machine-stack machine) 0) (fill (chip8-machine-keypad machine) 0)

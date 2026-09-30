@@ -161,6 +161,17 @@
       (expect (aref (chip8-machine-stack m) 1) :to-be 0))))
 
 (describe "CPU boundary and CPS contracts"
+  (it "makes CXNN deterministic for the same random seed"
+    (flet ((random-values (seed)
+             (let ((machine (make-chip8-machine :random-seed seed)))
+               (loop repeat 8
+                     do (test-opcode machine #xc0ff)
+                     collect (chip8-machine-register machine 0)))))
+      (let ((first (random-values 12345))
+            (second (random-values 12345))
+            (different (random-values 54321)))
+        (expect first :to-equal second)
+        (expect (not (equal first different)) :to-be-truthy))))
   (it "wraps a CALL return address at the 12-bit boundary"
     (let ((m (make-chip8-machine)))
       (setf (chip8-machine-pc m) #xffe)

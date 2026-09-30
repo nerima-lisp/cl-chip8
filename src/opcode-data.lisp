@@ -149,7 +149,8 @@
 
 (define-chip8-opcode random #xc000 #xf000
     ((x (ldb (byte 4 8) opcode)) (kk (ldb (byte 8 0) opcode)))
-  (setf (chip8-machine-register machine x) (logand (random 256) kk))
+  (setf (chip8-machine-register machine x)
+        (logand (random 256 (chip8-machine-random-state machine)) kk))
   (advance-pc! machine))
 
 (define-chip8-opcode draw #xd000 #xf000
