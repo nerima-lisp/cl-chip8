@@ -304,7 +304,7 @@
         programPath = "src/cl-chip8";
       };
 
-      timeoutSeconds = 600;
+      timeoutSeconds = 1200;
       killAfterSeconds = 30;
 
       docs.root = ./docs;
