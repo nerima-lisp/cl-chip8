@@ -3,5 +3,7 @@
 (defun keypad-reset! (machine) (fill (chip8-machine-keypad machine) 0) machine)
 (defun chip8-key-down! (machine key) (check-type key chip8-key) (setf (sbit (chip8-machine-keypad machine) key) 1) machine)
 (defun chip8-key-up! (machine key) (check-type key chip8-key) (setf (sbit (chip8-machine-keypad machine) key) 0) machine)
-(defun key-down-p (machine key) (plusp (sbit (chip8-machine-keypad machine) key)))
+(defun key-down-p (machine key)
+  (and (typep key 'chip8-key)
+       (plusp (sbit (chip8-machine-keypad machine) key))))
 (defun pressed-keys (machine) (loop for key below 16 when (key-down-p machine key) collect key))

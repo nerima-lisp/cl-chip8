@@ -161,6 +161,42 @@
       (expect (aref (chip8-machine-stack m) 1) :to-be 0))))
 
 (describe "CPU boundary and CPS contracts"
+  (it "sets VF to carry for 8XY4 when X is F"
+    (let ((m (make-chip8-machine)))
+      (setf (chip8-machine-register m 15) 200
+            (chip8-machine-register m 1) 56)
+      (test-opcode m #x8f14)
+      (expect (chip8-machine-register m 15) :to-be 1)))
+  (it "sets VF to borrow for 8XY5 when X is F"
+    (let ((m (make-chip8-machine)))
+      (setf (chip8-machine-register m 15) 10
+            (chip8-machine-register m 1) 20)
+      (test-opcode m #x8f15)
+      (expect (chip8-machine-register m 15) :to-be 0)))
+  (it "sets VF to borrow flag for 8XY7 when X is F"
+    (let ((m (make-chip8-machine)))
+      (setf (chip8-machine-register m 15) 20
+            (chip8-machine-register m 1) 10)
+      (test-opcode m #x8f17)
+      (expect (chip8-machine-register m 15) :to-be 1)))
+  (it "handles out-of-range keys in EX9E and EXA1"
+    (let ((m (make-chip8-machine)))
+      (setf (chip8-machine-register m 0) 16)
+      (test-opcode m #xe09e)
+      (expect (chip8-machine-pc m) :to-be #x202)
+      (setf (chip8-machine-pc m) #x200)
+      (test-opcode m #xe0a1)
+      (expect (chip8-machine-pc m) :to-be #x204)))
+  (it "writes the shift result before VF when X is F"
+    (let ((m (make-chip8-machine
+              :quirks (make-chip8-quirks :profile :cosmac-vip))))
+      (setf (chip8-machine-register m 1) #x83)
+      (test-opcode m #x8f16)
+      (expect (chip8-machine-register m 15) :to-be 1)
+      (setf (chip8-machine-register m 1) #x81
+            (chip8-machine-pc m) #x200)
+      (test-opcode m #x8f1e)
+      (expect (chip8-machine-register m 15) :to-be 1)))
   (it "wraps a CALL return address at the 12-bit boundary"
     (let ((m (make-chip8-machine)))
       (setf (chip8-machine-pc m) #xffe)
