@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "chip8-archive": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789524124,
+        "narHash": "sha256-I3fuKV0u8aQvIT5Hfk9GLVn45VB4VPsFL0QdoCDWc+I=",
+        "owner": "JohnEarnest",
+        "repo": "chip8Archive",
+        "rev": "761e3ffc63f43e6a849e80714122feff2afca208",
+        "type": "github"
+      },
+      "original": {
+        "owner": "JohnEarnest",
+        "repo": "chip8Archive",
+        "type": "github"
+      }
+    },
     "cl-boundary-kit": {
       "inputs": {
         "cl-host-kit": "cl-host-kit",
@@ -463,6 +479,7 @@
     },
     "root": {
       "inputs": {
+        "chip8-archive": "chip8-archive",
         "cl-boundary-kit": "cl-boundary-kit",
         "cl-cli": "cl-cli",
         "cl-codec-kit": "cl-codec-kit",

@@ -106,6 +106,11 @@
       url = "github:Timendus/chip8-test-suite/v4.2";
       flake = false;
     };
+
+    chip8-archive = {
+      url = "github:JohnEarnest/chip8Archive";
+      flake = false;
+    };
   };
 
   outputs =
@@ -131,6 +136,7 @@
       cl-dataflow-kit,
       cl-prolog-kit,
       timendus-chip8-test-suite,
+      chip8-archive,
     }:
     let
       systems = [
@@ -309,6 +315,9 @@
         packages.timendus = ctx.pkgs.runCommand "timendus-chip8-test-suite" { } ''
           cp -r ${timendus-chip8-test-suite} "$out"
         '';
+        packages.chip8-archive = ctx.pkgs.runCommand "chip8-archive" { } ''
+          cp -r ${chip8-archive} "$out"
+        '';
         checks = {
           paredit-lint = paredit-cli.lib.${ctx.system}.mkLintCheck {
             inherit (ctx) src;
@@ -323,6 +332,7 @@
         checks.default = ctx.generated.checks.default.overrideAttrs (old: {
           preCheck = (old.preCheck or "") + ''
             export CHIP8_TIMENDUS_DIR=${timendus-chip8-test-suite}/bin
+            export CL_CHIP8_ROM_CORPUS=${chip8-archive}
           '';
         });
       };

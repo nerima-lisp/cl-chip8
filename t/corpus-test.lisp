@@ -1,9 +1,10 @@
 ;;;; ROM corpus smoke tests. The corpus is supplied through
 ;;;; CL_CHIP8_ROM_CORPUS; no ROM bytes are vendored here.
 ;;;;
-;;;; Without the environment variable, the corpus spec reports a skip. The
-;;;; remaining specs use synthetic ROMs to test discovery, budget parsing, and
-;;;; outcome classification without requiring the external corpus.
+;;;; The corpus spec requires the environment variable unless the explicit
+;;;; CL_CHIP8_ROM_CORPUS_SKIP=1 development escape hatch is set. The remaining
+;;;; specs use synthetic ROMs to test discovery, budget parsing, and outcome
+;;;; classification without requiring the external corpus.
 (in-package #:cl-chip8/test)
 
 ;;; ---------------------------------------------------------------------------
@@ -12,7 +13,10 @@
 
 (defparameter *rom-corpus-root-variable* "CL_CHIP8_ROM_CORPUS"
   "Name of the environment variable holding the corpus root directory.
-Unset means the corpus spec skips. See this file's header.")
+The root must contain programs.json and the ROM tree. See this file's header.")
+
+(defparameter *rom-corpus-skip-variable* "CL_CHIP8_ROM_CORPUS_SKIP"
+  "Name of the explicit development-only variable that skips the corpus spec.")
 
 (defparameter *rom-corpus-budget-variable* "CL_CHIP8_ROM_CORPUS_BUDGET"
   "Name of the environment variable overriding the per-ROM instruction budget.")
@@ -47,7 +51,8 @@ reported; neither fails the run.")
 (defun %corpus-environment-value (name)
   "Return environment variable NAME's value with surrounding blanks trimmed, or
 NIL when it is unset or blank. Treating a blank value as unset means
-`CL_CHIP8_ROM_CORPUS=` skips rather than failing on an empty corpus root."
+`CL_CHIP8_ROM_CORPUS=` is treated as unset and therefore requires the explicit
+development skip variable."
   (let ((value (host-kit:getenv name)))
     (when value
       (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) value)))
@@ -60,6 +65,9 @@ NIL when it is unset or blank. Treating a blank value as unset means
   (let ((configured (%corpus-environment-value *rom-corpus-root-variable*)))
     (when configured
       (host-kit:ensure-directory-pathname (host-kit:ensure-pathname configured)))))
+
+(defun %corpus-skip-p ()
+  (string= (%corpus-environment-value *rom-corpus-skip-variable*) "1"))
 
 (defun %parse-corpus-budget (value)
   "Return the per-ROM instruction budget VALUE denotes.
@@ -108,6 +116,41 @@ to, so this descends rather than listing ROOT's direct entries."
          (push pathname files)))
      root)
     (nreverse files)))
+
+(defun %corpus-programs (root)
+  "Read ROOT's programs.json as an alist of ROM basename to platform.
+Signals an error for malformed or unsupported metadata rather than allowing a
+ROM to be classified without evidence from the archive index."
+  (let ((path (merge-pathnames "programs.json" root)))
+    (unless (probe-file path)
+      (error "chip8Archive metadata is missing: ~A" path))
+    (let ((records (json-kit:parse (uiop:read-file-string path)))
+          (programs '()))
+      (maphash
+       (lambda (name record)
+         (let ((platform (gethash "platform" record)))
+           (unless (member platform '("chip8" "schip" "xochip") :test #'string=)
+             (error "Unsupported platform ~S for ROM ~A in ~A."
+                    platform name path))
+           (push (cons name platform) programs)))
+       records)
+      programs)))
+
+(defun %corpus-rom-platform (path programs)
+  (cdr (assoc (pathname-name path) programs :test #'string=)))
+
+(defun %corpus-unlisted-roms (roms programs)
+  (loop for rom in roms
+        unless (%corpus-rom-platform rom programs)
+          collect rom))
+
+(defun %corpus-platform-tally (roms programs)
+  (loop for platform in '("chip8" "schip" "xochip")
+        collect (cons platform
+                      (count platform roms
+                            :key (lambda (rom)
+                                   (%corpus-rom-platform rom programs))
+                            :test #'string=))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Running one ROM
@@ -196,12 +239,16 @@ distinguishable from one that forgot to look for them."
         collect (cons class
                       (count class outcomes :key #'second))))
 
-(defun %report-corpus-summary (root budget outcomes stream)
+(defun %report-corpus-summary (root budget roms programs unlisted outcomes stream)
   "Write the per-class tally to STREAM. These are the numbers that go in the
 docs, so they name the corpus root and the budget that produced them."
   (format stream "~&;; cl-chip8 ROM corpus smoke test~%")
   (format stream ";;   corpus root : ~A~%" root)
   (format stream ";;   budget      : ~D instruction(s) per ROM~%" budget)
+  (dolist (entry (%corpus-platform-tally roms programs))
+    (format stream ";;   platform ~A: ~D~%" (car entry) (cdr entry)))
+  (dolist (rom unlisted)
+    (format stream ";;   unlisted ROM: ~A~%" (%printable-corpus-name rom)))
   (loop for (class . count) in (%corpus-tally outcomes)
         do (format stream ";;   ~(~30A~): ~D~%" class count))
   (format stream ";;   ~30A: ~D~%" "total" (length outcomes))
@@ -289,22 +336,26 @@ temporary-file API."
 (describe "chip8Archive ROM corpus smoke test (FR-010)"
   (it "runs every .ch8 ROM under CL_CHIP8_ROM_CORPUS with no memory or stack fault"
     (let ((root (%corpus-root)))
-      ;; An unconfigured corpus is reported as a skip.
+      ;; Only an explicit development escape hatch may skip this required spec.
       (unless root
-        (skip (format nil "~A is unset. Set it to a directory tree of .ch8 files ~
-                           (for example a clone of JohnEarnest/chip8Archive) to run ~
-                           the corpus smoke test."
-                      *rom-corpus-root-variable*)))
+        (if (%corpus-skip-p)
+            (skip (format nil "~A is unset; ~A=1 requested a local skip."
+                          *rom-corpus-root-variable* *rom-corpus-skip-variable*))
+            (error "~A is required; set it to a chip8Archive checkout or use ~A=1 only for local development."
+                   *rom-corpus-root-variable* *rom-corpus-skip-variable*)))
       ;; A configured but missing directory is an error.
       (unless (host-kit:directory-exists-p root)
         (error "~A names ~A, which is not an existing directory."
                *rom-corpus-root-variable* root))
-      (let ((budget (%corpus-budget))
-            (roms (%corpus-rom-files root)))
+      (let* ((budget (%corpus-budget))
+             (roms (%corpus-rom-files root))
+             (programs (%corpus-programs root))
+             (unlisted (%corpus-unlisted-roms roms programs)))
         ;; Require at least one ROM when a corpus is configured.
         (expect (length roms) :to-be-greater-than 0)
+        (expect (mapcar #'%printable-corpus-name unlisted) :to-equal '())
         (let ((outcomes (%corpus-outcomes roms budget)))
-          (%report-corpus-summary root budget outcomes *standard-output*)
+          (%report-corpus-summary root budget roms programs unlisted outcomes *standard-output*)
           (expect (%corpus-faults outcomes) :to-equal '()))))))
 
 ;;; ---------------------------------------------------------------------------

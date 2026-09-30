@@ -21,12 +21,23 @@ Run the direct suite with an explicit time limit:
 timeout 900 sbcl --script run-tests.lisp
 ```
 
-The Timendus ROM directory is supplied through `CHIP8_TIMENDUS_DIR`. When
+The Timendus ROM directory is supplied through `CHIP8_TIMENDUS_DIR`, and the
+chip8Archive checkout root (including `programs.json`) through
+`CL_CHIP8_ROM_CORPUS`. The corpus is required by the test suite; only local
+development may explicitly skip it with `CL_CHIP8_ROM_CORPUS_SKIP=1`. When
 dependencies are outside the Nix shell, set `CL_SOURCE_REGISTRY` to the parent
 tree containing the checkout and its sibling systems:
 
 ```sh
-CHIP8_TIMENDUS_DIR=/path/to/timendus timeout 900 sbcl --script run-tests.lisp
+CHIP8_TIMENDUS_DIR=/path/to/timendus \
+CL_CHIP8_ROM_CORPUS=/path/to/chip8Archive \
+timeout 900 sbcl --script run-tests.lisp
+```
+
+To run local tests without downloading the corpus, opt out explicitly:
+
+```sh
+CL_CHIP8_ROM_CORPUS_SKIP=1 timeout 900 sbcl --script run-tests.lisp
 ```
 
 Run coverage with a time limit:
