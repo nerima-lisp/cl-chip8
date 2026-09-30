@@ -28,6 +28,10 @@ development may explicitly skip it with `CL_CHIP8_ROM_CORPUS_SKIP=1`. When
 dependencies are outside the Nix shell, set `CL_SOURCE_REGISTRY` to the parent
 tree containing the checkout and its sibling systems:
 
+CI sets `CL_CHIP8_ROM_CORPUS_BUDGET=200` so the complete corpus stays within
+the six-minute test timeout. Local runs may override that budget when a longer
+smoke run is useful.
+
 ```sh
 CHIP8_TIMENDUS_DIR=/path/to/timendus \
 CL_CHIP8_ROM_CORPUS=/path/to/chip8Archive \

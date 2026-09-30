@@ -333,6 +333,7 @@
           preCheck = (old.preCheck or "") + ''
             export CHIP8_TIMENDUS_DIR=${timendus-chip8-test-suite}/bin
             export CL_CHIP8_ROM_CORPUS=${chip8-archive}
+            export CL_CHIP8_ROM_CORPUS_BUDGET=200
           '';
         });
       };
