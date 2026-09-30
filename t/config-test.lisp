@@ -117,7 +117,7 @@ signals none instead."
             ("rom" cl-chip8:chip8-config-rom-path "default.ch8" "toml.ch8" nil "toml.ch8")
             ("rom" cl-chip8:chip8-config-rom-path "default.ch8" nil nil "default.ch8")
             ("quirks" %resolved-quirks-profile "modern" "cosmac-vip" "cosmac-vip" :COSMAC-VIP)
-            ("quirks octo" %resolved-quirks-profile "modern" "octo" nil :OCTO)
+            ("quirks" %resolved-quirks-profile "modern" "octo" nil :OCTO)
             ("quirks" %resolved-quirks-profile "modern" "cosmac-vip" nil :COSMAC-VIP)
             ("quirks" %resolved-quirks-profile "modern" nil nil :MODERN))
       "resolves ~A from the highest-priority source that sets it"
