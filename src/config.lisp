@@ -112,9 +112,9 @@
     (cond
       ((eq type :profile)
        (%require-type value (lambda (x) (and (stringp x)
-                                             (member x '("modern" "cosmac-vip")
+                                             (member x '("modern" "cosmac-vip" "octo")
                                                       :test #'string=)))
-                      "profile must be modern or cosmac-vip" path source-name))
+                      "profile must be modern, cosmac-vip, or octo" path source-name))
       ((eq type :positive-integer)
        (%require-type value (lambda (x) (and (integerp x) (>= x 1)))
                       "expected a positive integer" path source-name))

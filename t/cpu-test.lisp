@@ -4,6 +4,7 @@
   (load-rom machine (vector (ldb (byte 8 8) opcode) (ldb (byte 8 0) opcode))
             :address (chip8-machine-pc machine))
   (execute-instruction! machine))
+
 (defparameter *opcode-table-cases*
   (loop for profile in '(:modern :cosmac-vip) append
     (loop for opcode in '(#x00e0 #x00ee #x0123 #x1200 #x2200 #x2ffe #x3000 #x4000 #x5000
@@ -120,6 +121,21 @@
   (assert-semantic-case
    (find name *opcode-semantic-cases* :key #'first)
    nil))
+
+(describe "CHIP-8 quirk profiles"
+  (it "constructs the documented Octo defaults"
+    (let ((quirks (make-chip8-quirks :profile :octo)))
+      (expect (list (chip8-quirks-profile quirks)
+                    (chip8-quirks-vf-behavior quirks)
+                    (chip8-quirks-memory-i quirks)
+                    (chip8-quirks-display-wait quirks)
+                    (chip8-quirks-clipping quirks)
+                    (chip8-quirks-shift-source quirks)
+                    (chip8-quirks-bnnn-register quirks)
+                    (chip8-quirks-fx0a-completion quirks))
+              :to-equal
+              '(:octo :preserve :increment :none :wrap :vy :v0 :release)))))
+
 (describe "typed CHIP-8 machine"
   (it "resets to the documented initial state"
     (let ((m (test-machine)))

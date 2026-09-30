@@ -90,6 +90,12 @@ signals none instead."
     (expect (nth-value 1 (find-symbol "CHIP8-APP-P" :cl-chip8))
             :to-be :internal))
 
+  (it "accepts the Octo profile from a TOML file"
+    (%with-toml-file (path "[chip8]~%quirks = ~S" "octo")
+      (expect (%resolved-quirks-profile
+               (cl-chip8:load-chip8-config-file path))
+              :to-be :octo)))
+
   (it-each ((700 700) (1200 1200))
       "takes the TOML clock_hz value ~A over the configured default"
       (value expected)
@@ -111,6 +117,7 @@ signals none instead."
             ("rom" cl-chip8:chip8-config-rom-path "default.ch8" "toml.ch8" nil "toml.ch8")
             ("rom" cl-chip8:chip8-config-rom-path "default.ch8" nil nil "default.ch8")
             ("quirks" %resolved-quirks-profile "modern" "cosmac-vip" "cosmac-vip" :COSMAC-VIP)
+            ("quirks octo" %resolved-quirks-profile "modern" "octo" nil :OCTO)
             ("quirks" %resolved-quirks-profile "modern" "cosmac-vip" nil :COSMAC-VIP)
             ("quirks" %resolved-quirks-profile "modern" nil nil :MODERN))
       "resolves ~A from the highest-priority source that sets it"
@@ -202,7 +209,7 @@ signals none instead."
   (it "rejects every invalid configuration key value"
     (dolist (case
              '(("profile type" "[chip8]~%quirks = ~S" "legacy"
-                "chip8.quirks" "profile must be modern or cosmac-vip")
+                "chip8.quirks" "profile must be modern, cosmac-vip, or octo")
                ("clock type" "[chip8]~%clock_hz = ~S" "fast"
                 "chip8.clock_hz" "expected a positive integer")
                ("clock range" "[chip8]~%clock_hz = 0" nil

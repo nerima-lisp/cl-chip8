@@ -39,7 +39,8 @@
         (delete-file script)))))
 
 (describe "the cl-chip8 app spec"
-  (it-each (("quirks" "--quirks" "modern" :quirks)
+  (it-each (("quirks modern" "--quirks" "modern" :quirks)
+            ("quirks octo" "--quirks" "octo" :quirks)
             ("config" "--config" "chip8.toml" :config)
             ("log" "--log" "stderr" :log)
             ("clock" "--clock-hz" "500" :clock-hz))

@@ -1,7 +1,7 @@
 (in-package #:cl-chip8)
 
 (defstruct (chip8-quirks (:constructor %make-chip8-quirks))
-  (profile :modern :type (member :modern :cosmac-vip))
+  (profile :modern :type (member :modern :cosmac-vip :octo))
   (vf-behavior :preserve :type (member :preserve :reset))
   (memory-i :preserve :type (member :preserve :increment))
   (display-wait :none :type (member :none :wait))
@@ -33,6 +33,14 @@
      :memory-i :increment
      :display-wait :wait
      :clipping :clip
+     :shift-source :vy
+     :bnnn-register :v0
+     :fx0a-completion :release)
+    (:octo
+     :vf-behavior :preserve
+     :memory-i :increment
+     :display-wait :none
+     :clipping :wrap
      :shift-source :vy
      :bnnn-register :v0
      :fx0a-completion :release)))

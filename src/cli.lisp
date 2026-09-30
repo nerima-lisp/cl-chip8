@@ -104,8 +104,8 @@ at https://nerima-lisp.github.io/cl-chip8/guide/terminal/ for the full table."
                                        :description "Path to the CHIP-8 ROM file to run."))
    :global-options
    (list (make-option :key :quirks :name "quirks" :kind :value
-                      :choices '("modern" "cosmac-vip")
-                      :description "CHIP-8 compatibility quirks profile.")
+                      :choices '("modern" "cosmac-vip" "octo")
+                      :description "CHIP-8 compatibility quirks profile (modern, cosmac-vip, or octo).")
          (make-option :key :config :name "config" :kind :value
                       :description "Path to the configuration file.")
          (make-option :key :log :name "log" :kind :value
