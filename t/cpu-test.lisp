@@ -175,8 +175,8 @@
       (expect (chip8-machine-register m 15) :to-be 0)))
   (it "sets VF to borrow flag for 8XY7 when X is F"
     (let ((m (make-chip8-machine)))
-      (setf (chip8-machine-register m 15) 20
-            (chip8-machine-register m 1) 10)
+      (setf (chip8-machine-register m 15) 10
+            (chip8-machine-register m 1) 20)
       (test-opcode m #x8f17)
       (expect (chip8-machine-register m 15) :to-be 1)))
   (it "handles out-of-range keys in EX9E and EXA1"
