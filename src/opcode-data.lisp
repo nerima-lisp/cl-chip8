@@ -70,24 +70,24 @@
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
   (let ((vx (chip8-machine-register machine x))
         (vy (chip8-machine-register machine y)))
-    (%vf-reset-if-needed machine)
-    (setf (chip8-machine-register machine x) (logior vx vy)))
+    (setf (chip8-machine-register machine x) (logior vx vy))
+    (%vf-reset-if-needed machine))
   (advance-pc! machine))
 
 (define-chip8-opcode and #x8002 #xf00f
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
   (let ((vx (chip8-machine-register machine x))
         (vy (chip8-machine-register machine y)))
-    (%vf-reset-if-needed machine)
-    (setf (chip8-machine-register machine x) (logand vx vy)))
+    (setf (chip8-machine-register machine x) (logand vx vy))
+    (%vf-reset-if-needed machine))
   (advance-pc! machine))
 
 (define-chip8-opcode xor #x8003 #xf00f
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
   (let ((vx (chip8-machine-register machine x))
         (vy (chip8-machine-register machine y)))
-    (%vf-reset-if-needed machine)
-    (setf (chip8-machine-register machine x) (logxor vx vy)))
+    (setf (chip8-machine-register machine x) (logxor vx vy))
+    (%vf-reset-if-needed machine))
   (advance-pc! machine))
 
 (define-chip8-opcode add-register #x8004 #xf00f

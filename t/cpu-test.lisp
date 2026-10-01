@@ -61,10 +61,13 @@
      :results ((14 15) (15 0)))
     (:or-vf-cosmac-vip-y :or :cosmac-vip #x8fe1
      :registers ((14 5)) :vf 10 :pc #x202
-     :results ((15 15)))
+     :results ((15 0)))
+    (:or-vf-cosmac-vip-x-reset :or :cosmac-vip #x8f11
+     :registers ((1 5)) :vf 10 :pc #x202
+     :results ((15 0)))
     (:or-vf-cosmac-vip-both :or :cosmac-vip #x8ff1
      :registers () :vf 10 :pc #x202
-     :results ((15 10)))
+     :results ((15 0)))
     (:and-vf-modern-x :and :modern #x8ef2
      :registers ((14 5)) :vf 10 :pc #x202
      :results ((14 0) (15 10)))
@@ -82,7 +85,7 @@
      :results ((15 0)))
     (:and-vf-cosmac-vip-both :and :cosmac-vip #x8ff2
      :registers () :vf 10 :pc #x202
-     :results ((15 10)))
+     :results ((15 0)))
     (:xor-vf-modern-x :xor :modern #x8ef3
      :registers ((14 5)) :vf 10 :pc #x202
      :results ((14 15) (15 10)))
@@ -97,7 +100,7 @@
      :results ((14 15) (15 0)))
     (:xor-vf-cosmac-vip-y :xor :cosmac-vip #x8fe3
      :registers ((14 5)) :vf 10 :pc #x202
-     :results ((15 15)))
+     :results ((15 0)))
     (:xor-vf-cosmac-vip-both :xor :cosmac-vip #x8ff3
      :registers () :vf 10 :pc #x202
      :results ((15 0)))
@@ -182,6 +185,7 @@
      (:or-preserves-vf) (:or-resets-vf)
      (:or-vf-modern-x) (:or-vf-modern-y) (:or-vf-modern-both)
      (:or-vf-cosmac-vip-x) (:or-vf-cosmac-vip-y) (:or-vf-cosmac-vip-both)
+     (:or-vf-cosmac-vip-x-reset)
      (:and-vf-modern-x) (:and-vf-modern-y) (:and-vf-modern-both)
      (:and-vf-cosmac-vip-x) (:and-vf-cosmac-vip-y) (:and-vf-cosmac-vip-both)
      (:xor-vf-modern-x) (:xor-vf-modern-y) (:xor-vf-modern-both)
