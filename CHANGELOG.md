@@ -28,13 +28,13 @@ All notable changes to this project are documented here. The format follows
 - Corrected opcode boundary handling, display-wait timing, sprite origins, and
   application lifecycle behavior.
 
-## [0.1.2] - 2026-09-28
+## [0.1.2] - 2026-08-10
 
 ### Changed
 
 - Reduced rendering overhead and documented rendering performance invariants.
 
-## [0.1.1] - 2026-09-28
+## [0.1.1] - 2026-08-10
 
 ### Fixed
 
@@ -42,6 +42,6 @@ All notable changes to this project are documented here. The format follows
 - Anchored playfield placement to literal coordinates and sanitized corpus
   names in tests.
 
-## [0.1.0] - 2026-09-27
+## [0.1.0] - 2026-08-10
 
 Initial release.
