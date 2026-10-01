@@ -5,7 +5,7 @@
 [![Documentation](https://img.shields.io/badge/docs-MkDocs%20Material-0a7a5a)](https://nerima-lisp.github.io/cl-chip8/)
 
 `cl-chip8` is an SBCL-only [CHIP-8](https://en.wikipedia.org/wiki/CHIP-8)
-interpreter for the terminal. Version 0.2.0 provides a typed machine-state
+interpreter for the terminal. Version 0.2.1 provides a typed machine-state
 API, a terminal application, configurable compatibility profiles, TOML
 configuration, logging, metrics, and headless execution helpers.
 
@@ -39,7 +39,7 @@ Consume the released tag from another flake:
 
 ```nix
 inputs.cl-chip8 = {
-  url = "github:nerima-lisp/cl-chip8/v0.2.0";
+  url = "github:nerima-lisp/cl-chip8/v0.2.1";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```

@@ -10,7 +10,7 @@
   :maintainer "takeokunn <bararararatty@gmail.com>"
   :license "MIT"
   ;; Version consumed by flake.nix and release tooling.
-  :version "0.2.0"
+  :version "0.2.1"
   :homepage "https://github.com/nerima-lisp/cl-chip8"
   :bug-tracker "https://github.com/nerima-lisp/cl-chip8/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
