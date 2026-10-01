@@ -29,12 +29,78 @@
     (:shr-vy :shr :cosmac-vip #x8126
      :registers ((1 3) (2 128)) :vf 9 :pc #x202
      :results ((1 64) (15 0)))
+    (:shr-vf-modern :shr :modern #x8ff6
+     :registers () :vf 131 :pc #x202
+     :results ((15 1)))
+    (:shr-vf-cosmac-vip :shr :cosmac-vip #x8ff6
+     :registers () :vf 131 :pc #x202
+     :results ((15 1)))
+    (:shl-vf-modern :shl :modern #x8ffe
+     :registers () :vf 129 :pc #x202
+     :results ((15 1)))
+    (:shl-vf-cosmac-vip :shl :cosmac-vip #x8ffe
+     :registers () :vf 129 :pc #x202
+     :results ((15 1)))
     (:or-preserves-vf :or :modern #x8121
      :registers ((1 1) (2 2)) :vf 9 :pc #x202
      :results ((1 3) (15 9)))
     (:or-resets-vf :or :cosmac-vip #x8121
      :registers ((1 1) (2 2)) :vf 9 :pc #x202
      :results ((1 3) (15 0)))
+    (:or-vf-modern-x :or :modern #x8ef1
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((14 15) (15 10)))
+    (:or-vf-modern-y :or :modern #x8fe1
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((15 15)))
+    (:or-vf-modern-both :or :modern #x8ff1
+     :registers () :vf 10 :pc #x202
+     :results ((15 10)))
+    (:or-vf-cosmac-vip-x :or :cosmac-vip #x8ef1
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((14 15) (15 0)))
+    (:or-vf-cosmac-vip-y :or :cosmac-vip #x8fe1
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((15 15)))
+    (:or-vf-cosmac-vip-both :or :cosmac-vip #x8ff1
+     :registers () :vf 10 :pc #x202
+     :results ((15 10)))
+    (:and-vf-modern-x :and :modern #x8ef2
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((14 0) (15 10)))
+    (:and-vf-modern-y :and :modern #x8fe2
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((15 0)))
+    (:and-vf-modern-both :and :modern #x8ff2
+     :registers () :vf 10 :pc #x202
+     :results ((15 10)))
+    (:and-vf-cosmac-vip-x :and :cosmac-vip #x8ef2
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((14 0) (15 0)))
+    (:and-vf-cosmac-vip-y :and :cosmac-vip #x8fe2
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((15 0)))
+    (:and-vf-cosmac-vip-both :and :cosmac-vip #x8ff2
+     :registers () :vf 10 :pc #x202
+     :results ((15 10)))
+    (:xor-vf-modern-x :xor :modern #x8ef3
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((14 15) (15 10)))
+    (:xor-vf-modern-y :xor :modern #x8fe3
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((15 15)))
+    (:xor-vf-modern-both :xor :modern #x8ff3
+     :registers () :vf 10 :pc #x202
+     :results ((15 0)))
+    (:xor-vf-cosmac-vip-x :xor :cosmac-vip #x8ef3
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((14 15) (15 0)))
+    (:xor-vf-cosmac-vip-y :xor :cosmac-vip #x8fe3
+     :registers ((14 5)) :vf 10 :pc #x202
+     :results ((15 15)))
+    (:xor-vf-cosmac-vip-both :xor :cosmac-vip #x8ff3
+     :registers () :vf 10 :pc #x202
+     :results ((15 0)))
     (:add-i-preserves-vf :add-i :cosmac-vip #xf01e
      :vf 9 :pc #x202 :i #x300
      :registers ((1 5)) :results ((15 9)))
@@ -51,17 +117,17 @@
       :registers ((0 63) (1 31)) :vf 0 :pc #x202 :i #x300
       :overrides (:clipping :wrap) :memory ((#x300 #xc0))
       :pixels ((31 63 1) (31 0 1)) :results nil)
-    (:store-increments-i :store-registers :modern #xf155
+    (:store-preserves-i :store-registers :modern #xf155
       :registers ((0 10) (1 20)) :vf 0 :pc #x202 :i #x300 :i-result #x300
       :memory-results ((#x300 10) (#x301 20)) :results nil)
-    (:store-preserves-i :store-registers :cosmac-vip #xf155
+    (:store-increments-i :store-registers :cosmac-vip #xf155
       :registers ((0 10) (1 20)) :vf 0 :pc #x202 :i #x300 :i-result #x302
       :memory-results ((#x300 10) (#x301 20)) :results nil)
-    (:load-increments-i :load-registers :modern #xf165
+    (:load-preserves-i :load-registers :modern #xf165
       :vf 0 :pc #x202 :i #x300 :i-result #x300
       :memory ((#x300 10) (#x301 20))
       :results ((0 10) (1 20)))
-    (:load-preserves-i :load-registers :cosmac-vip #xf165
+    (:load-increments-i :load-registers :cosmac-vip #xf165
       :vf 0 :pc #x202 :i #x300 :i-result #x302
       :memory ((#x300 10) (#x301 20))
       :results ((0 10) (1 20)))))
@@ -112,7 +178,15 @@
 
 (it-each
     ((:add-register) (:sub-register) (:subn-register) (:shr-vx) (:shr-vy)
-     (:or-preserves-vf) (:or-resets-vf) (:add-i-preserves-vf)
+     (:shr-vf-modern) (:shr-vf-cosmac-vip) (:shl-vf-modern) (:shl-vf-cosmac-vip)
+     (:or-preserves-vf) (:or-resets-vf)
+     (:or-vf-modern-x) (:or-vf-modern-y) (:or-vf-modern-both)
+     (:or-vf-cosmac-vip-x) (:or-vf-cosmac-vip-y) (:or-vf-cosmac-vip-both)
+     (:and-vf-modern-x) (:and-vf-modern-y) (:and-vf-modern-both)
+     (:and-vf-cosmac-vip-x) (:and-vf-cosmac-vip-y) (:and-vf-cosmac-vip-both)
+     (:xor-vf-modern-x) (:xor-vf-modern-y) (:xor-vf-modern-both)
+     (:xor-vf-cosmac-vip-x) (:xor-vf-cosmac-vip-y) (:xor-vf-cosmac-vip-both)
+     (:add-i-preserves-vf)
      (:skip-equal) (:skip-not-equal)
      (:jump-v0) (:draw-clip) (:draw-wrap) (:store-increments-i)
      (:store-preserves-i) (:load-increments-i) (:load-preserves-i))
