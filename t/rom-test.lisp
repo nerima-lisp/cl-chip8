@@ -20,8 +20,7 @@
       (unwind-protect
            (progn
              (with-open-file (stream path :direction :output :if-exists :supersede
-                                     :element-type '(unsigned-byte 8))
-               (declare (ignore stream)))
+                                     :element-type '(unsigned-byte 8)))
              (signals cl-chip8::chip8-rom-empty
                (load-rom-file (make-chip8-machine) path)))
         (when (probe-file path)

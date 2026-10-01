@@ -22,6 +22,12 @@ Unset means the corpus spec skips. See this file's header.")
 The budget carries a typical chip8Archive program through initialization and
 into its main loop, where memory bounds checks are exercised.")
 
+(defparameter *temp-corpus-counter* 0
+  "Process-local counter for temporary corpus directory names.")
+
+(defparameter *temp-corpus-counter-lock* (sb-thread:make-mutex)
+  "Lock protecting the temporary corpus directory counter.")
+
 (defparameter *rom-corpus-outcome-order*
   '(:completed
     :unsupported-opcode
@@ -270,8 +276,9 @@ temporary-file API."
 (defun %call-with-temp-corpus (thunk)
   "Create a fresh temporary corpus directory, call THUNK with it, delete it."
   (let ((root (merge-pathnames
-               (format nil "cl-chip8-corpus-test-~D-~D/"
-                       (get-universal-time) (random 1000000))
+               (format nil "cl-chip8-corpus-test-~D/"
+                       (sb-thread:with-mutex (*temp-corpus-counter-lock*)
+                         (incf *temp-corpus-counter*)))
                #p"/tmp/")))
     (unwind-protect
          (progn

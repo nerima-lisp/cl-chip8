@@ -146,7 +146,7 @@
     (with-chip8-render-pipeline (pipeline :parallelism 1 :parallel-threshold 1)
       (let ((app (make-chip8-app
                   :machine (make-chip8-machine)
-                  :renderer (make-renderer +screen-width+ +screen-height+)
+                  :renderer (cl-tty-kit:make-renderer +screen-width+ +screen-height+)
                   :render-pipeline pipeline)))
         (cl-chip8::%render-chip8-app! app)
         (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
