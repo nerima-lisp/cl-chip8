@@ -60,6 +60,13 @@ and that :DOCUMENTATION string."
            `((:documentation ,documentation))))))
 
 (define-chip8-condition
+ chip8-rom-empty
+ ()
+ "ROM contains no bytes."
+ :documentation
+ "Signaled when LOAD-ROM is given an empty byte vector.")
+
+(define-chip8-condition
  chip8-rom-too-large
  ((size chip8-rom-too-large-size) (available chip8-rom-too-large-available))
  "ROM is ~D bytes but only ~D bytes are available from the load address to the end of memory."

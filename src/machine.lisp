@@ -1,10 +1,13 @@
 (in-package #:cl-chip8)
-(defun make-chip8-machine (&key (quirks (make-chip8-quirks))) (chip8-reset! (%make-chip8-machine :quirks quirks)))
+(defun make-chip8-machine (&key (quirks (make-chip8-quirks)))
+  (let ((machine (%make-chip8-machine :quirks quirks)))
+    (setf (chip8-machine-framebuffer-lock machine)
+          (make-lock :name "cl-chip8 framebuffer"))
+    (chip8-reset! machine)))
 (defun chip8-reset! (machine)
   (fill (chip8-machine-memory machine) 0) (fill (chip8-machine-v machine) 0)
   (fill (chip8-machine-stack machine) 0) (fill (chip8-machine-keypad machine) 0)
-  (dotimes (index (* +display-width+ +display-height+))
-    (setf (row-major-aref (chip8-machine-framebuffer machine) index) 0))
+  (display-reset! machine)
   (setf (chip8-machine-i machine) 0 (chip8-machine-pc machine) +initial-pc+ (chip8-machine-sp machine) 0
         (chip8-machine-delay-timer machine) 0 (chip8-machine-sound-timer machine) 0
         (chip8-machine-waiting machine) (make-chip8-wait-state) (chip8-machine-instructions machine) 0)

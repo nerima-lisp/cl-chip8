@@ -85,7 +85,7 @@ Keypad state is managed directly on the machine:
 `make-chip8-machine` defaults to the `modern` profile. Pass a
 `chip8-quirks` value to choose another profile or override individual
 behaviors. The built-in `cosmac-vip` profile changes the documented shift,
-load/store, display-wait, clipping, jump-register, and key-wait behavior.
+load/store, display-wait, and key-wait behavior.
 The [Compatibility reference](../reference/compatibility.md) lists each
 instruction-level difference.
 

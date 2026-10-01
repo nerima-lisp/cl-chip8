@@ -27,15 +27,27 @@
 
 PATH is deliberately the only output boundary.  A NIL PATH uses cl-log-kit's
 null handler and therefore never writes to *STANDARD-OUTPUT*."
-  (let* ((handler
-           (if path
-               (let* ((stream (open path :direction :output :if-exists :append
-                                    :if-does-not-exist :create))
-                      (make-json (%chip8-log-kit-function "MAKE-JSON-HANDLER")))
-                 (funcall make-json :stream stream :auto-flush t :owns-stream t))
-               (funcall (%chip8-log-kit-function "MAKE-NULL-HANDLER"))))
-         (make-logger (%chip8-log-kit-function "MAKE-LOGGER")))
-    (funcall make-logger :name name :handler handler :level level)))
+  (let ((stream nil) (handler nil) (logger nil))
+    (unwind-protect
+         (progn
+           (setf handler
+                 (if path
+                     (progn
+                       (setf stream (open path :direction :output :if-exists :append
+                                          :if-does-not-exist :create))
+                       (funcall (%chip8-log-kit-function "MAKE-JSON-HANDLER")
+                                :stream stream :auto-flush t :owns-stream t))
+                     (funcall (%chip8-log-kit-function "MAKE-NULL-HANDLER"))))
+           (setf logger
+                 (funcall (%chip8-log-kit-function "MAKE-LOGGER")
+                          :name name :handler handler :level level))
+           logger)
+      (unless logger
+        (when handler
+          (ignore-errors
+            (funcall (%chip8-log-kit-function "CLOSE-HANDLER") handler)))
+        (when (and stream (open-stream-p stream))
+          (ignore-errors (close stream)))))))
 
 (defun close-chip8-logger (logger)
   (when logger

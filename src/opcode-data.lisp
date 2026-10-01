@@ -68,26 +68,26 @@
 
 (define-chip8-opcode or #x8001 #xf00f
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
-  (%vf-reset-if-needed machine)
-  (setf (chip8-machine-register machine x)
-        (logior (chip8-machine-register machine x)
-                (chip8-machine-register machine y)))
+  (let ((vx (chip8-machine-register machine x))
+        (vy (chip8-machine-register machine y)))
+    (setf (chip8-machine-register machine x) (logior vx vy))
+    (%vf-reset-if-needed machine))
   (advance-pc! machine))
 
 (define-chip8-opcode and #x8002 #xf00f
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
-  (%vf-reset-if-needed machine)
-  (setf (chip8-machine-register machine x)
-        (logand (chip8-machine-register machine x)
-                (chip8-machine-register machine y)))
+  (let ((vx (chip8-machine-register machine x))
+        (vy (chip8-machine-register machine y)))
+    (setf (chip8-machine-register machine x) (logand vx vy))
+    (%vf-reset-if-needed machine))
   (advance-pc! machine))
 
 (define-chip8-opcode xor #x8003 #xf00f
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
-  (%vf-reset-if-needed machine)
-  (setf (chip8-machine-register machine x)
-        (logxor (chip8-machine-register machine x)
-                (chip8-machine-register machine y)))
+  (let ((vx (chip8-machine-register machine x))
+        (vy (chip8-machine-register machine y)))
+    (setf (chip8-machine-register machine x) (logxor vx vy))
+    (%vf-reset-if-needed machine))
   (advance-pc! machine))
 
 (define-chip8-opcode add-register #x8004 #xf00f
@@ -109,8 +109,10 @@
 (define-chip8-opcode shr #x8006 #xf00f
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
   (let ((source (%shift-source machine x y)))
-    (setf (chip8-machine-register machine 15) (logand source 1)
-          (chip8-machine-register machine x) (ash source -1)))
+    (let ((flag (logand source 1))
+          (result (ash source -1)))
+      (setf (chip8-machine-register machine x) result
+            (chip8-machine-register machine 15) flag)))
   (advance-pc! machine))
 
 (define-chip8-opcode subn-register #x8007 #xf00f
@@ -124,8 +126,10 @@
 (define-chip8-opcode shl #x800e #xf00f
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
   (let ((source (%shift-source machine x y)))
-    (setf (chip8-machine-register machine 15) (ldb (byte 1 7) source)
-          (chip8-machine-register machine x) (ash source 1)))
+    (let ((flag (ldb (byte 1 7) source))
+          (result (ash source 1)))
+      (setf (chip8-machine-register machine x) result
+            (chip8-machine-register machine 15) flag)))
   (advance-pc! machine))
 
 (define-chip8-opcode sne-register #x9000 #xf00f

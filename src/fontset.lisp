@@ -1,9 +1,7 @@
 ;;;; src/fontset.lisp -- the built-in CHIP-8 hex-digit fontset.
 ;;;;
-;;;; These 80 bytes (16 glyphs of 5 bytes each, one row per byte, the glyph's
-;;;; four most-significant bits per row lit) are fixed public-spec data that
-;;;; appears in essentially every CHIP-8 implementation and reference
-;;;; document, not code borrowed from any one of them.
+;;;; These 80 bytes encode 16 glyphs of 5 bytes each. Each row uses the
+;;;; glyph's four most-significant bits, matching the standard CHIP-8 fontset.
 (in-package #:cl-chip8)
 
 ;; A DEFPARAMETER, not a DEFCONSTANT: re-evaluating a DEFCONSTANT of an array

@@ -201,6 +201,12 @@
                     (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
       (expect (search option output) :to-be-truthy)))
 
+  (it "describes --log as a file destination rather than a log level"
+    (let ((output (with-output-to-string (out)
+                    (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
+      (expect output :to-contain "Logging destination.")
+      (expect output :not :to-contain "or level")))
+
   (it "exits 0 on --version and prints the app's name"
     (let ((output (with-output-to-string (out)
                     (expect (run-app *app* :argv '("cl-chip8" "--version") :stdout out)
@@ -214,3 +220,45 @@
                     (run-app *app* :argv '("cl-chip8" "--version") :stdout out))))
       (expect (search (asdf:component-version (asdf:find-system "cl-chip8")) output)
               :to-be-truthy))))
+
+(describe "the cl-chip8 CLI resource cleanup boundary"
+  (it "closes the logger when metrics initialization fails"
+    (let ((invocation (parse-argv *app* '("cl-chip8" "missing.ch8")))
+          (closed nil)
+          (original-make-metrics (symbol-function 'cl-chip8::make-chip8-metrics))
+          (original-close-logger (symbol-function 'cl-chip8::close-chip8-logger)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'cl-chip8::make-chip8-metrics)
+                   (lambda () (error "metrics initialization failed")))
+             (setf (symbol-function 'cl-chip8::close-chip8-logger)
+                   (lambda (logger)
+                     (declare (ignore logger))
+                     (setf closed t)))
+             (let ((error-output (make-string-output-stream)))
+               (let ((*error-output* error-output))
+                 (expect (cl-chip8::%run-handler invocation) :to-be 1)))
+             (expect closed :to-be t))
+        (setf (symbol-function 'cl-chip8::make-chip8-metrics) original-make-metrics
+              (symbol-function 'cl-chip8::close-chip8-logger) original-close-logger))))
+
+  (it "closes the logger when flushing signals an error"
+    (let ((invocation (parse-argv *app* '("cl-chip8" "missing.ch8")))
+          (closed nil)
+          (original-flush (symbol-function 'cl-chip8::flush-chip8-logger))
+          (original-close (symbol-function 'cl-chip8::close-chip8-logger)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'cl-chip8::flush-chip8-logger)
+                   (lambda (logger)
+                     (declare (ignore logger))
+                     (error "flush failed")))
+             (setf (symbol-function 'cl-chip8::close-chip8-logger)
+                   (lambda (logger)
+                     (declare (ignore logger))
+                     (setf closed t)))
+             (let ((*error-output* (make-string-output-stream)))
+               (expect (cl-chip8::%run-handler invocation) :to-be 1))
+             (expect closed :to-be t))
+        (setf (symbol-function 'cl-chip8::flush-chip8-logger) original-flush
+              (symbol-function 'cl-chip8::close-chip8-logger) original-close)))))

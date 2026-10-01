@@ -27,11 +27,12 @@ jobs:
       # keeping the nix-installer SHA pin in exactly one place.
       - uses: ./.github/actions/nix-setup
 
+      - name: Verify updated flake
+        run: nix flake check --print-build-logs
+
       # Opens/refreshes a PR bumping every flake input. NOTE: this uses the
-      # default GITHUB_TOKEN, so GitHub will NOT trigger CI on the bot's PR
-      # (loop-prevention). Re-run CI by pushing an empty commit or closing and
-      # reopening the PR; swap in a PAT via `token:` if self-triggering CI is
-      # required.
+      # default GITHUB_TOKEN, so GitHub will not trigger CI on the bot's PR
+      # (loop-prevention). The flake check above is the pre-PR gate.
       - name: Update flake.lock
         uses: DeterminateSystems/update-flake-lock@834c491b2ece4de0bbd00d85214bb5e83b4da5c6 # v28
         with:

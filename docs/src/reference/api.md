@@ -25,9 +25,7 @@ The constants are `+memory-size+`, `+rom-load-address+`, `+register-count+`,
 `+fontset-address+`, `+chip8-fontset+`, `+screen-width+`, and
 `+screen-height+`.
 
-The exported type names are `chip8-octet`, `chip8-nibble`, `chip8-opcode`,
-`chip8-key`, `chip8-memory-index`, `chip8-program-counter`, and
-`chip8-framebuffer`.
+The exported type name is `chip8-framebuffer`.
 
 ## Machine and profiles
 
@@ -51,7 +49,9 @@ the readers `chip8-machine-memory`, `chip8-machine-v`,
 `memory-read`, `load-fontset-into-memory!`, `load-rom`, and `load-rom-file`
 load and inspect memory. `display-reset!`, `display-pixel-value`,
 `display-xor-pixel!`, `chip8-framebuffer`, and `chip8-framebuffer-snapshot`
-operate on the framebuffer.
+operate on the framebuffer. Snapshot and display mutation functions synchronize
+framebuffer access; callers should use them rather than mutating the raw
+`chip8-machine-framebuffer` array directly.
 
 `fetch-opcode`, `execute-instruction!`, `step-timers!`,
 `sound-timer-active-p`, `keypad-reset!`, `key-down-p`, `pressed-keys`,

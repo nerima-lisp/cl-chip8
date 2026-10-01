@@ -31,7 +31,7 @@ jobs:
       - uses: ./.github/actions/nix-setup
         with:
           cachix-cache: ${{ vars.CACHIX_CACHE }}
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cachix-auth-token: ${{ github.event_name == 'push' && secrets.CACHIX_AUTH_TOKEN || '' }}
 
       # `nix flake check` runs the SBCL test suite *and* the treefmt
       # formatting gate (checks.formatting), so unformatted Nix fails CI here.

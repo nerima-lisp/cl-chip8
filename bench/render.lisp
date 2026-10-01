@@ -198,6 +198,7 @@
            (quote ((:sparse nil 1)
                    (:medium nil 8)
                    (:large-partial nil 12)
+                   (:worker-partial nil 15)
                    (:dense t 16))))
     (destructuring-bind (name dense-p dirty-row-count) fixture
       (let ((label (string-upcase (symbol-name name)))
@@ -246,9 +247,9 @@
          parallelism)
         (when
             (and
-             (member name (quote (:medium :large-partial)))
              (>= dirty-row-count
                  cl-chip8::+concurrent-render-minimum-snapshots+)
+             (< dirty-row-count 16)
              (<= parallel-threshold dirty-row-count)
              (zerop (getf concurrent (quote :submitted))))
           (error "~A fixture did not submit any worker rows." label)))))

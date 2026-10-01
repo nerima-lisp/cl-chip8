@@ -24,9 +24,10 @@
                    (:key-release :key-release))))))
     app))
 
-(defun step-chip8-app! (app)
+(defun step-chip8-app! (app &key (advance-timers-p t))
   (let ((machine (chip8-app-machine app)))
-    (step-timers! machine)
+    (when advance-timers-p
+      (step-timers! machine))
     (unless (chip8-app-paused-p app)
       (handler-case
           (unless (chip8-wait-state-kind (chip8-machine-waiting machine))

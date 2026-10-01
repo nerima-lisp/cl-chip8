@@ -28,12 +28,11 @@ enter its terminal session."
                         :log (or (getf options :log)
                                  (getf options :log-path))))
              (config (make-chip8-config-from-sources
-                      :toml-path (getf options :config-path) :cli cli))
-             (logger (make-chip8-logger :path (chip8-config-log-path config)))
-             (metrics (make-chip8-metrics)))
-        (let ((result nil) (app nil))
+                      :toml-path (getf options :config-path) :cli cli)))
+        (let ((logger (make-chip8-logger :path (chip8-config-log-path config))))
           (unwind-protect
-               (progn
+             (let ((metrics (make-chip8-metrics)))
+               (let ((result nil) (app nil))
                  (setf result
                        (handler-case
                            (progn
@@ -49,43 +48,44 @@ enter its terminal session."
                              (setf app (run :rom-path (chip8-config-rom-path config)
                                             :clock-hz (chip8-config-clock-hz config)
                                             :quirks (chip8-config-quirks config)))
-                               (if (chip8-app-error app)
-                                   (progn
-                                     (chip8-log-error logger "runtime-error"
-                                                      (list :error
-                                                            (princ-to-string
-                                                             (chip8-app-error app))))
-                                     (format *error-output* "~&cl-chip8: ~A~%"
-                                             (chip8-app-error app))
-                                     1)
-                                   0))
+                             (if (chip8-app-error app)
+                                 (progn
+                                   (chip8-log-error logger "runtime-error"
+                                                    (list :error
+                                                          (princ-to-string
+                                                           (chip8-app-error app))))
+                                   (format *error-output* "~&cl-chip8: ~A~%"
+                                           (chip8-app-error app))
+                                   1)
+                                 0))
                          (error (condition)
                            (chip8-log-error logger "runtime-error"
                                             (list :error (princ-to-string condition)))
                            (format *error-output* "~&cl-chip8: ~A~%" condition)
                            1)))
-                (chip8-log-info logger "metrics"
-                                 (chip8-metrics-fields
-                                  (finalize-chip8-metrics!
-                                   metrics
-                                   :machine (and app (chip8-app-machine app))
-                                   :render-state
-                                   (and app (chip8-app-render-state app))
-                                   :render-pipeline
-                                   (and app (chip8-app-render-pipeline app))
-                                   :effective-hz
-                                   (when (and app (chip8-app-started-at app))
-                                     (let ((elapsed (- (get-internal-real-time)
-                                                       (chip8-app-started-at app))))
-                                       (when (plusp elapsed)
-                                         (float
-                                          (/ (* (chip8-machine-instructions
-                                                 (chip8-app-machine app))
-                                                internal-time-units-per-second)
-                                             elapsed))))))))
-                 result)
-            (flush-chip8-logger logger)
-            (close-chip8-logger logger))))
+                 (chip8-log-info logger "metrics"
+                                  (chip8-metrics-fields
+                                   (finalize-chip8-metrics!
+                                    metrics
+                                    :machine (and app (chip8-app-machine app))
+                                    :render-state
+                                    (and app (chip8-app-render-state app))
+                                    :render-pipeline
+                                    (and app (chip8-app-render-pipeline app))
+                                    :effective-hz
+                                    (when (and app (chip8-app-started-at app))
+                                      (let ((elapsed (- (get-internal-real-time)
+                                                        (chip8-app-started-at app))))
+                                        (when (plusp elapsed)
+                                          (float
+                                           (/ (* (chip8-machine-instructions
+                                                  (chip8-app-machine app))
+                                                 internal-time-units-per-second)
+                                              elapsed))))))))
+                 result))
+            (unwind-protect
+                 (flush-chip8-logger logger)
+              (close-chip8-logger logger)))))
     (error (condition)
       (format *error-output* "~&cl-chip8: ~A~%" condition)
       1)))
@@ -109,7 +109,7 @@ at https://nerima-lisp.github.io/cl-chip8/guide/terminal/ for the full table."
          (make-option :key :config :name "config" :kind :value
                       :description "Path to the configuration file.")
          (make-option :key :log :name "log" :kind :value
-                      :description "Logging destination or level.")
+                      :description "Logging destination.")
          (make-option :key :clock-hz :name "clock-hz" :kind :value :type :integer :min 1
                       :description
                       (format nil "CPU instructions per second (default ~D). ~

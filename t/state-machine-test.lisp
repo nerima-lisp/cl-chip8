@@ -265,6 +265,7 @@
             (chip8-machine-register machine 1) 0)
       (chip8-run-instructions machine 2)
       (expect (wait-kind machine) :to-be :display)
+      (expect (display-pixel-value machine 0 0) :to-be 1)
       (signals chip8-cps-error (chip8-resume! machine :key-down))
       (expect (wait-kind machine) :to-be :display)
       (chip8-resume! machine :tick)

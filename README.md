@@ -5,7 +5,7 @@
 [![Documentation](https://img.shields.io/badge/docs-MkDocs%20Material-0a7a5a)](https://nerima-lisp.github.io/cl-chip8/)
 
 `cl-chip8` is an SBCL-only [CHIP-8](https://en.wikipedia.org/wiki/CHIP-8)
-interpreter for the terminal. Version 0.2.0 provides a typed machine-state
+interpreter for the terminal. Version 0.2.1 provides a typed machine-state
 API, a terminal application, configurable compatibility profiles, TOML
 configuration, logging, metrics, and headless execution helpers.
 
@@ -29,13 +29,17 @@ The flake provides packages for `x86_64-linux` and `aarch64-darwin`. On other
 systems, build and run through SBCL and ASDF directly or use a Nix remote
 builder.
 
+The Nix flake is the official distribution path for released versions; GitHub
+Releases publish the corresponding changelog entry and do not contain a
+separate binary archive.
+
 ## Install
 
 Consume the released tag from another flake:
 
 ```nix
 inputs.cl-chip8 = {
-  url = "github:nerima-lisp/cl-chip8/v0.2.0";
+  url = "github:nerima-lisp/cl-chip8/v0.2.1";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
