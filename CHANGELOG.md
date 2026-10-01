@@ -8,7 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- No unreleased product changes are recorded yet.
+- Synchronized framebuffer snapshots and display updates, and made render
+  pipeline startup and logger cleanup exception-safe.
+- Kept COSMAC VIP display-wait drawing before the vblank wait, with direct
+  regression coverage for the completed framebuffer.
+
+### Fixed
+
+- Preserved logger streams when logger creation or flushing fails.
+- Retired render executors and channels when pipeline initialization fails.
+- Corrected logical-op and arithmetic VF handling, VIP VF reset behavior, app
+  pause cleanup, and rendering retirement after worker timeouts.
 
 ## [0.2.0] - 2026-09-30
 
