@@ -25,9 +25,7 @@ The constants are `+memory-size+`, `+rom-load-address+`, `+register-count+`,
 `+fontset-address+`, `+chip8-fontset+`, `+screen-width+`, and
 `+screen-height+`.
 
-The exported type names are `chip8-octet`, `chip8-nibble`, `chip8-opcode`,
-`chip8-key`, `chip8-memory-index`, `chip8-program-counter`, and
-`chip8-framebuffer`.
+The exported type name is `chip8-framebuffer`.
 
 ## Machine and profiles
 

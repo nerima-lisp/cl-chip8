@@ -29,6 +29,10 @@ The flake provides packages for `x86_64-linux` and `aarch64-darwin`. On other
 systems, build and run through SBCL and ASDF directly or use a Nix remote
 builder.
 
+The Nix flake is the official distribution path for released versions; GitHub
+Releases publish the corresponding changelog entry and do not contain a
+separate binary archive.
+
 ## Install
 
 Consume the released tag from another flake:
