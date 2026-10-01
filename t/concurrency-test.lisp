@@ -51,6 +51,11 @@
         (render-chip8! serial first serial-state)
         (render-chip8-concurrently! parallel first pipeline)
         (cl-tty-kit:screen-write-string
+         serial cl-chip8::+playfield-origin-x+
+         (+ cl-chip8::+playfield-origin-y+ 1)
+         (make-string cl-chip8::+display-width+ :initial-element #\X)
+         :style (cl-tty-kit:make-style :reverse))
+        (cl-tty-kit:screen-write-string
          parallel cl-chip8::+playfield-origin-x+
          (+ cl-chip8::+playfield-origin-y+ 1)
          (make-string cl-chip8::+display-width+ :initial-element #\X)
