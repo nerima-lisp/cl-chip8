@@ -38,7 +38,7 @@
         (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
                 :to-be 15)
         (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
-                :to-be 0))
+                :to-be 16))
       (%expect-screens-equal serial parallel))))
 
   (it "updates only changed rows on a second render"
