@@ -26,11 +26,13 @@
   (it "matches the serial renderer for a framebuffer"
     (let* ((framebuffer (%concurrency-test-framebuffer-with-rows
                          '(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14)))
+           (blank (make-array '(32 64) :element-type 'bit :initial-element 0))
            (serial (cl-tty-kit:make-screen +screen-width+ +screen-height+))
            (parallel (cl-tty-kit:make-screen +screen-width+ +screen-height+))
            (serial-state (cl-chip8::make-chip8-render-state)))
       (render-chip8! serial framebuffer serial-state :sound-active-p t)
       (cl-chip8::with-chip8-render-pipeline (pipeline :parallelism 2 :parallel-threshold 9)
+        (render-chip8-concurrently! parallel blank pipeline)
         (render-chip8-concurrently! parallel framebuffer pipeline
                                       :sound-active-p t)
         (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
