@@ -49,7 +49,9 @@ the readers `chip8-machine-memory`, `chip8-machine-v`,
 `memory-read`, `load-fontset-into-memory!`, `load-rom`, and `load-rom-file`
 load and inspect memory. `display-reset!`, `display-pixel-value`,
 `display-xor-pixel!`, `chip8-framebuffer`, and `chip8-framebuffer-snapshot`
-operate on the framebuffer.
+operate on the framebuffer. Snapshot and display mutation functions synchronize
+framebuffer access; callers should use them rather than mutating the raw
+`chip8-machine-framebuffer` array directly.
 
 `fetch-opcode`, `execute-instruction!`, `step-timers!`,
 `sound-timer-active-p`, `keypad-reset!`, `key-down-p`, `pressed-keys`,
