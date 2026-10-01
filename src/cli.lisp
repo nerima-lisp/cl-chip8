@@ -28,9 +28,9 @@ enter its terminal session."
                         :log (or (getf options :log)
                                  (getf options :log-path))))
              (config (make-chip8-config-from-sources
-                      :toml-path (getf options :config-path) :cli cli))
-             (logger (make-chip8-logger :path (chip8-config-log-path config))))
-        (unwind-protect
+                      :toml-path (getf options :config-path) :cli cli)))
+        (let ((logger (make-chip8-logger :path (chip8-config-log-path config))))
+          (unwind-protect
              (let ((metrics (make-chip8-metrics)))
                (let ((result nil) (app nil))
                  (setf result
@@ -83,8 +83,9 @@ enter its terminal session."
                                                  internal-time-units-per-second)
                                               elapsed))))))))
                  result))
-          (flush-chip8-logger logger)
-          (close-chip8-logger logger)))
+            (unwind-protect
+                 (flush-chip8-logger logger)
+              (close-chip8-logger logger)))))
     (error (condition)
       (format *error-output* "~&cl-chip8: ~A~%" condition)
       1)))

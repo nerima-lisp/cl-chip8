@@ -240,4 +240,25 @@
                  (expect (cl-chip8::%run-handler invocation) :to-be 1)))
              (expect closed :to-be t))
         (setf (symbol-function 'cl-chip8::make-chip8-metrics) original-make-metrics
-              (symbol-function 'cl-chip8::close-chip8-logger) original-close-logger)))))
+              (symbol-function 'cl-chip8::close-chip8-logger) original-close-logger))))
+
+  (it "closes the logger when flushing signals an error"
+    (let ((invocation (parse-argv *app* '("cl-chip8" "missing.ch8")))
+          (closed nil)
+          (original-flush (symbol-function 'cl-chip8::flush-chip8-logger))
+          (original-close (symbol-function 'cl-chip8::close-chip8-logger)))
+      (unwind-protect
+           (progn
+             (setf (symbol-function 'cl-chip8::flush-chip8-logger)
+                   (lambda (logger)
+                     (declare (ignore logger))
+                     (error "flush failed")))
+             (setf (symbol-function 'cl-chip8::close-chip8-logger)
+                   (lambda (logger)
+                     (declare (ignore logger))
+                     (setf closed t)))
+             (let ((*error-output* (make-string-output-stream)))
+               (expect (cl-chip8::%run-handler invocation) :to-be 1))
+             (expect closed :to-be t))
+        (setf (symbol-function 'cl-chip8::flush-chip8-logger) original-flush
+              (symbol-function 'cl-chip8::close-chip8-logger) original-close)))))

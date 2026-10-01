@@ -3,37 +3,21 @@
 (in-package #:cl-chip8)
 
 (defun %start-render-workers
-    (executor jobs-channel ready-channel parallelism shutdown-timeout worker)
-  "Start WORKER tasks and wait for each task to announce readiness.
-On startup failure, close the channels and use the native executor shutdown
-timeout before propagating the original condition."
+    (executor ready-channel parallelism shutdown-timeout worker)
+  "Start WORKER tasks and wait for each task to announce readiness."
   (declare (type render-executor executor)
-           (type render-channel jobs-channel ready-channel)
+           (type render-channel ready-channel)
            (type (integer 1 *) parallelism)
            (type duration shutdown-timeout)
            (type function worker))
-  (handler-case
-      (progn
-        (loop repeat parallelism do (submit executor worker))
-        (loop repeat parallelism
-              do (multiple-value-bind (ready received-p)
-                     (recv ready-channel :timeout shutdown-timeout)
-                   (declare (ignore ready))
-                   (unless received-p
-                     (error
-                      "Render worker readiness channel closed before startup completed.")))))
-    (error (condition)
-      (close-channel ready-channel)
-      (close-channel jobs-channel)
-      (shutdown-executor
-       executor
-       :wait
-       t
-       :cancel-pending
-       t
-       :timeout
-       shutdown-timeout)
-      (error condition))))
+  (loop repeat parallelism do (submit executor worker))
+  (loop repeat parallelism
+        do (multiple-value-bind (ready received-p)
+               (recv ready-channel :timeout shutdown-timeout)
+             (declare (ignore ready))
+             (unless received-p
+               (error
+                "Render worker readiness channel closed before startup completed.")))))
 
 (defun %make-render-snapshot-buffer ()
   "Allocate the reusable row-snapshot buffer for a render pipeline."
@@ -147,45 +131,41 @@ executor shutdown operation."
   (check-type parallelism (integer 1 *))
   (check-type parallel-threshold (integer 1 *))
   (check-type shutdown-timeout duration)
-  (let* ((executor
-           (make-executor
-            :size parallelism
-            :name "cl-chip8 render"
-            :queue-capacity (* 2 parallelism)))
-         (jobs-channel (make-channel :buffer-size parallelism))
-         (completion-semaphore (make-semaphore
-                                :name "cl-chip8 render completions"))
-         (ready-channel (make-channel :buffer-size parallelism))
-         (snapshot-buffer (%make-render-snapshot-buffer))
-         (result-buffer (%make-render-result-buffer))
-         (job-buffer (%make-render-job-buffer parallelism))
-         (pipeline
-           (%make-chip8-render-pipeline
-            executor
-            jobs-channel
-            completion-semaphore
-            parallelism
-            parallel-threshold
-            shutdown-timeout
-            (make-atomic-counter)
-            (make-atomic-counter)
-            0
-            (make-lock :name "cl-chip8 render pipeline")
-            nil
-            snapshot-buffer
-            result-buffer
-            job-buffer
-            (make-chip8-render-state))))
-    (%start-render-workers
-     executor
-     jobs-channel
-     ready-channel
-     parallelism
-     shutdown-timeout
-     (lambda ()
-       (%render-worker-loop jobs-channel ready-channel pipeline)))
-    (close-channel ready-channel)
-    pipeline))
+  (let ((executor nil) (jobs-channel nil) (ready-channel nil))
+    (handler-case
+        (progn
+          (setf executor
+                (make-executor :size parallelism :name "cl-chip8 render"
+                               :queue-capacity (* 2 parallelism)))
+          (setf jobs-channel (make-channel :buffer-size parallelism)
+                ready-channel (make-channel :buffer-size parallelism))
+          (let* ((completion-semaphore
+                   (make-semaphore :name "cl-chip8 render completions"))
+                 (snapshot-buffer (%make-render-snapshot-buffer))
+                 (result-buffer (%make-render-result-buffer))
+                 (job-buffer (%make-render-job-buffer parallelism))
+                 (pipeline
+                   (%make-chip8-render-pipeline
+                    executor jobs-channel completion-semaphore parallelism
+                    parallel-threshold shutdown-timeout
+                    (make-atomic-counter) (make-atomic-counter) 0
+                    (make-lock :name "cl-chip8 render pipeline") nil
+                    snapshot-buffer result-buffer job-buffer
+                    (make-chip8-render-state))))
+            (%start-render-workers
+             executor ready-channel parallelism shutdown-timeout
+             (lambda () (%render-worker-loop jobs-channel ready-channel pipeline)))
+            (close-channel ready-channel)
+            (setf ready-channel nil)
+            pipeline))
+      (error (condition)
+        (when ready-channel (ignore-errors (close-channel ready-channel)))
+        (when jobs-channel (ignore-errors (close-channel jobs-channel)))
+        (when executor
+          (ignore-errors
+            (shutdown-executor executor :wait t :cancel-pending t
+                               :timeout shutdown-timeout)))
+        (error condition)))))
 
 (defun close-chip8-render-pipeline
     (pipeline
