@@ -60,7 +60,15 @@
                   :timeout
                   (duration-to-seconds
                    (chip8-render-pipeline-shutdown-timeout pipeline)))
-          do (error "Render worker completion timed out."))
+          do (progn
+               ;; A timed-out worker may still signal this semaphore and write
+               ;; the reusable result buffer. Retiring the whole pipeline is
+               ;; the only safe way to prevent those stale completions from
+               ;; being consumed by a later render.
+               (%close-render-pipeline
+                pipeline
+                (chip8-render-pipeline-shutdown-timeout pipeline))
+               (error "Render worker completion timed out.")))
     (loop for i below workers
           for condition = (render-batch-job-caught-condition (aref jobs i))
           when condition do (error condition))

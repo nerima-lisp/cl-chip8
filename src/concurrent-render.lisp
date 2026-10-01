@@ -198,17 +198,25 @@ Closing is idempotent and serialized with rendering."
   (check-type timeout duration)
   (with-lock-held
       ((chip8-render-pipeline-lock pipeline))
-    (unless (chip8-render-pipeline-closed-p pipeline)
-      (setf (chip8-render-pipeline-closed-p pipeline) t)
-      (close-channel (chip8-render-pipeline-jobs-channel pipeline))
-      (shutdown-executor
-       (chip8-render-pipeline-executor pipeline)
-       :wait
-       t
-       :cancel-pending
-       t
-       :timeout
-       timeout)))
+    (%close-render-pipeline pipeline timeout))
+  pipeline)
+
+(defun %close-render-pipeline (pipeline timeout)
+  "Close PIPELINE without acquiring its lock.
+The closed flag is set before shutdown so a shutdown timeout cannot leave a
+pipeline available for rendering while its old workers may still be writing
+to reusable buffers."
+  (unless (chip8-render-pipeline-closed-p pipeline)
+    (setf (chip8-render-pipeline-closed-p pipeline) t)
+    (close-channel (chip8-render-pipeline-jobs-channel pipeline))
+    (shutdown-executor
+     (chip8-render-pipeline-executor pipeline)
+     :wait
+     t
+     :cancel-pending
+     t
+     :timeout
+     timeout))
   pipeline)
 
 (defun %ensure-open-render-pipeline (pipeline)
