@@ -33,11 +33,18 @@
                       (key-event-code event))))
     (cond
       ((and character (char= character #\p))
-       (setf (chip8-app-state-machine app)
-             (step-chip8-control-state
-              (chip8-app-state-machine app)
-              (if (chip8-app-paused-p app) :resume :pause)))
-       (setf (chip8-app-paused-p app) (not (chip8-app-paused-p app)))
+       (cond
+         ((chip8-app-paused-p app)
+          (setf (chip8-app-state-machine app)
+                (step-chip8-control-state
+                 (chip8-app-state-machine app) :resume))
+          (setf (chip8-app-paused-p app) nil))
+         ((string= (chip8-control-state (chip8-app-state-machine app))
+                   "running")
+          (setf (chip8-app-state-machine app)
+                (step-chip8-control-state
+                 (chip8-app-state-machine app) :pause))
+          (setf (chip8-app-paused-p app) t)))
        t)
       ((and character (char= character #\o))
        (when (chip8-app-paused-p app)
@@ -49,7 +56,7 @@
       ((and character (char= character #\n))
        (when (chip8-app-paused-p app)
          (setf (chip8-app-paused-p app) nil)
-         (step-chip8-app! app)
+         (step-chip8-app! app :advance-timers-p nil)
          (setf (chip8-app-paused-p app) t)
          (setf (chip8-app-state-machine app)
                (step-chip8-control-state
@@ -119,17 +126,19 @@
                  (quirks (make-chip8-quirks)) (stream *standard-output*))
   (let ((machine (make-chip8-machine :quirks quirks)))
     (load-rom-file machine rom-path)
-    (let ((app (make-chip8-app
-                :machine machine :state-machine (make-chip8-control-state-machine)
-                :renderer (make-renderer +screen-width+ +screen-height+)
-                :render-state (make-chip8-render-state)
-                :decoder (make-input-decoder) :clock-hz clock-hz
-                :started-at (get-internal-real-time))))
-      (with-raw-mode ()
-        (with-terminal-session
-            (session-stream :stream stream :hide-cursor t :alternate-screen t
-                            :keyboard-enhancements 10)
-          (tick-loop-run-realtime app #'%advance-chip8! #'%render-chip8-app!
-                                   #'%chip8-app-finished-p
-                                   :stream session-stream :interval 1/60)))
-      app)))
+    (with-chip8-render-pipeline (pipeline)
+      (let ((app (make-chip8-app
+                  :machine machine :state-machine (make-chip8-control-state-machine)
+                  :renderer (make-renderer +screen-width+ +screen-height+)
+                  :render-state (make-chip8-render-state)
+                  :render-pipeline pipeline
+                  :decoder (make-input-decoder) :clock-hz clock-hz
+                  :started-at (get-internal-real-time))))
+        (with-raw-mode ()
+          (with-terminal-session
+              (session-stream :stream stream :hide-cursor t :alternate-screen t
+                              :keyboard-enhancements 10)
+            (tick-loop-run-realtime app #'%advance-chip8! #'%render-chip8-app!
+                                     #'%chip8-app-finished-p
+                                     :stream session-stream :interval 1/60)))
+        app))))

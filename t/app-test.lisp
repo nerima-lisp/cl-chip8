@@ -37,6 +37,18 @@
 (describe
   "application key handling"
   (it
+    "ignores pause when the app is ready"
+    (let ((app (make-chip8-app
+                :machine (make-chip8-machine)
+                :state-machine (cl-chip8::make-chip8-control-state-machine))))
+      (expect (cl-chip8::%apply-control-key!
+               app (%app-test-event :character #\p))
+              :to-be t)
+      (expect (chip8-app-paused-p app) :to-be nil)
+      (expect (cl-chip8::chip8-control-state
+               (chip8-app-state-machine app))
+              :to-equal "ready")))
+  (it
     "toggles pause and resume through the control state machine"
     (let ((app (make-chip8-app
                 :machine (make-chip8-machine)
@@ -80,11 +92,15 @@
       (setf (aref (chip8-machine-memory machine) #x200) #x60
             (aref (chip8-machine-memory machine) #x201) #x01
             (chip8-app-paused-p app) t
+            (chip8-machine-delay-timer machine) 2
+            (chip8-machine-sound-timer machine) 2
             (cl-dataflow-kit:state-machine-state
              (chip8-app-state-machine app))
             "paused")
       (cl-chip8::%apply-control-key! app (%app-test-event :character #\n))
       (expect (chip8-machine-register machine 0) :to-be 1)
+      (expect (chip8-machine-delay-timer machine) :to-be 2)
+      (expect (chip8-machine-sound-timer machine) :to-be 2)
       (expect (chip8-app-paused-p app) :to-be t)
       (expect (cl-chip8::chip8-control-state
                (chip8-app-state-machine app))
@@ -125,6 +141,16 @@
 
 (describe
   "application advancement and completion"
+  (it
+    "uses the concurrent render pipeline when rendering an app"
+    (with-chip8-render-pipeline (pipeline :parallelism 1 :parallel-threshold 1)
+      (let ((app (make-chip8-app
+                  :machine (make-chip8-machine)
+                  :renderer (make-renderer +screen-width+ +screen-height+)
+                  :render-pipeline pipeline)))
+        (cl-chip8::%render-chip8-app! app)
+        (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
+                :to-be 16))))
   (it
     "starts a ready app and executes one instruction without a terminal"
     (let* ((machine (make-chip8-machine))
