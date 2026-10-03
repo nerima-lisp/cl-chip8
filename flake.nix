@@ -233,14 +233,23 @@
             version = ctx.cl.fromAsdSystem "${cl-resilience-kit}/cl-resilience-kit.asd";
             src = cl-resilience-kit;
             lispSystem = "cl-resilience-kit";
-            lispDependencies = [ boundaryKit concurrentKit dateKit ];
+            lispDependencies = [
+              boundaryKit
+              concurrentKit
+              dateKit
+            ];
           };
           processKit = ctx.cl.lispDerivation {
             pname = "cl-process-kit";
             version = ctx.cl.fromAsdSystem "${cl-process-kit}/cl-process-kit.asd";
             src = cl-process-kit;
             lispSystem = "cl-process-kit";
-            lispDependencies = [ boundaryKit codecKit concurrentKit logKit ];
+            lispDependencies = [
+              boundaryKit
+              codecKit
+              concurrentKit
+              logKit
+            ];
           };
           concurrentKit = ctx.cl.lispDerivation {
             pname = "cl-concurrent-kit";
