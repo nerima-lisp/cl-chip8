@@ -14,6 +14,26 @@
       flake = false;
     };
 
+    cl-tui-kit = {
+      url = "github:nerima-lisp/cl-tui-kit/v4.1.3";
+      flake = false;
+    };
+
+    cl-event-sourcing-kit = {
+      url = "github:nerima-lisp/cl-event-sourcing-kit/v1.0.0";
+      flake = false;
+    };
+
+    cl-resilience-kit = {
+      url = "github:nerima-lisp/cl-resilience-kit/v1.0.0";
+      flake = false;
+    };
+
+    cl-process-kit = {
+      url = "github:nerima-lisp/cl-process-kit/v3.4.0";
+      flake = false;
+    };
+
     cl-cli = {
       url = "github:nerima-lisp/cl-cli/v1.4.0";
       flake = false;
@@ -55,7 +75,7 @@
     };
 
     cl-weave = {
-      url = "github:nerima-lisp/cl-weave/v1.3.0";
+      url = "github:nerima-lisp/cl-weave/v1.4.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-nix-forge.follows = "cl-nix-forge";
       inputs.paredit-cli.follows = "paredit-cli";
@@ -114,6 +134,10 @@
       nixpkgs,
       cl-nix-forge,
       cl-tty-kit,
+      cl-tui-kit,
+      cl-event-sourcing-kit,
+      cl-resilience-kit,
+      cl-process-kit,
       cl-cli,
       cl-concurrent-kit,
       cl-boundary-kit,
@@ -189,6 +213,34 @@
             version = ctx.cl.fromAsdSystem "${cl-date-kit}/cl-date-kit.asd";
             src = cl-date-kit;
             lispSystem = "cl-date-kit";
+          };
+          tuiKit = ctx.cl.lispDerivation {
+            pname = "cl-tui-kit";
+            version = ctx.cl.fromAsdSystem "${cl-tui-kit}/cl-tui-kit.asd";
+            src = cl-tui-kit;
+            lispSystem = "cl-tui-kit";
+            lispDependencies = [ codecKit ];
+          };
+          eventSourcingKit = ctx.cl.lispDerivation {
+            pname = "cl-event-sourcing-kit";
+            version = ctx.cl.fromAsdSystem "${cl-event-sourcing-kit}/cl-event-sourcing-kit.asd";
+            src = cl-event-sourcing-kit;
+            lispSystem = "cl-event-sourcing-kit";
+            lispDependencies = [ boundaryKit ];
+          };
+          resilienceKit = ctx.cl.lispDerivation {
+            pname = "cl-resilience-kit";
+            version = ctx.cl.fromAsdSystem "${cl-resilience-kit}/cl-resilience-kit.asd";
+            src = cl-resilience-kit;
+            lispSystem = "cl-resilience-kit";
+            lispDependencies = [ boundaryKit concurrentKit dateKit ];
+          };
+          processKit = ctx.cl.lispDerivation {
+            pname = "cl-process-kit";
+            version = ctx.cl.fromAsdSystem "${cl-process-kit}/cl-process-kit.asd";
+            src = cl-process-kit;
+            lispSystem = "cl-process-kit";
+            lispDependencies = [ boundaryKit codecKit concurrentKit logKit ];
           };
           concurrentKit = ctx.cl.lispDerivation {
             pname = "cl-concurrent-kit";
@@ -274,6 +326,10 @@
             lispSystem = "cl-cli";
             lispDependencies = [ hostKit ];
           })
+          tuiKit
+          eventSourcingKit
+          resilienceKit
+          processKit
           dateKit
           concurrentKit
           hostKit

@@ -15,16 +15,16 @@
 
 (describe "headless performance gate"
   (it "keeps median mixed-workload throughput above the host-safe floor"
-    (let* ((instructions 100000)
+    (let* ((instructions +contract-benchmark-instructions+)
            (milliseconds (%benchmark-median
-                          (loop repeat 7
+                          (loop repeat +contract-benchmark-runs+
                                 collect (minimum-ms
                                          (benchmark (:warmup 1 :samples 1)
                                            (chip8-run-instructions
                                             (make-benchmark-machine) instructions))))))
            (instructions-per-second (/ (* 1000d0 instructions) milliseconds)))
       (expect milliseconds :to-satisfy (lambda (value) (> value 0)))
-      ;; Keep the floor low enough for slower hosts; a tenfold slowdown still fails.
-      (expect instructions-per-second :to-satisfy (lambda (value) (>= value 1000.0)))
+      (expect instructions-per-second :to-satisfy
+              (lambda (value) (>= value +contract-min-throughput+)))
       (format t "~&benchmark: ~,1F instr/s (median sample ~,3F ms)~%"
               instructions-per-second milliseconds))))

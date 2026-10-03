@@ -157,6 +157,14 @@
                         :to-equal code))
               (expect control-event :to-be nil)))))))
 
+(it "transitions non-interned state names by value"
+  (let ((state-machine (cl-chip8::make-chip8-control-state-machine)))
+    (setf (cl-dataflow-kit:state-machine-state state-machine)
+          (copy-seq "waiting-key"))
+    (expect (cl-chip8::chip8-control-state
+             (cl-chip8::step-chip8-control-state state-machine :key-press))
+            :to-equal "running")))
+
 (it
     "drives every control-cps event across each wait state"
   (dolist (case *control-cps-wait-cases*)
