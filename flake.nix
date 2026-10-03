@@ -224,22 +224,12 @@
               concurrentKit
             ];
           };
-          tuiKit = ctx.cl.lispDerivation {
+          tuiKitTty = ctx.cl.lispDerivation {
             pname = "cl-tui-kit";
             version = ctx.cl.fromAsdSystem "${cl-tui-kit}/cl-tui-kit.asd";
             src = cl-tui-kit;
-            lispSystem = "cl-tui-kit";
-            lispDependencies = [ codecKit ];
-          };
-          tuiKitTty = ctx.cl.lispDerivation {
-            pname = "cl-tui-kit-tty";
-            version = ctx.cl.fromAsdSystem "${cl-tui-kit}/cl-tui-kit.asd";
-            src = cl-tui-kit;
             lispSystem = "cl-tui-kit/tty";
-            lispDependencies = [
-              tuiKit
-              ttyKit
-            ];
+            lispDependencies = [ ttyKit ];
           };
           eventSourcingKit = ctx.cl.lispDerivation {
             pname = "cl-event-sourcing-kit";
