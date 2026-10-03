@@ -231,20 +231,13 @@
             lispSystem = "cl-tui-kit/tty";
             lispDependencies = [ ttyKit ];
           };
-          eventSourcingKit = ctx.cl.lispDerivation {
-            pname = "cl-event-sourcing-kit";
-            version = ctx.cl.fromAsdSystem "${cl-event-sourcing-kit}/cl-event-sourcing-kit.asd";
-            src = cl-event-sourcing-kit;
-            lispSystem = "cl-event-sourcing-kit";
-            lispDependencies = [ boundaryKit ];
-          };
           eventSourcingDurableKit = ctx.cl.lispDerivation {
-            pname = "cl-event-sourcing-kit-durable";
+            pname = "cl-event-sourcing-kit";
             version = ctx.cl.fromAsdSystem "${cl-event-sourcing-kit}/cl-event-sourcing-kit.asd";
             src = cl-event-sourcing-kit;
             lispSystem = "cl-event-sourcing-kit/durable";
             lispDependencies = [
-              eventSourcingKit
+              boundaryKit
               concurrentKit
             ];
           };
