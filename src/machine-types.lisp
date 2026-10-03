@@ -8,5 +8,7 @@
   (keypad (make-array 16 :element-type 'bit :initial-element 0) :type (simple-array bit (16)))
   (framebuffer (make-array '(32 64) :element-type 'bit :initial-element 0) :type chip8-framebuffer)
   (framebuffer-lock nil)
+  (seed 0 :type (unsigned-byte 32))
+  (rng-state 0 :type (unsigned-byte 32))
   (quirks (make-chip8-quirks) :type chip8-quirks) (waiting (make-chip8-wait-state) :type chip8-wait-state)
   (instructions 0 :type (unsigned-byte 64)))

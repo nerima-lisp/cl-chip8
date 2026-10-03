@@ -15,10 +15,9 @@
   :bug-tracker "https://github.com/nerima-lisp/cl-chip8/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
   :depends-on ("cl-tty-kit"
-               "cl-tui-kit"
-               "cl-event-sourcing-kit"
+               "cl-tui-kit/tty"
+               "cl-event-sourcing-kit/durable"
                "cl-resilience-kit"
-               "cl-process-kit"
                "cl-dataflow-kit"
                "cl-cli"     ; command-line parsing
                "cl-toml-kit"
@@ -67,7 +66,7 @@
   :bug-tracker "https://github.com/nerima-lisp/cl-chip8/issues"
   :source-control (:git "https://github.com/nerima-lisp/cl-chip8.git")
   ;; Test framework and direct test dependencies.
-  :depends-on ("cl-chip8" "cl-weave" "cl-tty-kit"
+  :depends-on ("cl-chip8" "cl-weave" "cl-tty-kit" "cl-process-kit"
                "cl-toml-kit" "cl-log-kit" "cl-observability-kit"
                "cl-json-kit"
                "cl-concurrent-kit"

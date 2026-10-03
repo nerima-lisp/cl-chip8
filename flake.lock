@@ -105,7 +105,9 @@
         "cl-nix-forge": [
           "cl-nix-forge"
         ],
-        "cl-weave": "cl-weave",
+        "cl-weave": [
+          "cl-weave"
+        ],
         "nixpkgs": [
           "nixpkgs"
         ],
@@ -428,23 +430,6 @@
       }
     },
     "cl-weave": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1785915502,
-        "narHash": "sha256-NhwWewIatjblEBVJcY5b6YRBGxiowBjRDlHXJ7crCuU=",
-        "owner": "nerima-lisp",
-        "repo": "cl-weave",
-        "rev": "29bba54f1d711b07cc6244990d0ceff0faeec832",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nerima-lisp",
-        "ref": "v1.3.0",
-        "repo": "cl-weave",
-        "type": "github"
-      }
-    },
-    "cl-weave_2": {
       "inputs": {
         "cl-nix-forge": [
           "cl-nix-forge"
@@ -550,7 +535,7 @@
         "cl-toml-kit": "cl-toml-kit",
         "cl-tty-kit": "cl-tty-kit",
         "cl-tui-kit": "cl-tui-kit",
-        "cl-weave": "cl-weave_2",
+        "cl-weave": "cl-weave",
         "nixpkgs": "nixpkgs",
         "paredit-cli": "paredit-cli",
         "timendus-chip8-test-suite": "timendus-chip8-test-suite",
