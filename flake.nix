@@ -159,7 +159,6 @@
     let
       systems = [
         "x86_64-linux"
-        "aarch64-darwin"
       ];
     in
     cl-nix-forge.lib.${builtins.head systems}.mkPackageFlake {
@@ -177,7 +176,7 @@
         description = "A CHIP-8 (1977 COSMAC VIP instruction set) interpreter for the terminal.";
         homepage = "https://github.com/nerima-lisp/cl-chip8";
         license = nixpkgs.lib.licenses.mit;
-        platforms = nixpkgs.lib.platforms.unix;
+        platforms = [ "x86_64-linux" ];
       };
 
       lispDependencies =
