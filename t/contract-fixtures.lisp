@@ -32,7 +32,7 @@
   (let ((machine (if seed-p
                     (make-chip8-machine :seed seed)
                     (make-chip8-machine))))
-    (load-rom machine #(#xC0FF #xC1FF #xC2FF #xC3FF))
+    (load-rom machine #(#xC0 #xFF #xC1 #xFF #xC2 #xFF #xC3 #xFF))
     (chip8-run-instructions machine 4)
     (list :seed (chip8-machine-seed machine)
           :state (contract-machine-signature machine))))
