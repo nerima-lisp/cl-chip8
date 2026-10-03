@@ -60,4 +60,13 @@
       (expect (getf (getf seed-a :state) :framebuffer) :to-equal
               (getf (getf seed-b :state) :framebuffer))))
   (it "rejects seeds outside the machine's unsigned 32-bit contract"
-    (signals type-error (make-chip8-machine :seed -1))))
+    (signals type-error (make-chip8-machine :seed -1)))
+  (it "restarts the seeded random stream on reset"
+    (let ((machine (make-chip8-machine :seed +contract-seed+)))
+      (load-rom machine #(#xC0 #xFF #xC1 #xFF))
+      (chip8-run-instructions machine 2)
+      (let ((first-run (contract-machine-signature machine)))
+        (chip8-reset! machine)
+        (load-rom machine #(#xC0 #xFF #xC1 #xFF))
+        (chip8-run-instructions machine 2)
+        (expect first-run :to-equal (contract-machine-signature machine))))))
