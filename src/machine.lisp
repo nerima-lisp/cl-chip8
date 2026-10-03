@@ -1,6 +1,11 @@
 (in-package #:cl-chip8)
+(defun validate-chip8-seed (seed)
+  (if (typep seed '(unsigned-byte 32))
+      seed
+      (error 'type-error :datum seed :expected-type '(unsigned-byte 32))))
 (defun make-chip8-machine (&key (quirks (make-chip8-quirks)) (seed 0))
-  (let ((machine (%make-chip8-machine :quirks quirks :seed seed)))
+  (let ((machine (%make-chip8-machine :quirks quirks
+                                      :seed (validate-chip8-seed seed))))
     (setf (chip8-machine-framebuffer-lock machine)
           (make-lock :name "cl-chip8 framebuffer"))
     (chip8-reset! machine)))

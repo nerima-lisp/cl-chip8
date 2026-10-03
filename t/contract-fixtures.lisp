@@ -68,6 +68,8 @@
         (load-rom machine #(#xC0 #xFF #xC1 #xFF))
         (chip8-run-instructions machine 2)
         (expect first-run :to-equal (contract-machine-signature machine)))))
+  (it "rejects seeds outside the unsigned 32-bit contract"
+    (signals type-error (make-chip8-machine :seed -1)))
   (it "keeps the zero RNG state within the byte contract"
     (let ((machine (make-chip8-machine)))
       (setf (cl-chip8::chip8-machine-rng-state machine) 0)
