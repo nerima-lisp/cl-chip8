@@ -58,4 +58,6 @@
       (expect (getf (getf seed-a :state) :registers) :to-equal
               (getf (getf seed-b :state) :registers))
       (expect (getf (getf seed-a :state) :framebuffer) :to-equal
-              (getf (getf seed-b :state) :framebuffer)))))
+              (getf (getf seed-b :state) :framebuffer))))
+  (it "rejects seeds outside the machine's unsigned 32-bit contract"
+    (signals type-error (make-chip8-machine :seed -1))))
