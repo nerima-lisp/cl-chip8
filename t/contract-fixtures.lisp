@@ -67,4 +67,9 @@
         (chip8-reset! machine)
         (load-rom machine #(#xC0 #xFF #xC1 #xFF))
         (chip8-run-instructions machine 2)
-        (expect first-run :to-equal (contract-machine-signature machine))))))
+        (expect first-run :to-equal (contract-machine-signature machine)))))
+  (it "keeps the zero RNG state within the byte contract"
+    (let ((machine (make-chip8-machine)))
+      (setf (cl-chip8::chip8-machine-rng-state machine) 0)
+      (expect (cl-chip8::chip8-random-byte machine) :to-be 0)
+      (expect (cl-chip8::chip8-machine-rng-state machine) :to-be 0))))
