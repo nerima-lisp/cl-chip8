@@ -1,6 +1,11 @@
 (in-package #:cl-chip8)
-(defun make-chip8-machine (&key (quirks (make-chip8-quirks)))
-  (let ((machine (%make-chip8-machine :quirks quirks)))
+(defun validate-chip8-seed (seed)
+  (if (typep seed '(unsigned-byte 32))
+      seed
+      (error 'type-error :datum seed :expected-type '(unsigned-byte 32))))
+(defun make-chip8-machine (&key (quirks (make-chip8-quirks)) (seed 0))
+  (let ((machine (%make-chip8-machine :quirks quirks
+                                      :seed (validate-chip8-seed seed))))
     (setf (chip8-machine-framebuffer-lock machine)
           (make-lock :name "cl-chip8 framebuffer"))
     (chip8-reset! machine)))
@@ -10,8 +15,21 @@
   (display-reset! machine)
   (setf (chip8-machine-i machine) 0 (chip8-machine-pc machine) +initial-pc+ (chip8-machine-sp machine) 0
         (chip8-machine-delay-timer machine) 0 (chip8-machine-sound-timer machine) 0
+        (chip8-machine-rng-state machine)
+        (if (zerop (chip8-machine-seed machine)) #x6D2B79F5
+            (chip8-machine-seed machine))
         (chip8-machine-waiting machine) (make-chip8-wait-state) (chip8-machine-instructions machine) 0)
   (load-fontset-into-memory! machine) machine)
+(defun chip8-random-byte (machine)
+  (let ((state (chip8-machine-rng-state machine)))
+    (setf state (logxor state (ash state 13)))
+    (setf state (logand state #xffffffff))
+    (setf state (logxor state (ash state -17)))
+    (setf state (logand state #xffffffff))
+    (setf state (logxor state (ash state 5)))
+    (setf state (logand state #xffffffff)
+          (chip8-machine-rng-state machine) state)
+    (ldb (byte 8 0) state)))
 (defun chip8-machine-register (machine index) (check-type index (integer 0 15)) (aref (chip8-machine-v machine) index))
 (defun (setf chip8-machine-register) (value machine index)
   (check-type index (integer 0 15)) (setf (aref (chip8-machine-v machine) index) (ldb (byte 8 0) value)))
