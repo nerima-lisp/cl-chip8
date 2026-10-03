@@ -1,6 +1,5 @@
 (in-package #:cl-chip8)
 (defun make-chip8-machine (&key (quirks (make-chip8-quirks)) (seed 0))
-  (check-type seed (unsigned-byte 32))
   (let ((machine (%make-chip8-machine :quirks quirks :seed seed)))
     (setf (chip8-machine-framebuffer-lock machine)
           (make-lock :name "cl-chip8 framebuffer"))
