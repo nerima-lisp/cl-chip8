@@ -51,49 +51,76 @@ enter its terminal session."
                                                                 (chip8-config-platform config))
                                                      :quirks (chip8-quirks-profile
                                                               (chip8-config-quirks config))))
-                               (setf app
-                                     (if (chip8-config-quirks-explicit-p config)
-                                         (run :rom-path (chip8-config-rom-path config)
-                                              :clock-hz (chip8-config-clock-hz config)
-                                              :platform (chip8-config-platform config)
-                                              :quirks (chip8-config-quirks config))
-                                         (run :rom-path (chip8-config-rom-path config)
-                                              :clock-hz (chip8-config-clock-hz config)
-                                              :platform (chip8-config-platform config))))
+                               (let ((on-audio-fallback
+                                       (lambda (condition)
+                                         (chip8-log
+                                          logger
+                                          (%chip8-log-kit-level "+LEVEL-WARN+")
+                                          "audio-fallback"
+                                          (list :error (princ-to-string condition)
+                                                :mode "bell"))
+                                         (format *error-output*
+                                                 "~&cl-chip8: WARN audio output unavailable (~A); using terminal bell.~%"
+                                                 condition))))
+                                 (setf app
+                                       (apply #'run
+                                              (append
+                                               (list :rom-path
+                                                     (chip8-config-rom-path config)
+                                                     :clock-hz
+                                                     (chip8-config-clock-hz config)
+                                                     :platform
+                                                     (chip8-config-platform config))
+                                               (when (chip8-config-quirks-explicit-p config)
+                                                 (list :quirks
+                                                       (chip8-config-quirks config)))
+                                               (list :audio-mode (getf options :audio-mode)
+                                                     :on-audio-fallback
+                                                     on-audio-fallback)))))
+                               (when (chip8-app-audio-output app)
+                                 (multiple-value-bind (frames-written latency-seconds)
+                                     (chip8-audio-output-stats
+                                      (chip8-app-audio-output app))
+                                   (chip8-log-info
+                                    logger "audio-output"
+                                    (list :frames-written frames-written
+                                          :latency-seconds latency-seconds))))
                                (if (chip8-app-error app)
                                    (progn
-                                     (chip8-log-error logger "runtime-error"
-                                                      (list :error
-                                                            (princ-to-string
-                                                             (chip8-app-error app))))
+                                     (chip8-log-error
+                                      logger "runtime-error"
+                                      (list :error
+                                            (princ-to-string (chip8-app-error app))))
                                      (format *error-output* "~&cl-chip8: ~A~%"
                                              (chip8-app-error app))
                                      1)
                                    0))
                            (error (condition)
-                             (chip8-log-error logger "runtime-error"
-                                              (list :error (princ-to-string condition)))
+                             (chip8-log-error
+                              logger "runtime-error"
+                              (list :error (princ-to-string condition)))
                              (format *error-output* "~&cl-chip8: ~A~%" condition)
                              1)))
-                   (chip8-log-info logger "metrics"
-                                   (chip8-metrics-fields
-                                    (finalize-chip8-metrics!
-                                     metrics
-                                     :machine (and app (chip8-app-machine app))
-                                     :render-state
-                                     (and app (chip8-app-render-state app))
-                                     :render-pipeline
-                                     (and app (chip8-app-render-pipeline app))
-                                     :effective-hz
-                                     (when (and app (chip8-app-started-at app))
-                                       (let ((elapsed (- (get-internal-real-time)
-                                                         (chip8-app-started-at app))))
-                                         (when (plusp elapsed)
-                                           (float
-                                            (/ (* (chip8-machine-instructions
-                                                   (chip8-app-machine app))
-                                                  internal-time-units-per-second)
-                                               elapsed))))))))
+                   (chip8-log-info
+                    logger "metrics"
+                    (chip8-metrics-fields
+                     (finalize-chip8-metrics!
+                      metrics
+                      :machine (and app (chip8-app-machine app))
+                      :render-state
+                      (and app (chip8-app-render-state app))
+                      :render-pipeline
+                      (and app (chip8-app-render-pipeline app))
+                      :effective-hz
+                      (when (and app (chip8-app-started-at app))
+                        (let ((elapsed (- (get-internal-real-time)
+                                          (chip8-app-started-at app))))
+                          (when (plusp elapsed)
+                            (float
+                             (/ (* (chip8-machine-instructions
+                                    (chip8-app-machine app))
+                                   internal-time-units-per-second)
+                                elapsed))))))))
                    result))
             (unwind-protect
                  (flush-chip8-logger logger)
@@ -129,7 +156,12 @@ at https://nerima-lisp.github.io/cl-chip8/guide/terminal/ for the full table."
                       :description
                       (format nil "CPU instructions per second (default ~D). ~
 Timers always run at a fixed 60Hz regardless."
-                              +default-clock-hz+)))
+                              +default-clock-hz+))
+         (make-option :key :audio :name "audio" :kind :value
+                      :choices '("auto" "pcm" "bell" "off")
+                      :description (format nil "auto tries PCM and falls back to bell; ~
+pcm needs an output device; bell uses the terminal bell; ~
+off disables audio (default auto).")))
    :handler #'%run-handler)
   "The declarative cl-cli specification for the `cl-chip8` command.")
 
@@ -139,6 +171,10 @@ Timers always run at a fixed 60Hz regardless."
         :clock-hz (option-value invocation :clock-hz)
         :quirks (option-value invocation :quirks)
         :platform (option-value invocation :platform)
+        :audio-mode (cdr (assoc (or (option-value invocation :audio) "auto")
+                                '(("auto" . :auto) ("pcm" . :pcm)
+                                  ("bell" . :bell) ("off" . :off))
+                                :test #'string=))
         :config-path (option-value invocation :config)
         :log-path (option-value invocation :log)))
 

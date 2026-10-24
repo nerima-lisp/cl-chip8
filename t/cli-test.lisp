@@ -40,43 +40,61 @@
 
 (describe "the cl-chip8 app spec"
   (it-each (("quirks modern" "--quirks" "modern" :quirks)
-              ("quirks cosmac-vip" "--quirks" "cosmac-vip" :quirks)
-              ("quirks schip" "--quirks" "schip" :quirks)
-              ("quirks schip-legacy" "--quirks" "schip-legacy" :quirks)
-              ("quirks xo-chip" "--quirks" "xo-chip" :quirks)
-              ("platform modern" "--platform" "modern" :platform)
-              ("platform cosmac-vip" "--platform" "cosmac-vip" :platform)
-              ("platform schip" "--platform" "schip" :platform)
-              ("platform schip-legacy" "--platform" "schip-legacy" :platform)
-              ("platform xo-chip" "--platform" "xo-chip" :platform)
-              ("config" "--config" "chip8.toml" :config)
-              ("log" "--log" "stderr" :log)
-              ("clock" "--clock-hz" "500" :clock-hz))
-    "parses the ~A option"
-    (label option value key)
-  (declare (ignore label))
-  (let ((invocation (parse-argv *app* (list "cl-chip8" option value "game.ch8"))))
-    (expect (option-value invocation key) :to-equal
-            (if (eq key :clock-hz) 500 value))))
+            ("quirks cosmac-vip" "--quirks" "cosmac-vip" :quirks)
+            ("quirks schip" "--quirks" "schip" :quirks)
+            ("quirks schip-legacy" "--quirks" "schip-legacy" :quirks)
+            ("quirks xo-chip" "--quirks" "xo-chip" :quirks)
+            ("platform modern" "--platform" "modern" :platform)
+            ("platform cosmac-vip" "--platform" "cosmac-vip" :platform)
+            ("platform schip" "--platform" "schip" :platform)
+            ("platform schip-legacy" "--platform" "schip-legacy" :platform)
+            ("platform xo-chip" "--platform" "xo-chip" :platform)
+            ("config" "--config" "chip8.toml" :config)
+            ("log" "--log" "stderr" :log)
+            ("clock" "--clock-hz" "500" :clock-hz)
+            ("audio" "--audio" "bell" :audio))
+      "parses the ~A option"
+      (label option value key)
+    (declare (ignore label))
+    (let ((invocation (parse-argv *app* (list "cl-chip8" option value "game.ch8"))))
+      (expect (option-value invocation key) :to-equal
+              (if (eq key :clock-hz) 500 value))))
+
+  (it-each (("auto" "auto") ("pcm" "pcm") ("bell" "bell") ("off" "off"))
+      "accepts --audio ~A"
+      (label value)
+    (declare (ignore label))
+    (expect (option-value
+             (parse-argv *app* (list "cl-chip8" "--audio" value "game.ch8"))
+             :audio)
+            :to-equal value))
+
+  (it "rejects an unsupported --audio value"
+    (expect (signals cli-invalid-option-value
+                    (parse-argv *app*
+                                '("cl-chip8" "--audio" "headphones" "game.ch8")))
+            :to-be-truthy))
 
   (it "leaves optional options unset by default"
     (let ((invocation (parse-argv *app* '("cl-chip8" "game.ch8"))))
-      (expect (loop for key in '(:quirks :platform :config :log :clock-hz)
+      (expect (loop for key in '(:quirks :platform :config :log :clock-hz :audio)
                     always (null (option-value invocation key)))
-              :to-be t)))
+              :to-be t)
+      (expect (getf (chip8-run-options invocation) :audio-mode)
+              :to-be :auto)))
 
   (it-each (("zero" "--clock-hz" "0")
-              ("negative" "--clock-hz" "-1")
-              ("non-integer" "--clock-hz" "not-a-number")
-              ("unknown profile" "--quirks" "legacy")
-              ("unknown platform" "--platform" "legacy"))
-    "rejects an invalid ~A value: ~A"
-    (label option value)
-  (declare (ignore label))
-  (expect (signals cli-invalid-option-value
-                  (parse-argv *app*
-                              (list "cl-chip8" option value "game.ch8")))
-          :to-be-truthy)))
+            ("negative" "--clock-hz" "-1")
+            ("non-integer" "--clock-hz" "not-a-number")
+            ("unknown profile" "--quirks" "legacy")
+            ("unknown platform" "--platform" "legacy"))
+      "rejects an invalid ~A value: ~A"
+      (label option value)
+    (declare (ignore label))
+    (expect (signals cli-invalid-option-value
+                    (parse-argv *app*
+                                (list "cl-chip8" option value "game.ch8")))
+            :to-be-truthy)))
 
 (describe "the cl-chip8 app spec: the rom positional"
   (it "binds the positional rom path"
@@ -87,18 +105,17 @@
     (signals cl-cli:cli-missing-positional (parse-argv *app* '("cl-chip8")))))
 
 (describe "the cl-chip8 run boundary"
-  (it
-  "projects a parsed invocation into the pure run options plist"
-  (let ((invocation
-          (parse-argv *app*
-                      '("cl-chip8" "--clock-hz" "321" "--quirks"
-                        "cosmac-vip" "--platform" "schip" "--config"
-                        "chip8.toml" "--log" "stderr" "game.ch8"))))
-    (expect (chip8-run-options invocation)
-            :to-equal
-            '(:rom-path "game.ch8" :clock-hz 321 :quirks "cosmac-vip"
-              :platform "schip" :config-path "chip8.toml"
-              :log-path "stderr")))))
+  (it "projects a parsed invocation into the run options plist"
+    (let ((invocation
+            (parse-argv *app*
+                        '("cl-chip8" "--clock-hz" "321" "--quirks"
+                          "cosmac-vip" "--platform" "schip" "--audio" "pcm"
+                          "--config" "chip8.toml" "--log" "stderr" "game.ch8"))))
+      (expect (chip8-run-options invocation)
+              :to-equal
+              '(:rom-path "game.ch8" :clock-hz 321 :quirks "cosmac-vip"
+                :platform "schip" :audio-mode :pcm
+                :config-path "chip8.toml" :log-path "stderr")))))
 
 (describe "the cl-chip8 configuration error boundary"
   (it
@@ -153,12 +170,103 @@
                      (let ((*error-output* stream))
                        (expect (cl-chip8::%run-handler invocation) :to-be 1)))))
       (expect (search "cl-chip8:" output) :to-be-truthy)
-      (expect (search path output) :to-be-truthy))))
+      (expect (search path output) :to-be-truthy)))
+
+  (it "returns status 1 with a diagnostic when PCM initialization fails"
+    (let* ((rom-path (format nil "/tmp/cl-chip8-cli-pcm-~D.ch8" (random 1000000)))
+           (invocation (parse-argv *app*
+                                   (list "cl-chip8" "--audio" "pcm" rom-path)))
+           (selected-audio-mode nil)
+           (original-run (symbol-function 'cl-chip8:run)))
+      (unwind-protect
+           (progn
+             (with-open-file (stream rom-path :direction :output :if-exists :supersede
+                                      :element-type '(unsigned-byte 8))
+               (write-byte 0 stream))
+             (setf (symbol-function 'cl-chip8:run)
+                   (lambda (&key rom-path clock-hz platform quirks stream audio-mode
+                                  on-audio-fallback)
+                     (declare (ignore rom-path clock-hz platform quirks stream
+                                      on-audio-fallback))
+                     (setf selected-audio-mode audio-mode)
+                     (error 'cl-audio-kit:audio-error :operation "open")))
+             (let ((diagnostic
+                     (with-output-to-string (output)
+                       (let ((*error-output* output))
+                         (expect (cl-chip8::%run-handler invocation) :to-be 1)))))
+               (expect selected-audio-mode :to-be :pcm)
+               (expect diagnostic :to-contain "cl-chip8:")))
+        (setf (symbol-function 'cl-chip8:run) original-run)
+        (when (probe-file rom-path) (delete-file rom-path))))))
 
 (describe "the cl-chip8 CLI termination boundary"
-  (it "forwards platform defaults and only explicit quirks to run"
+  (it "logs run metrics and PCM output statistics"
     (let* ((rom-path (format nil "/tmp/cl-chip8-cli-metrics-~D.ch8" (random 1000000)))
            (log-path (format nil "/tmp/cl-chip8-cli-metrics-~D.json" (random 1000000)))
+           (machine (cl-chip8:make-chip8-machine))
+           (device (cl-audio-kit:make-recording-device))
+           (audio-stream (cl-audio-kit:open-output-stream :device device))
+           (audio-output
+             (let ((output (cl-chip8::%make-chip8-audio-output
+                            :stream audio-stream)))
+               (setf (cl-chip8::chip8-audio-output-frames-written output) 1234)
+               output))
+           (app (cl-chip8::make-chip8-app
+                 :machine machine
+                 :render-state (cl-chip8::make-chip8-render-state)
+                 :audio-output audio-output
+                 :started-at (- (get-internal-real-time)
+                                internal-time-units-per-second)))
+           (invocation (parse-argv *app*
+                                   (list "cl-chip8" "--audio" "pcm"
+                                         "--log" log-path rom-path)))
+           (selected-audio-mode nil)
+           (original-run (symbol-function 'cl-chip8:run)))
+      (unwind-protect
+           (progn
+             (with-open-file (stream rom-path :direction :output :if-exists :supersede
+                                      :element-type '(unsigned-byte 8))
+               (write-byte 0 stream))
+             (setf (cl-chip8:chip8-machine-instructions machine) 7)
+             (setf (symbol-function 'cl-chip8:run)
+                   (lambda (&key rom-path clock-hz platform quirks stream audio-mode
+                                  on-audio-fallback)
+                     (declare (ignore rom-path clock-hz platform quirks stream
+                                      on-audio-fallback))
+                     (setf selected-audio-mode audio-mode)
+                     app))
+             (render-chip8! (cl-tty-kit:make-screen +screen-width+ +screen-height+)
+                            (cl-chip8::%renderer-framebuffer machine)
+                            (cl-chip8::chip8-app-render-state app))
+             (let ((error-output (make-string-output-stream)))
+               (let ((*error-output* error-output))
+                 (let ((status (cl-chip8::%run-handler invocation)))
+                   (unless (zerop status)
+                     (error "CLI handler returned ~D: ~A" status
+                            (get-output-stream-string error-output))))))
+             (expect selected-audio-mode :to-be :pcm)
+             (multiple-value-bind (frames-written latency-seconds)
+                 (cl-chip8::chip8-audio-output-stats audio-output)
+               (expect frames-written :to-be 1234)
+               (expect latency-seconds :to-be 0d0))
+             (let ((contents (uiop:read-file-string log-path)))
+               (expect (search "chip8_instructions_total" contents) :to-be-truthy)
+               (expect (search ":7" contents) :to-be-truthy)
+               (expect (search "chip8_render_frames_total" contents) :to-be-truthy)
+               (expect (search "\"chip8_render_frames_total\":1" contents)
+                       :to-be-truthy)
+               (expect (search "audio-output" contents) :to-be-truthy)
+               (expect (search "\"frames-written\":1234" contents)
+                       :to-be-truthy)
+               (expect (search "\"latency-seconds\":0.0" contents)
+                       :to-be-truthy)))
+        (setf (symbol-function 'cl-chip8:run) original-run)
+        (when (probe-file rom-path) (delete-file rom-path))
+        (when (probe-file log-path) (delete-file log-path))
+        (cl-audio-kit:close-output-stream audio-stream))))
+  (it "forwards platform defaults and only explicit quirks to run"
+    (let* ((rom-path (format nil "/tmp/cl-chip8-cli-platform-~D.ch8" (random 1000000)))
+           (log-path (format nil "/tmp/cl-chip8-cli-platform-~D.json" (random 1000000)))
            (machine (cl-chip8:make-chip8-machine))
            (app (cl-chip8::make-chip8-app
                  :machine machine
@@ -166,8 +274,8 @@
                  :started-at (- (get-internal-real-time)
                                 internal-time-units-per-second)))
            (invocation (parse-argv *app*
-                                  (list "cl-chip8" "--log" log-path
-                                        "--platform" "schip" rom-path)))
+                                   (list "cl-chip8" "--log" log-path
+                                         "--platform" "schip" rom-path)))
            (explicit-invocation
              (parse-argv *app*
                          (list "cl-chip8" "--log" log-path
@@ -183,8 +291,10 @@
              (setf (cl-chip8:chip8-machine-instructions machine) 7)
              (setf (symbol-function 'cl-chip8:run)
                    (lambda (&key rom-path clock-hz platform
-                                 (quirks nil quirks-p) stream)
-                     (declare (ignore rom-path clock-hz stream))
+                                 (quirks nil quirks-p) stream audio-mode
+                                 on-audio-fallback)
+                     (declare (ignore rom-path clock-hz stream audio-mode
+                                      on-audio-fallback))
                      (push (list platform quirks-p quirks) run-calls)
                      app))
              (render-chip8! (cl-tty-kit:make-screen +screen-width+ +screen-height+)
@@ -215,7 +325,58 @@
                        :to-be-truthy)))
         (setf (symbol-function 'cl-chip8:run) original-run)
         (when (probe-file rom-path) (delete-file rom-path))
-        (when (probe-file log-path) (delete-file log-path))))))
+        (when (probe-file log-path) (delete-file log-path)))))
+
+  (it "logs and prints one warning when automatic audio falls back"
+    (let* ((rom-path (format nil "/tmp/cl-chip8-cli-audio-~D.ch8" (random 1000000)))
+           (log-path (format nil "/tmp/cl-chip8-cli-audio-~D.json" (random 1000000)))
+           (machine (cl-chip8:make-chip8-machine))
+           (app (cl-chip8::make-chip8-app
+                 :machine machine
+                 :render-state (cl-chip8::make-chip8-render-state)))
+           (invocation (parse-argv *app*
+                                   (list "cl-chip8" "--audio" "auto"
+                                         "--log" log-path rom-path)))
+           (selected-audio-mode nil)
+           (fallback-calls 0)
+           (original-run (symbol-function 'cl-chip8:run)))
+      (unwind-protect
+           (progn
+             (with-open-file (stream rom-path :direction :output :if-exists :supersede
+                                      :element-type '(unsigned-byte 8))
+               (write-byte 0 stream))
+             (setf (symbol-function 'cl-chip8:run)
+                   (lambda (&key rom-path clock-hz platform quirks stream audio-mode
+                                  on-audio-fallback)
+                     (declare (ignore rom-path clock-hz platform quirks stream))
+                     (setf selected-audio-mode audio-mode)
+                     (expect (functionp on-audio-fallback) :to-be t)
+                     (incf fallback-calls)
+                     (funcall on-audio-fallback "PortAudio device unavailable")
+                     app))
+             (let ((diagnostic
+                     (with-output-to-string (output)
+                       (let ((*error-output* output))
+                         (expect (cl-chip8::%run-handler invocation) :to-be 0)))))
+               (expect selected-audio-mode :to-be :auto)
+               (expect fallback-calls :to-be 1)
+               (let ((warning-position (search "WARN" diagnostic)))
+                 (expect warning-position :to-be-truthy)
+                 (expect (search "WARN" diagnostic :start2 (1+ warning-position))
+                         :to-be-null)))
+             (let ((contents (uiop:read-file-string log-path)))
+               (let ((level-position (search "WARN" contents)))
+                 (expect level-position :to-be-truthy)
+                 (expect (search "WARN" contents :start2 (1+ level-position))
+                         :to-be-null))
+               (let ((warning-position (search "audio-fallback" contents)))
+                 (expect warning-position :to-be-truthy)
+                 (expect (search "audio-fallback" contents
+                                 :start2 (1+ warning-position))
+                         :to-be-null)))
+        (setf (symbol-function 'cl-chip8:run) original-run)
+        (when (probe-file rom-path) (delete-file rom-path))
+        (when (probe-file log-path) (delete-file log-path)))))))
 
 (describe "the cl-chip8 app spec: --help and --version"
   (it "exits 0 on --help without starting the emulator"
@@ -229,12 +390,21 @@
                     (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
       (expect (search "--clock-hz" output) :to-be-truthy)))
 
-  (it-each (("--quirks") ("--platform") ("--config") ("--log"))
-    "lists ~A in the help output"
-    (option)
-  (let ((output (with-output-to-string (out)
-                  (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
-    (expect (search option output) :to-be-truthy)))
+  (it-each (("--quirks") ("--platform") ("--config") ("--log") ("--audio"))
+      "lists ~A in the help output"
+      (option)
+    (let ((output (with-output-to-string (out)
+                    (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
+      (expect (search option output) :to-be-truthy)))
+
+  (it "describes all audio modes and the default"
+    (let ((output (with-output-to-string (out)
+                    (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
+      (expect output :to-contain "auto tries PCM and falls back to bell")
+      (expect output :to-contain "pcm needs an output device")
+      (expect output :to-contain "bell uses the terminal bell")
+      (expect output :to-contain "off disables audio")
+      (expect output :to-contain "(default auto).")))
 
   (it "describes --log as a file destination rather than a log level"
     (let ((output (with-output-to-string (out)
