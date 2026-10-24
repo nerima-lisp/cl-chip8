@@ -1,5 +1,4 @@
-(progn
-  (require :asdf)
+(require :asdf)
   (let* ((script-path *load-truename*)
          (root (truename
                 (merge-pathnames #p"../"
@@ -43,8 +42,7 @@
            (app (cl-chip8::make-chip8-app
                  :machine machine
                  :state-machine (cl-chip8::make-chip8-control-state-machine)
-                 :renderer (cl-chip8:make-renderer
-                            cl-chip8:+screen-width+ cl-chip8:+screen-height+)
+                 :renderer (cl-tty-kit:make-renderer cl-chip8:+screen-width+ cl-chip8:+screen-height+)
                  :render-state (cl-chip8::make-chip8-render-state)
                  :render-pipeline pipeline
                  :decoder (cl-tty-kit:make-input-decoder)
@@ -174,9 +172,7 @@
           (setf audio-output
                 (cl-chip8::start-chip8-audio-output
                  audio-stream
-                 :sound-timer
-                 (cl-chip8:chip8-machine-sound-timer
-                  (cl-chip8::chip8-app-machine app))
+                 (cl-chip8::chip8-app-machine app)
                  :writer audio-writer)
                 audio-stream nil
                 (cl-chip8::chip8-app-audio-output app) audio-output))
@@ -303,4 +299,4 @@
                          0
                          1))))
 
-  (main))
+  (main)
