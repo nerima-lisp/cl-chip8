@@ -33,7 +33,8 @@
     (when (>= sp +call-stack-limit+)
       (error 'chip8-stack-overflow :depth sp))
     (setf (aref (chip8-machine-stack machine) sp)
-          (mod (+ (chip8-machine-pc machine) 2) +memory-size+)
+          (mod (+ (chip8-machine-pc machine) 2)
+               (chip8-machine-memory-size machine))
           (chip8-machine-sp machine) (1+ sp)
           (chip8-machine-pc machine) nnn)))
 
@@ -149,7 +150,7 @@
                   (chip8-machine-register machine x)
                   (chip8-machine-register machine 0))))
     (setf (chip8-machine-pc machine)
-          (mod (+ nnn base) +memory-size+))))
+          (mod (+ nnn base) (chip8-machine-memory-size machine)))))
 
 (define-chip8-opcode random #xc000 #xf000
     ((x (ldb (byte 4 8) opcode)) (kk (ldb (byte 8 0) opcode)))
@@ -215,7 +216,7 @@
     ((x (ldb (byte 4 8) opcode)))
   (let ((value (chip8-machine-register machine x))
         (i (chip8-machine-i machine)))
-    (check-memory-access i 3)
+    (check-memory-access machine i 3)
     (setf (memory-read machine i) (floor value 100)
           (memory-read machine (1+ i)) (mod (floor value 10) 10)
           (memory-read machine (+ i 2)) (mod value 10)))

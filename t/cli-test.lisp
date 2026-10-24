@@ -164,7 +164,7 @@
                      (declare (ignore rom-path clock-hz quirks stream))
                      app))
              (render-chip8! (cl-tty-kit:make-screen +screen-width+ +screen-height+)
-                            (chip8-machine-framebuffer machine)
+                            (cl-chip8::%renderer-framebuffer machine)
                             (cl-chip8::chip8-app-render-state app))
              (let ((error-output (make-string-output-stream)))
                (let ((*error-output* error-output))

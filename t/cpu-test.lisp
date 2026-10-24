@@ -164,8 +164,7 @@
               :to-be
               (second result)))
     (dolist (pixel (getf (cddddr case) :pixels))
-      (expect (aref (chip8-machine-framebuffer machine)
-                    (first pixel) (second pixel))
+      (expect (display-pixel-value machine (second pixel) (first pixel))
               :to-be
               (third pixel)))
     (when (or (getf (cddddr case) :i-result)
@@ -201,19 +200,28 @@
 (describe "typed CHIP-8 machine"
   (it "resets to the documented initial state"
     (let ((m (test-machine)))
-      (expect (chip8-machine-pc m) :to-be #x200) (expect (chip8-machine-i m) :to-be 0)
-      (expect (chip8-machine-sp m) :to-be 0) (expect (chip8-machine-register m 0) :to-be 0)))
+      (expect (chip8-machine-pc m) :to-be #x200)
+      (expect (chip8-machine-i m) :to-be 0)
+      (expect (chip8-machine-sp m) :to-be 0)
+      (expect (chip8-machine-register m 0) :to-be 0)))
   (it "executes arithmetic and flow instructions"
     (let ((m (test-machine)))
-      (test-opcode m #x6010) (test-opcode m #x7001)
+      (test-opcode m #x6010)
+      (test-opcode m #x7001)
       (expect (chip8-machine-register m 0) :to-be #x11)
-      (test-opcode m #x1200) (expect (chip8-machine-pc m) :to-be #x200)))
+      (test-opcode m #x1200)
+      (expect (chip8-machine-pc m) :to-be #x200)))
   (it "snapshots framebuffer without aliasing"
     (let ((m (test-machine)))
       (setf (aref (chip8-machine-framebuffer m) 2 3) 1)
-      (let ((copy (chip8-framebuffer m))) (setf (aref copy 2 3) 0) (expect (aref (chip8-machine-framebuffer m) 2 3) :to-be 1))))
+      (let ((copy (chip8-framebuffer-snapshot m)))
+        (setf (aref copy 1 1) 0)
+        (expect (aref (chip8-framebuffer-snapshot m) 1 1) :to-be 1))))
   (it "signals stack and memory errors"
-    (let ((m (test-machine))) (signals chip8-stack-underflow (test-opcode m #x00ee)) (signals chip8-memory-access-out-of-bounds (check-memory-access 4095 2)))))
+    (let ((m (test-machine)))
+      (signals chip8-stack-underflow (test-opcode m #x00ee))
+      (signals chip8-memory-access-out-of-bounds
+        (check-memory-access m 4095 2)))))
 
 (it-each
     ((:modern #x00e0) (:modern #x00ee) (:modern #x0123) (:modern #x1200) (:modern #x2200) (:modern #x2ffe) (:modern #x3000) (:modern #x4000) (:modern #x5000) (:modern #x6000) (:modern #x7000) (:modern #x8000) (:modern #x8001) (:modern #x8002) (:modern #x8003) (:modern #x8004) (:modern #x8005) (:modern #x8006) (:modern #x8007) (:modern #x800e) (:modern #x9000) (:modern #xa200) (:modern #xb200) (:modern #xc0ff) (:modern #xd010) (:modern #xe09e) (:modern #xe0a1) (:modern #xf007) (:modern #xf00a) (:modern #xf015) (:modern #xf018) (:modern #xf01e) (:modern #xf029) (:modern #xf033) (:modern #xf055) (:modern #xf065) (:cosmac-vip #x00e0) (:cosmac-vip #x00ee) (:cosmac-vip #x0123) (:cosmac-vip #x1200) (:cosmac-vip #x2200) (:cosmac-vip #x2ffe) (:cosmac-vip #x3000) (:cosmac-vip #x4000) (:cosmac-vip #x5000) (:cosmac-vip #x6000) (:cosmac-vip #x7000) (:cosmac-vip #x8000) (:cosmac-vip #x8001) (:cosmac-vip #x8002) (:cosmac-vip #x8003) (:cosmac-vip #x8004) (:cosmac-vip #x8005) (:cosmac-vip #x8006) (:cosmac-vip #x8007) (:cosmac-vip #x800e) (:cosmac-vip #x9000) (:cosmac-vip #xa200) (:cosmac-vip #xb200) (:cosmac-vip #xc0ff) (:cosmac-vip #xd010) (:cosmac-vip #xe09e) (:cosmac-vip #xe0a1) (:cosmac-vip #xf007) (:cosmac-vip #xf00a) (:cosmac-vip #xf015) (:cosmac-vip #xf018) (:cosmac-vip #xf01e) (:cosmac-vip #xf029) (:cosmac-vip #xf033) (:cosmac-vip #xf055) (:cosmac-vip #xf065))
@@ -246,16 +254,35 @@
       (expect (aref (chip8-machine-stack m) 0) :to-be 0)
       (test-opcode m #x00ee)
       (expect (chip8-machine-pc m) :to-be 0)))
-  (it "wraps PC after the last two-byte instruction"
+  (it "wraps PC after the last two-byte instruction in a default 4K machine"
     (let ((m (make-chip8-machine)))
       (setf (chip8-machine-pc m) #xffe)
       (load-rom m (vector #x60 #x00) :address #xffe)
       (execute-instruction! m)
       (expect (chip8-machine-pc m) :to-be 0)))
-  (it "rejects a fetch starting at the final byte"
+  (it "rejects a fetch starting at the final byte of default 4K memory"
     (let ((m (make-chip8-machine)))
       (setf (chip8-machine-pc m) #xfff)
       (signals chip8-memory-access-out-of-bounds (execute-instruction! m))))
+  (it "wraps PC after the last instruction in 64K memory"
+    (let ((m (make-chip8-machine :platform :xo-chip)))
+      (setf (chip8-machine-pc m) #xfffe)
+      (load-rom m (vector #x60 #x00) :address #xfffe)
+      (execute-instruction! m)
+      (expect (chip8-machine-pc m) :to-be 0)))
+  (it "preserves a 16-bit PC in the XO key wait state"
+    (let ((m (make-chip8-machine
+              :platform :xo-chip
+              :quirks (make-chip8-quirks :profile :modern
+                                         :fx0a-completion :press))))
+      (setf (chip8-machine-pc m) #xfffe)
+      (load-rom m (vector #xf0 #x0a) :address #xfffe)
+      (execute-instruction! m)
+      (expect (chip8-wait-state-pc (chip8-machine-waiting m))
+              :to-be #xfffe)
+      (chip8-resume! m '(:key-down 3))
+      (expect (chip8-machine-pc m) :to-be 0)
+      (expect (chip8-machine-register m 0) :to-be 3)))
   (it "rejects invalid and duplicate resumes"
     (let ((m (make-chip8-machine)))
       (test-opcode m #xf00a)
@@ -276,13 +303,10 @@
  ((x (cl-weave:gen-integer :min 0 :max 63))
   (y (cl-weave:gen-integer :min 0 :max 31)))
  (let ((m (make-chip8-machine)))
-   (let ((before (chip8-framebuffer m)))
+   (let ((before (chip8-framebuffer-snapshot m)))
      (display-xor-pixel! m x y)
      (display-xor-pixel! m x y)
-     (expect (loop for row below +display-height+
-                   always (loop for column below +display-width+
-                                always (= (aref (chip8-framebuffer m) row column)
-                                          (aref before row column))))
+     (expect (equalp (chip8-framebuffer-snapshot m) before)
              :to-be-truthy))))
 
 (cl-weave:it-property

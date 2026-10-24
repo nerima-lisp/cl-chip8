@@ -1,5 +1,5 @@
 (in-package #:cl-chip8)
-(deftype display-framebuffer () 'chip8-framebuffer)
+(deftype display-framebuffer () '(simple-array bit (32 64)))
 (deftype display-column () '(integer 0 63))
 (deftype display-row () '(integer 0 31))
 (deftype display-terminal-row () '(integer 0 15))

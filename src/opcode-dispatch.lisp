@@ -2,7 +2,7 @@
 
 (defun fetch-opcode (machine)
   (let ((pc (chip8-machine-pc machine)))
-    (check-memory-access pc 2)
+    (check-memory-access machine pc 2)
     (logior (ash (memory-read machine pc) 8)
             (memory-read machine (1+ pc)))))
 

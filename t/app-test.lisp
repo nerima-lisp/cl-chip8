@@ -152,6 +152,37 @@
         (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
                 :to-be 16))))
   (it
+    "renders hires pixels after downsampling each 2x2 block"
+    (let* ((machine (make-chip8-machine :platform :schip))
+           (renderer (cl-tty-kit:make-renderer +screen-width+ +screen-height+))
+           (app (make-chip8-app
+                 :machine machine
+                 :renderer renderer
+                 :render-state (cl-chip8::make-chip8-render-state))))
+      (set-chip8-machine-resolution! machine :hires)
+      (let ((framebuffer (chip8-machine-framebuffer machine)))
+        (setf (aref framebuffer 8 8) 1
+              (aref framebuffer 8 11) 2
+              (aref framebuffer 9 12) 3
+              (aref framebuffer 9 15) 2))
+      (cl-chip8::%render-chip8-app! app)
+      (let ((screen (cl-tty-kit:renderer-screen renderer)))
+        (dotimes (index 4)
+          (expect
+            (cl-tty-kit:cell-char
+             (cl-tty-kit:screen-cell
+              screen
+              (+ cl-chip8::+playfield-origin-x+ index 4)
+              (+ cl-chip8::+playfield-origin-y+ 2)))
+            :to-be (code-char #x2580)))
+        (expect
+          (cl-tty-kit:cell-char
+           (cl-tty-kit:screen-cell
+            screen
+            (+ cl-chip8::+playfield-origin-x+ 8)
+            (+ cl-chip8::+playfield-origin-y+ 2)))
+          :to-be (code-char 32)))))
+  (it
     "starts a ready app and executes one instruction without a terminal"
     (let* ((machine (make-chip8-machine))
            (app (make-chip8-app
@@ -218,3 +249,22 @@
       (expect (chip8-control-state (chip8-app-state-machine app))
               :to-equal "error")
       (expect (chip8-app-quit-p app) :to-be-truthy))))
+(describe "P1 machine integration"
+  (it "keeps lores pixels visible through the serial app renderer"
+    (let* ((machine (make-chip8-machine))
+           (renderer (cl-tty-kit:make-renderer +screen-width+ +screen-height+))
+           (app (make-chip8-app
+                 :machine machine
+                 :renderer renderer
+                 :render-state (cl-chip8::make-chip8-render-state))))
+      (setf (aref (chip8-machine-framebuffer machine) 0 0) 1)
+      (cl-chip8::%render-chip8-app! app)
+      (expect
+        (cl-tty-kit:cell-char
+         (cl-tty-kit:screen-cell
+          (cl-tty-kit:renderer-screen renderer)
+          cl-chip8::+playfield-origin-x+
+          cl-chip8::+playfield-origin-y+))
+        :to-be
+        (code-char #x2580))))
+  (it "resumes a 64K key wait through the app input path" (let* ((machine (make-chip8-machine :platform :xo-chip :quirks (make-chip8-quirks :profile :modern :fx0a-completion :press))) (app (make-chip8-app :machine machine :state-machine (make-chip8-control-state-machine) :decoder (cl-tty-kit:make-input-decoder) :clock-hz 60))) (setf (chip8-machine-pc machine) #xfffe) (load-rom machine #(#xf0 #x0a) :address #xfffe) (execute-instruction! machine) (setf (chip8-app-state-machine app) (step-chip8-control-state (step-chip8-control-state (chip8-app-state-machine app) :start) :key-wait)) (expect (chip8-control-state (chip8-app-state-machine app)) :to-equal "waiting-key") (expect (cl-chip8::chip8-wait-state-pc (chip8-machine-waiting machine)) :to-be #xfffe) (cl-chip8::%apply-key-event! app (%app-test-event :character #\3)) (expect (chip8-machine-pc machine) :to-be 0) (expect (chip8-machine-register machine 0) :to-be 3) (expect (chip8-control-state (chip8-app-state-machine app)) :to-equal "running"))))

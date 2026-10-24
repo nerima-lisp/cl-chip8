@@ -106,9 +106,27 @@
       (step-chip8-app! app)))
   app)
 
+(defun %renderer-framebuffer (machine)
+  (let* ((resolution (chip8-machine-resolution machine))
+         (framebuffer (chip8-framebuffer-snapshot machine))
+         (copy (make-array '(32 64) :element-type 'bit)))
+    (dotimes (y 32)
+      (dotimes (x 64)
+        (setf (aref copy y x)
+              (if (eq resolution :hires)
+                  (if (plusp
+                       (logior (aref framebuffer (* y 2) (* x 2))
+                               (aref framebuffer (* y 2) (1+ (* x 2)))
+                               (aref framebuffer (1+ (* y 2)) (* x 2))
+                               (aref framebuffer (1+ (* y 2)) (1+ (* x 2)))))
+                      1
+                      0)
+                  (if (plusp (aref framebuffer y x)) 1 0)))))
+    copy))
+
 (defun %render-chip8-app! (app)
   (let ((screen (renderer-screen (chip8-app-renderer app)))
-        (framebuffer (chip8-framebuffer-snapshot (chip8-app-machine app)))
+        (framebuffer (%renderer-framebuffer (chip8-app-machine app)))
         (sound-active-p (plusp (chip8-machine-sound-timer (chip8-app-machine app)))))
     (if (chip8-app-render-pipeline app)
         (render-chip8-concurrently! screen framebuffer (chip8-app-render-pipeline app)

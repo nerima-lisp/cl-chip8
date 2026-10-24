@@ -72,8 +72,8 @@ and that :DOCUMENTATION string."
  "ROM is ~D bytes but only ~D bytes are available from the load address to the end of memory."
  :documentation
  "Signaled by LOAD-BYTES-INTO-MEMORY when SIZE bytes do not
-fit in the AVAILABLE space between the load address and the end of the
-4096-byte address space.")
+fit in the AVAILABLE bytes from the load address through the end of the
+machine's memory.")
 
 (define-chip8-condition
  chip8-rom-short-read
@@ -117,15 +117,16 @@ call stack already holding +CALL-STACK-LIMIT+ (16) entries.")
  chip8-memory-access-out-of-bounds
  ((address chip8-memory-access-out-of-bounds-address)
   (span chip8-memory-access-out-of-bounds-span))
- "A memory access at ~D spanning ~D byte(s) falls outside the 4096-byte address space."
+ "A memory access at ~D spanning ~D byte(s) falls outside this machine's memory capacity."
  :documentation
  "Signaled by CHECK-MEMORY-ACCESS (see memory.lisp) when an
 opcode -- FX55/FX65's register block, FX33's BCD digits (via MEMORY-WRITE),
 or DXYN's sprite bytes -- would read or write *MEMORY* outside its valid
-[0, +MEMORY-SIZE+) index range, computed from a ROM-controlled I register
-(plus an offset). Raised explicitly instead of relying on the implicit SBCL
-array-bounds check on AREF, so a malformed ROM produces a documented
-CHIP8-ERROR rather than an unspecified condition.")
+[0, memory-size) index range, where MEMORY-SIZE is this machine's allocated
+capacity, computed from a ROM-controlled I register (plus an offset). Raised
+explicitly instead of relying on the implicit SBCL array-bounds check on
+AREF, so a malformed ROM produces a documented CHIP8-ERROR rather than an
+unspecified condition.")
 
 (define-chip8-condition
  chip8-rom-not-regular-file

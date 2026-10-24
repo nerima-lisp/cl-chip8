@@ -31,6 +31,7 @@
   ;; Source files live under src/.
   :components ((:file "package") (:file "conditions") (:file "config")
                (:file "logging") (:file "types") (:file "quirks")
+               (:file "platforms")
                (:file "machine-types") (:file "machine") (:file "memory") (:file "fontset")
                (:file "display-types") (:file "display") (:file "opcode-data")
                (:file "opcode-execution") (:file "opcode-dispatch") (:file "opcode-cps")

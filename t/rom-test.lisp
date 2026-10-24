@@ -5,10 +5,37 @@
       (load-rom m #(1 2 3))
       (expect (memory-read m +rom-load-address+) :to-be 1)
       (expect (memory-read m (+ +rom-load-address+ 2)) :to-be 3)))
-  (it "rejects an oversized ROM"
+  (it "accepts a ROM that fills the default 4K program area"
+    (let* ((rom (make-array (- 4096 #x200)
+                            :element-type '(unsigned-byte 8)
+                            :initial-element #xa5))
+           (m (make-chip8-machine)))
+      (load-rom m rom)
+      (expect (memory-read m #xfff) :to-be #xa5)))
+  (it "rejects a ROM larger than the default 4K program area"
     (let ((m (make-chip8-machine)))
       (signals chip8-rom-too-large
-        (load-rom m (make-array 3585 :element-type '(unsigned-byte 8))))))
+        (load-rom m (make-array (1+ (- 4096 #x200))
+                                :element-type '(unsigned-byte 8))))))
+  (it "accepts exactly 65536 minus 0x200 bytes on XO-CHIP"
+    (let* ((rom (make-array (- 65536 #x200)
+                            :element-type '(unsigned-byte 8)
+                            :initial-element #x5a))
+           (m (make-chip8-machine :platform :xo-chip)))
+      (load-rom m rom)
+      (expect (memory-read m #xffff) :to-be #x5a)))
+  (it "rejects an XO-CHIP ROM one byte beyond its memory limit"
+    (let ((m (make-chip8-machine :platform :xo-chip)))
+      (signals chip8-rom-too-large
+        (load-rom m (make-array (1+ (- 65536 #x200))
+                                :element-type '(unsigned-byte 8))))))
+  (it "loads a full-size ROM when a modern machine's memory is overridden"
+    (let* ((rom (make-array (- 65536 #x200)
+                            :element-type '(unsigned-byte 8)
+                            :initial-element #x3c))
+           (m (make-chip8-machine :platform :modern :memory-size 65536)))
+      (load-rom m rom)
+      (expect (memory-read m #xffff) :to-be #x3c)))
   (it "rejects an empty ROM vector"
     (signals cl-chip8::chip8-rom-empty
       (load-rom (make-chip8-machine)
