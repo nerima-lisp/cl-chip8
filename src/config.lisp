@@ -303,11 +303,17 @@
                  for mapping = (%rom-database-platform-mapping key)
                  when mapping collect mapping))
          (db-record-mappings (%rom-database-record-platform-mappings rom-record))
-         (db-supported (find-if (function third) db-platforms))
+         (db-supported (or
+             (find-if (function third) db-platforms)
+             (unless db-platforms
+               (find-if (function third) db-record-mappings))))
          (unsupported
-           (and (getf rom-record :platforms)
-                (null db-supported)
-                (find-if (lambda (mapping) (null (third mapping))) db-platforms)))
+           (and (null db-supported)
+                (if db-platforms
+                    (find-if (lambda (mapping) (null (third mapping)))
+                             db-platforms)
+                    (find-if (lambda (mapping) (null (third mapping)))
+                             db-record-mappings))))
          (unsupported-bypass
            (or cli-platform-p cli-quirks-p))
          (platform-source

@@ -446,14 +446,20 @@ signals none instead."
             :to-equal (list t nil nil nil))))
 
 (describe "P4b ROM database configuration"
-  (it "selects the first supported database platform and records its defaults"
+  (it "resolves database platform metadata and defaults"
     (let* ((record
              (quote (:platforms (:original-chip8 :superchip)
                       :colors (:pixels ("#123456" "#abcdef")))))
            (config
              (cl-chip8:merge-chip8-config
               :rom-record record
-              :rom-sha1 "d6d8efef811350e7fba6197024c4973b360749b8")))
+              :rom-sha1 "d6d8efef811350e7fba6197024c4973b360749b8"))
+           (quirky-only-config
+             (cl-chip8:merge-chip8-config
+              :rom-record
+              (quote (:platforms nil
+                       :quirky-platforms
+                       (:xochip (:memory-leave-i-unchanged t)))))))
       (expect
        (list
         (cl-chip8:chip8-platform-name (cl-chip8:chip8-config-platform config))
@@ -466,7 +472,20 @@ signals none instead."
        :to-equal
        (list :cosmac-vip "db" 900 "db-platform"
              "d6d8efef811350e7fba6197024c4973b360749b8"
-             (quote ("#123456" "#ABCDEF")) "db"))))
+             (quote ("#123456" "#ABCDEF")) "db"))
+      (expect
+       (list
+        (cl-chip8:chip8-platform-name
+         (cl-chip8:chip8-config-platform quirky-only-config))
+        (cl-chip8:chip8-config-platform-source quirky-only-config)
+        (cl-chip8:chip8-quirks-profile
+         (cl-chip8:chip8-config-quirks quirky-only-config))
+        (cl-chip8:chip8-quirks-memory-i
+         (cl-chip8:chip8-config-quirks quirky-only-config))
+        (cl-chip8:chip8-config-clock-hz quirky-only-config)
+        (cl-chip8:chip8-config-clock-source quirky-only-config))
+       :to-equal
+       (quote (:xo-chip "db" :xo-chip :preserve 6000 "db-platform")))))
 
   (it "reports the winning clock source across CLI, TOML, and database defaults"
     (let* ((record (quote (:platforms (:original-chip8) :tickrate 7)))
@@ -505,10 +524,18 @@ signals none instead."
 
   (it "rejects unsupported database platforms unless a CLI override is explicit"
     (let* ((record (quote (:platforms (:hybrid-vip))))
+           (quirky-only-record
+             (quote (:platforms nil :quirky-platforms (:hybrid-vip nil))))
            (condition
              (handler-case
                  (progn
                    (cl-chip8:merge-chip8-config :rom-record record)
+                   nil)
+               (cl-chip8:chip8-unsupported-platform (condition) condition)))
+           (quirky-only-condition
+             (handler-case
+                 (progn
+                   (cl-chip8:merge-chip8-config :rom-record quirky-only-record)
                    nil)
                (cl-chip8:chip8-unsupported-platform (condition) condition)))
            (platform-override
@@ -517,8 +544,13 @@ signals none instead."
            (quirks-override
              (cl-chip8:merge-chip8-config
               :rom-record record :cli (quote (:quirks "schip")))))
-      (expect condition :to-be-type-of 'cl-chip8:chip8-unsupported-platform)
+      (expect condition :to-be-type-of
+              (quote cl-chip8:chip8-unsupported-platform))
       (expect (cl-chip8:chip8-unsupported-platform-name condition)
+              :to-equal "hybridVIP")
+      (expect quirky-only-condition :to-be-type-of
+              (quote cl-chip8:chip8-unsupported-platform))
+      (expect (cl-chip8:chip8-unsupported-platform-name quirky-only-condition)
               :to-equal "hybridVIP")
       (expect
        (list (cl-chip8:chip8-platform-name
