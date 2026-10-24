@@ -173,7 +173,10 @@
 
       root = ./.;
 
-      sourceInclude = [ ./t/timendus.snapshots ./t/chip8archive.snapshots ];
+      sourceInclude = [
+        ./t/timendus.snapshots
+        ./t/chip8archive.snapshots
+      ];
 
       meta = {
         description = "A CHIP-8 (1977 COSMAC VIP instruction set) interpreter for the terminal.";
