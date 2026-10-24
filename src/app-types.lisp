@@ -4,7 +4,12 @@
   machine state-machine renderer render-state decoder render-pipeline
   (clock-hz +default-clock-hz+ :type (integer 1 *))
   (instruction-remainder 0 :type (integer 0 59))
-  (paused-p nil :type boolean) (quit-p nil :type boolean)
+  (paused-p nil :type boolean)
+  (display-too-small-p nil :type boolean)
+  (display-mode :lores :type (member :lores :half-block :quarter-block :braille :too-small))
+  (display-columns +screen-width+ :type (integer 1 *))
+  (display-rows +screen-height+ :type (integer 1 *))
+  (quit-p nil :type boolean)
   (error nil :type (or null condition))
   audio-output
   (audio-mode :off :type (member :auto :pcm :bell :off))

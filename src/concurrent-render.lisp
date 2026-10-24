@@ -19,9 +19,10 @@
                (error
                 "Render worker readiness channel closed before startup completed.")))))
 
-(defun %make-render-snapshot-buffer (row-count width)
+(defun %make-render-snapshot-buffer
+    (row-count source-width source-rows-per-cell)
   "Allocate reusable snapshots for the framebuffer geometry."
-  (declare (type (integer 1 *) row-count width))
+  (declare (type (integer 1 *) row-count source-width source-rows-per-cell))
   (let ((buffer (make-array row-count
                             :element-type t
                             :initial-element nil
@@ -30,8 +31,8 @@
       (setf (aref buffer index)
             (%make-render-row-snapshot
              index
-             (make-array width :element-type (quote bit))
-             (make-array width :element-type (quote bit)))))))
+             (make-array (list source-rows-per-cell source-width)
+                         :initial-element 0))))))
 
 (defun %make-render-result-buffer (row-count width)
   "Allocate reusable rendered strings for the framebuffer geometry."
@@ -43,6 +44,14 @@
     (dotimes (index row-count buffer)
       (setf (aref buffer index) (make-string width)))))
 
+(defun %make-render-style-buffer (row-count)
+  "Allocate reusable per-row style results for the framebuffer geometry."
+  (declare (type (integer 1 *) row-count))
+  (make-array row-count
+              :element-type t
+              :initial-element nil
+              :fill-pointer row-count))
+
 (defun %make-render-job-buffer (parallelism)
   "Allocate reusable batch-job records for PARALLELISM workers."
   (declare (type (integer 1 *) parallelism))
@@ -51,7 +60,7 @@
                             :initial-element nil)))
     (dotimes (index parallelism buffer)
       (setf (aref buffer index)
-            (%make-render-batch-job nil nil 0 0)))))
+            (%make-render-batch-job nil nil nil :lores 0 0)))))
 
 (defun %render-batch-job (job pipeline)
   "Render the rows assigned to JOB and signal its completion."
@@ -59,29 +68,37 @@
            (type chip8-render-pipeline pipeline))
   (let* ((snapshots (render-batch-job-snapshots job))
          (results (render-batch-job-results job))
+         (row-styles (render-batch-job-row-styles job))
+         (mode (render-batch-job-mode job))
          (start (render-batch-job-start job))
          (end (render-batch-job-end job))
          (completed 0)
          (caught-condition nil))
-    (declare (type (vector t *) snapshots results)
+    (declare (type (vector t *) snapshots results row-styles)
              (type fixnum start end completed))
     (handler-case
         (loop for snapshot-index from start below end
-              do (let ((snapshot
-                         (the render-row-snapshot
-                              (aref snapshots snapshot-index)))
-                       (reusable-characters
-                         (the (or null string)
-                              (aref results snapshot-index))))
+              do (let* ((snapshot
+                          (the render-row-snapshot
+                               (aref snapshots snapshot-index)))
+                        (reusable-characters
+                          (the (or null string)
+                               (aref results snapshot-index)))
+                        (reusable-styles
+                          (aref row-styles snapshot-index)))
                    (declare (type fixnum snapshot-index)
                             (type render-row-snapshot snapshot)
                             (type (or null string) reusable-characters))
-                   (setf (aref results snapshot-index)
-                         (prog1
-                             (%render-row-snapshot
-                              snapshot
-                              reusable-characters)
-                           (incf completed)))))
+                   (multiple-value-bind (characters styles)
+                       (%render-framebuffer-row-data
+                        (render-row-snapshot-pixels snapshot)
+                        0
+                        mode
+                        reusable-characters
+                        reusable-styles)
+                     (setf (aref results snapshot-index) characters
+                           (aref row-styles snapshot-index) styles)
+                     (incf completed))))
       (error (condition)
         (setf caught-condition condition)))
     (setf (render-batch-job-caught-condition job) caught-condition)
@@ -112,8 +129,8 @@
 The pipeline snapshots rows on the caller thread, maps pure conversions
 over immutable row batches through persistent channel workers, and writes
 each worker-owned result range into a caller-owned vector. Reusable snapshot,
-result-string, and batch storage is owned by the pipeline and is not
-mutated until all jobs from the current render have completed.
+result-string, per-row-style, and batch storage is owned by the pipeline and
+is not mutated until all jobs from the current render have completed.
 Completion is reported through a reusable semaphore so the hot path does not
 allocate or shuttle one result payload through a second channel.
 SHUTDOWN-TIMEOUT is passed directly to the native cl-concurrent-kit
@@ -143,7 +160,7 @@ executor shutdown operation."
                     shutdown-timeout
                     (make-atomic-counter) (make-atomic-counter) 0
                     (make-lock :name "cl-chip8 render pipeline") nil
-                    nil nil job-buffer nil
+                    nil nil nil job-buffer
                     (make-chip8-render-state))))
             (%start-render-workers
              executor ready-channel parallelism shutdown-timeout

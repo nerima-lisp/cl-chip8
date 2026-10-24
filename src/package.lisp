@@ -22,7 +22,7 @@
    #:chip8-wait-state-pc
    #:chip8-quirks #:chip8-quirks-p #:make-chip8-quirks #:merge-chip8-quirks #:chip8-quirks-profile #:chip8-quirks-vf-behavior #:chip8-quirks-memory-i #:chip8-quirks-display-wait #:chip8-quirks-clipping #:chip8-quirks-shift-source #:chip8-quirks-bnnn-register #:chip8-quirks-fx0a-completion
    #:memory-reset! #:load-bytes-into-memory #:check-memory-access #:memory-read #:load-fontset-into-memory! #:display-reset! #:display-pixel-value #:display-xor-pixel! #:chip8-framebuffer #:chip8-framebuffer-snapshot #:execute-instruction! #:fetch-opcode #:step-timers! #:sound-timer-active-p #:keypad-reset! #:key-down-p #:pressed-keys #:chip8-key-down! #:chip8-key-up! #:load-rom #:load-rom-file
-   #:chip8-run-result #:chip8-run-result-status #:chip8-run-result-executed #:chip8-run-result-machine #:chip8-run-result-continuation #:chip8-run-instructions #:chip8-run-ticks #:chip8-resume! #:render-chip8! #:render-chip8-concurrently! #:run
+   #:chip8-run-result #:chip8-run-result-status #:chip8-run-result-executed #:chip8-run-result-machine #:chip8-run-result-continuation #:chip8-run-instructions #:chip8-run-ticks #:chip8-resume! #:render-chip8! #:set-chip8-render-palette! #:render-chip8-concurrently! #:run
    #:chip8-control-event #:chip8-control-event-p #:make-chip8-control-event #:chip8-control-event-type #:chip8-control-event-value
    #:*chip8-state-machine-definition* #:make-chip8-control-state-machine #:chip8-control-state #:step-chip8-control-state
    #:chip8-app #:make-chip8-app #:chip8-app-machine #:chip8-app-state-machine

@@ -54,7 +54,8 @@
                 (chip8-app-state-machine app) :resume)))
        t)
       ((and character (char= character #\n))
-       (when (chip8-app-paused-p app)
+       (when (and (chip8-app-paused-p app)
+                  (not (chip8-app-display-too-small-p app)))
          (setf (chip8-app-paused-p app) nil)
          (step-chip8-app! app :advance-timers-p nil)
          (setf (chip8-app-paused-p app) t)
@@ -96,50 +97,119 @@
 (defun %apply-key-events! (app events)
   (dolist (event events app) (%apply-key-event! app event)))
 
-(defun %advance-chip8! (app)
-  (%apply-key-events! app (%poll-input-events (chip8-app-decoder app) *standard-input*))
-  (unless (chip8-app-quit-p app)
-    (when (string= (chip8-control-state (chip8-app-state-machine app)) "ready")
-      (setf (chip8-app-state-machine app)
-            (step-chip8-control-state (chip8-app-state-machine app) :start)))
-    (when (string= (chip8-control-state (chip8-app-state-machine app)) "waiting-display")
-      (resume-chip8-app app (make-chip8-control-event :tick)))
-    (unless (member (chip8-control-state (chip8-app-state-machine app))
-                    '("paused" "waiting-key" "waiting-display" "finished" "error")
-                    :test #'string=)
-      (step-chip8-app! app)))
-  (%synchronize-chip8-audio-state! app)
-  app)
+(defun %refresh-chip8-display! (app columns rows)
+  (multiple-value-bind (mode required-columns required-rows)
+      (%select-chip8-display-mode
+       (chip8-machine-resolution (chip8-app-machine app))
+       columns rows)
+    (let* ((too-small-p (eq mode :too-small))
+           (screen-columns
+             (case mode
+               (:lores 66)
+               (:half-block 130)
+               (:quarter-block 66)
+               (:braille 66)
+               (:too-small (max 1 columns))))
+           (screen-rows
+             (case mode
+               (:lores 18)
+               (:half-block 34)
+               (:quarter-block 34)
+               (:braille 18)
+               (:too-small (max 1 rows))))
+           (changed-p
+             (or (not (eq mode (chip8-app-display-mode app)))
+                 (/= screen-columns (chip8-app-display-columns app))
+                 (/= screen-rows (chip8-app-display-rows app))))
+           (render-mode (if too-small-p :lores mode)))
+      (setf (chip8-app-display-too-small-p app) too-small-p)
+      (when changed-p
+        (setf (chip8-app-display-mode app) mode
+              (chip8-app-display-columns app) screen-columns
+              (chip8-app-display-rows app) screen-rows)
+        (when (chip8-app-render-state app)
+          (let ((state (chip8-app-render-state app)))
+            (setf (chip8-render-state-framebuffer state) nil
+                  (chip8-render-state-sound-active-p state) nil
+                  (chip8-render-state-display-mode state) render-mode)))
+        (when (chip8-app-render-pipeline app)
+          (let ((state
+                  (chip8-render-pipeline-state
+                   (chip8-app-render-pipeline app))))
+            (setf (chip8-render-state-framebuffer state) nil
+                  (chip8-render-state-sound-active-p state) nil
+                  (chip8-render-state-display-mode state) render-mode)))
+        (when (chip8-app-renderer app)
+          (cl-tty-kit:renderer-resize
+           (chip8-app-renderer app) screen-columns screen-rows)
+          (cl-tty-kit:renderer-clear (chip8-app-renderer app))))
+      (when (and too-small-p (chip8-app-renderer app))
+        (let* ((screen (renderer-screen (chip8-app-renderer app)))
+               (message
+                 (format nil "Terminal too small. Need ~Dx~D."
+                         required-columns required-rows))
+               (visible-message
+                 (subseq message 0 (min screen-columns (length message)))))
+          (screen-write-string screen 0 0 visible-message)))
+      (values mode required-columns required-rows))))
 
-(defun %renderer-framebuffer (machine)
-  (let* ((resolution (chip8-machine-resolution machine))
-         (framebuffer (chip8-framebuffer-snapshot machine))
-         (copy (make-array '(32 64) :element-type 'bit)))
-    (dotimes (y 32)
-      (dotimes (x 64)
-        (setf (aref copy y x)
-              (if (eq resolution :hires)
-                  (if (plusp
-                       (logior (aref framebuffer (* y 2) (* x 2))
-                               (aref framebuffer (* y 2) (1+ (* x 2)))
-                               (aref framebuffer (1+ (* y 2)) (* x 2))
-                               (aref framebuffer (1+ (* y 2)) (1+ (* x 2)))))
-                      1
-                      0)
-                  (if (plusp (aref framebuffer y x)) 1 0)))))
-    copy))
+(defun %advance-chip8!
+    (app &optional (columns nil columns-supplied-p)
+               (rows nil rows-supplied-p))
+  (flet ((refresh-display ()
+           (when (chip8-app-renderer app)
+             (if (and columns-supplied-p rows-supplied-p)
+                 (%refresh-chip8-display! app columns rows)
+                 (multiple-value-bind (terminal-columns terminal-rows)
+                     (cl-tty-kit:terminal-size)
+                   (%refresh-chip8-display!
+                    app (or terminal-columns 0) (or terminal-rows 0)))))))
+    (refresh-display)
+    (let ((resolution (chip8-machine-resolution (chip8-app-machine app))))
+      (%apply-key-events! app (%poll-input-events (chip8-app-decoder app)
+                                                   *standard-input*))
+      (unless (eq resolution
+                  (chip8-machine-resolution (chip8-app-machine app)))
+        (refresh-display)))
+    (unless (chip8-app-quit-p app)
+      (unless (chip8-app-display-too-small-p app)
+        (when (string= (chip8-control-state (chip8-app-state-machine app))
+                       "ready")
+          (setf (chip8-app-state-machine app)
+                (step-chip8-control-state
+                 (chip8-app-state-machine app) :start)))
+        (when (string= (chip8-control-state (chip8-app-state-machine app))
+                       "waiting-display")
+          (resume-chip8-app app (make-chip8-control-event :tick)))
+        (unless (or (chip8-app-paused-p app)
+                    (member (chip8-control-state
+                             (chip8-app-state-machine app))
+                            '("paused" "waiting-key" "waiting-display"
+                              "finished" "error")
+                            :test #'string=))
+          (let ((resolution
+                  (chip8-machine-resolution (chip8-app-machine app))))
+            (step-chip8-app! app)
+            (unless (eq resolution
+                        (chip8-machine-resolution (chip8-app-machine app)))
+              (refresh-display))))))
+    (%synchronize-chip8-audio-state! app)
+    app))
 
 (defun %render-chip8-app! (app)
   (let ((screen (renderer-screen (chip8-app-renderer app)))
-        (framebuffer (%renderer-framebuffer (chip8-app-machine app)))
-        (sound-active-p (plusp (chip8-machine-sound-timer (chip8-app-machine app)))))
-    (if (chip8-app-render-pipeline app)
-        (render-chip8-concurrently! screen framebuffer (chip8-app-render-pipeline app)
-                                    :sound-active-p sound-active-p)
-        (render-chip8! screen framebuffer (chip8-app-render-state app)
-                       :sound-active-p sound-active-p))
+        (framebuffer (chip8-framebuffer-snapshot (chip8-app-machine app)))
+        (mode (chip8-app-display-mode app))
+        (sound-active-p
+          (plusp (chip8-machine-sound-timer (chip8-app-machine app)))))
+    (unless (chip8-app-display-too-small-p app)
+      (if (chip8-app-render-pipeline app)
+          (render-chip8-concurrently!
+           screen framebuffer (chip8-app-render-pipeline app)
+           :mode mode :sound-active-p sound-active-p)
+          (render-chip8! screen framebuffer (chip8-app-render-state app)
+                         :mode mode :sound-active-p sound-active-p)))
     (renderer-render (chip8-app-renderer app))))
-
 (defun %chip8-app-finished-p (app)
   (or (chip8-app-quit-p app)
       (member (chip8-control-state (chip8-app-state-machine app))
@@ -195,6 +265,10 @@
                                      :alternate-screen t
                                      :keyboard-enhancements 10)
                    (setf (chip8-app-stream app) session-stream)
+                   (multiple-value-bind (columns rows)
+                       (cl-tty-kit:terminal-size)
+                     (%refresh-chip8-display!
+                      app (or columns 0) (or rows 0)))
                    (%synchronize-chip8-audio-state! app)
                    (tick-loop-run-realtime app
                                            #'%advance-chip8!

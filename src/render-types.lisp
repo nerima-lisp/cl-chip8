@@ -1,10 +1,10 @@
 ;;;; src/render-types.lisp -- terminal rendering constants and lookup data.
 (in-package #:cl-chip8)
 
-(deftype column () '(integer 0 63))
-(deftype row () '(integer 0 31))
-(deftype terminal-row () '(integer 0 15))
-(deftype row-bits () '(simple-array bit (64)))
+(deftype column () '(integer 0 *))
+(deftype row () '(integer 0 *))
+(deftype terminal-row () '(integer 0 *))
+(deftype row-bits () '(simple-array bit (*)))
 
 (defconstant +screen-width+ (+ +display-width+ 2)
   "Terminal screen width: the 64-pixel-wide playfield plus a 1-cell border on
@@ -35,38 +35,55 @@ terminal row, plus a 1-cell border on each side.")
          (type (simple-array character (4)) +half-block-character-table+))
 
 (defstruct (chip8-render-state (:constructor make-chip8-render-state))
-  (framebuffer nil :type (or null (simple-array bit (* *))))
+  (framebuffer nil :type (or null (array * (* *))))
   (sound-active-p nil :type boolean)
-  (frame-count 0 :type (unsigned-byte 64)))
+  (frame-count 0 :type (unsigned-byte 64))
+  (display-mode :lores
+                :type (member :lores :half-block :quarter-block :braille)))
 
 (defun %copy-framebuffer (framebuffer)
-  (declare (type (simple-array bit (* *)) framebuffer))
+  (declare (type (array * (* *)) framebuffer))
   (let* ((height (array-dimension framebuffer 0))
          (width (array-dimension framebuffer 1))
-         (copy (make-array (list height width) :element-type 'bit)))
+         (copy (make-array (list height width)
+                           :element-type (array-element-type framebuffer))))
     (dotimes (y height copy)
       (dotimes (x width)
         (setf (aref copy y x) (aref framebuffer y x))))))
 
-(defun %changed-terminal-rows (state framebuffer)
+(defun %changed-terminal-rows
+    (state framebuffer
+     &optional (mode (chip8-render-state-display-mode state)))
   (declare (type chip8-render-state state)
-           (type (simple-array bit (* *)) framebuffer))
+           (type (array * (* *)) framebuffer))
   (let* ((height (array-dimension framebuffer 0))
          (width (array-dimension framebuffer 1))
-         (terminal-row-count (ceiling height 2))
+         (pixels-per-terminal-row
+           (ecase mode
+             (:lores 2)
+             (:half-block 2)
+             (:quarter-block 2)
+             (:braille 4)))
+         (terminal-row-count (ceiling height pixels-per-terminal-row))
          (previous (chip8-render-state-framebuffer state))
          (same-dimensions-p
            (and previous
                 (equal (array-dimensions previous)
                        (array-dimensions framebuffer))))
+         (mode-changed-p
+           (not (eq mode (chip8-render-state-display-mode state))))
          (rows (make-array terminal-row-count
                            :element-type 'bit :initial-element 0)))
     (dotimes (terminal-row terminal-row-count rows)
-      (let ((y0 (* terminal-row 2)))
+      (let ((y0 (* terminal-row pixels-per-terminal-row)))
         (when (or (not same-dimensions-p)
-                  (loop for y from y0 below (min height (+ y0 2))
-                        thereis (loop for x below width
-                                      thereis
-                                      (not (eql (aref previous y x)
-                                                (aref framebuffer y x))))))
+                  mode-changed-p
+                  (loop for y from y0
+                          below (min height
+                                     (+ y0 pixels-per-terminal-row))
+                        thereis
+                        (loop for x below width
+                              thereis
+                              (not (eql (aref previous y x)
+                                        (aref framebuffer y x))))))
           (setf (sbit rows terminal-row) 1))))))

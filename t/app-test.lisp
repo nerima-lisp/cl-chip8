@@ -152,36 +152,142 @@
         (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
                 :to-be 16))))
   (it
-    "renders hires pixels after downsampling each 2x2 block"
-    (let* ((machine (make-chip8-machine :platform :schip))
-           (renderer (cl-tty-kit:make-renderer +screen-width+ +screen-height+))
-           (app (make-chip8-app
-                 :machine machine
-                 :renderer renderer
-                 :render-state (cl-chip8::make-chip8-render-state))))
-      (set-chip8-machine-resolution! machine :hires)
+  "renders 128x64 hires values directly with half-block palette colors"
+  (let* ((machine (make-chip8-machine :platform :schip))
+         (renderer (cl-tty-kit:make-renderer +screen-width+ +screen-height+))
+         (render-state (cl-chip8::make-chip8-render-state))
+         (app (make-chip8-app
+               :machine machine :renderer renderer
+               :render-state render-state)))
+    (set-chip8-machine-resolution! machine :hires)
+    (let ((cl-chip8::*chip8-render-palette*
+            (copy-seq cl-chip8::*chip8-render-palette*)))
+      (cl-chip8:set-chip8-render-palette!
+       '("#000000" "#ff0000" "#00ff00" "#0000ff"))
       (let ((framebuffer (chip8-machine-framebuffer machine)))
-        (setf (aref framebuffer 8 8) 1
-              (aref framebuffer 8 11) 2
-              (aref framebuffer 9 12) 3
-              (aref framebuffer 9 15) 2))
+        (setf (aref framebuffer 2 3) 1
+              (aref framebuffer 3 3) 2))
+      (cl-chip8::%refresh-chip8-display! app 130 34)
+      (let ((snapshot (chip8-framebuffer-snapshot machine)))
+        (expect (array-dimensions snapshot) :to-equal '(64 128))
+        (expect (aref snapshot 2 3) :to-be 1)
+        (expect (aref snapshot 3 3) :to-be 2))
       (cl-chip8::%render-chip8-app! app)
-      (let ((screen (cl-tty-kit:renderer-screen renderer)))
-        (dotimes (index 4)
-          (expect
-            (cl-tty-kit:cell-char
-             (cl-tty-kit:screen-cell
-              screen
-              (+ cl-chip8::+playfield-origin-x+ index 4)
-              (+ cl-chip8::+playfield-origin-y+ 2)))
-            :to-be (code-char #x2580)))
-        (expect
-          (cl-tty-kit:cell-char
-           (cl-tty-kit:screen-cell
-            screen
-            (+ cl-chip8::+playfield-origin-x+ 8)
-            (+ cl-chip8::+playfield-origin-y+ 2)))
-          :to-be (code-char 32)))))
+      (let* ((screen (cl-tty-kit:renderer-screen renderer))
+             (cell
+               (cl-tty-kit:screen-cell
+                screen
+                (+ cl-chip8::+playfield-origin-x+ 3)
+                (+ cl-chip8::+playfield-origin-y+ 1))))
+        (expect (cl-tty-kit:screen-width screen) :to-be 130)
+        (expect (cl-tty-kit:screen-height screen) :to-be 34)
+        (expect (cl-tty-kit:cell-char cell) :to-be (code-char #x2580))
+        (expect (cl-tty-kit:cell-style cell)
+                :to-equal
+                (list
+                 (cl-tty-kit:style-fg
+                  (cl-tty-kit:rgb-to-256 255 0 0))
+                 (cl-tty-kit:style-bg
+                  (cl-tty-kit:rgb-to-256 0 255 0))))))))
+  (it
+  "blocks advancement while too small and resumes after recovery"
+  (let* ((machine (make-chip8-machine :platform :schip))
+         (renderer (cl-tty-kit:make-renderer +screen-width+ +screen-height+))
+         (decoder (cl-tty-kit:make-input-decoder))
+         (app (make-chip8-app
+               :machine machine
+               :state-machine (cl-chip8::make-chip8-control-state-machine)
+               :renderer renderer
+               :decoder decoder
+               :clock-hz 60))
+         (*standard-input* (make-string-input-stream "")))
+    (set-chip8-machine-resolution! machine :hires)
+    (setf (aref (chip8-machine-memory machine) #x200) #x60
+          (aref (chip8-machine-memory machine) #x201) #x01
+          (cl-dataflow-kit:state-machine-state
+           (chip8-app-state-machine app)) "running")
+    (cl-chip8::%refresh-chip8-display! app 65 17)
+    (expect (cl-chip8::chip8-app-display-too-small-p app) :to-be t)
+    (expect (cl-chip8::chip8-app-display-mode app) :to-be :too-small)
+    (expect (cl-tty-kit:screen-width (cl-tty-kit:renderer-screen renderer))
+            :to-be 65)
+    (expect (cl-tty-kit:screen-height (cl-tty-kit:renderer-screen renderer))
+            :to-be 17)
+    (expect
+      (cl-tty-kit:cell-char
+       (cl-tty-kit:screen-cell
+        (cl-tty-kit:renderer-screen renderer) 0 0))
+      :to-be #\T)
+    (cl-chip8::%advance-chip8! app 65 17)
+    (expect (chip8-machine-pc machine) :to-be #x200)
+    (expect (chip8-machine-register machine 0) :to-be 0)
+    (setf (chip8-app-paused-p app) t
+          (cl-dataflow-kit:state-machine-state
+           (chip8-app-state-machine app)) "paused")
+    (cl-chip8::%advance-chip8! app 66 18)
+    (expect (cl-chip8::chip8-app-display-too-small-p app) :to-be nil)
+    (expect (cl-chip8::chip8-app-display-mode app) :to-be :braille)
+    (expect (chip8-app-paused-p app) :to-be t)
+    (expect (cl-chip8::chip8-control-state
+             (chip8-app-state-machine app))
+            :to-equal "paused")
+    (expect (cl-tty-kit:screen-width (cl-tty-kit:renderer-screen renderer))
+            :to-be 66)
+    (expect (cl-tty-kit:screen-height (cl-tty-kit:renderer-screen renderer))
+            :to-be 18)
+    (expect (chip8-machine-pc machine) :to-be #x200)
+    (expect (chip8-machine-register machine 0) :to-be 0)
+    (cl-chip8::%apply-control-key!
+     app (%app-test-event :character #\o))
+    (cl-chip8::%advance-chip8! app 66 18)
+    (expect (chip8-machine-pc machine) :to-be #x202)
+    (expect (chip8-machine-register machine 0) :to-be 1)))
+  (it
+  "switches renderer modes and sizes for the available terminal geometry"
+  (let* ((machine (make-chip8-machine :platform :schip))
+         (renderer (cl-tty-kit:make-renderer +screen-width+ +screen-height+))
+         (render-state (cl-chip8::make-chip8-render-state))
+         (app (make-chip8-app
+               :machine machine :renderer renderer
+               :render-state render-state)))
+    (set-chip8-machine-resolution! machine :hires)
+    (setf (cl-chip8::chip8-render-state-framebuffer render-state)
+          (make-array '(32 64) :element-type '(unsigned-byte 2))
+          (cl-chip8::chip8-render-state-frame-count render-state) 7)
+    (cl-chip8::%refresh-chip8-display! app 130 34)
+    (expect (cl-chip8::chip8-app-display-mode app) :to-be :half-block)
+    (expect (cl-tty-kit:screen-width (cl-tty-kit:renderer-screen renderer))
+            :to-be 130)
+    (expect (cl-tty-kit:screen-height (cl-tty-kit:renderer-screen renderer))
+            :to-be 34)
+    (expect (cl-chip8::chip8-render-state-framebuffer render-state) :to-be nil)
+    (expect (cl-chip8::chip8-render-state-frame-count render-state) :to-be 7)
+    (setf (cl-chip8::chip8-render-state-framebuffer render-state)
+          (make-array '(64 128) :element-type '(unsigned-byte 2)))
+    (cl-chip8::%refresh-chip8-display! app 66 34)
+    (expect (cl-chip8::chip8-app-display-mode app) :to-be :quarter-block)
+    (expect (cl-tty-kit:screen-width (cl-tty-kit:renderer-screen renderer))
+            :to-be 66)
+    (expect (cl-tty-kit:screen-height (cl-tty-kit:renderer-screen renderer))
+            :to-be 34)
+    (expect (cl-chip8::chip8-render-state-framebuffer render-state) :to-be nil)
+    (expect (cl-chip8::chip8-render-state-frame-count render-state) :to-be 7)
+    (setf (cl-chip8::chip8-render-state-framebuffer render-state)
+          (make-array '(64 128) :element-type '(unsigned-byte 2)))
+    (cl-chip8::%refresh-chip8-display! app 66 18)
+    (expect (cl-chip8::chip8-app-display-mode app) :to-be :braille)
+    (expect (cl-tty-kit:screen-width (cl-tty-kit:renderer-screen renderer))
+            :to-be 66)
+    (expect (cl-tty-kit:screen-height (cl-tty-kit:renderer-screen renderer))
+            :to-be 18)
+    (expect (cl-chip8::chip8-render-state-framebuffer render-state) :to-be nil)
+    (set-chip8-machine-resolution! machine :lores)
+    (cl-chip8::%refresh-chip8-display! app 66 18)
+    (expect (cl-chip8::chip8-app-display-mode app) :to-be :lores)
+    (expect (cl-tty-kit:screen-width (cl-tty-kit:renderer-screen renderer))
+            :to-be 66)
+    (expect (cl-tty-kit:screen-height (cl-tty-kit:renderer-screen renderer))
+            :to-be 18)))
   (it
     "starts a ready app and executes one instruction without a terminal"
     (let* ((machine (make-chip8-machine))
