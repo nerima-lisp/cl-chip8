@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "chip-8-database": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788204957,
+        "narHash": "sha256-P0r6QExcTJziLsQkswr2mwZnyAzLoP3dZuegMj8t+zM=",
+        "owner": "chip-8",
+        "repo": "chip-8-database",
+        "rev": "4b2a2a33f3392d813e8be4c7b955838d0797b425",
+        "type": "github"
+      },
+      "original": {
+        "owner": "chip-8",
+        "repo": "chip-8-database",
+        "rev": "4b2a2a33f3392d813e8be4c7b955838d0797b425",
+        "type": "github"
+      }
+    },
     "cl-boundary-kit": {
       "inputs": {
         "cl-host-kit": "cl-host-kit",
@@ -80,6 +97,23 @@
         "owner": "nerima-lisp",
         "ref": "v0.6.1",
         "repo": "cl-concurrent-kit",
+        "type": "github"
+      }
+    },
+    "cl-crypto-kit": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792410368,
+        "narHash": "sha256-NLW0iKNKNELLzW3CndtxWmQxlw3aIdfeskyXT40buEo=",
+        "owner": "nerima-lisp",
+        "repo": "cl-crypto-kit",
+        "rev": "41ed7e90f736591aa1961bc6deb0741c73392a60",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nerima-lisp",
+        "ref": "v0.2.1",
+        "repo": "cl-crypto-kit",
         "type": "github"
       }
     },
@@ -463,10 +497,12 @@
     },
     "root": {
       "inputs": {
+        "chip-8-database": "chip-8-database",
         "cl-boundary-kit": "cl-boundary-kit",
         "cl-cli": "cl-cli",
         "cl-codec-kit": "cl-codec-kit",
         "cl-concurrent-kit": "cl-concurrent-kit",
+        "cl-crypto-kit": "cl-crypto-kit",
         "cl-dataflow-kit": "cl-dataflow-kit",
         "cl-date-kit": "cl-date-kit",
         "cl-host-kit": "cl-host-kit_2",

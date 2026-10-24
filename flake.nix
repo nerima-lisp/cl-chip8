@@ -4,6 +4,11 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+    chip-8-database = {
+      url = "github:chip-8/chip-8-database/4b2a2a33f3392d813e8be4c7b955838d0797b425";
+      flake = false;
+    };
+
     cl-nix-forge = {
       url = "github:nerima-lisp/cl-nix-forge/v0.6.1";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -21,6 +26,11 @@
 
     cl-concurrent-kit = {
       url = "github:nerima-lisp/cl-concurrent-kit/v0.6.1";
+      flake = false;
+    };
+
+    cl-crypto-kit = {
+      url = "github:nerima-lisp/cl-crypto-kit/v0.2.1";
       flake = false;
     };
 
@@ -116,6 +126,7 @@
       cl-tty-kit,
       cl-cli,
       cl-concurrent-kit,
+      cl-crypto-kit,
       cl-boundary-kit,
       cl-date-kit,
       cl-codec-kit,
@@ -130,6 +141,7 @@
       cl-observability-kit,
       cl-dataflow-kit,
       cl-prolog-kit,
+      chip-8-database,
       timendus-chip8-test-suite,
     }:
     let
