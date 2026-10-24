@@ -121,6 +121,11 @@
       url = "github:Timendus/chip8-test-suite/v4.2";
       flake = false;
     };
+
+    chip8archive = {
+      url = "github:JohnEarnest/chip8Archive/761e3ffc63f43e6a849e80714122feff2afca208";
+      flake = false;
+    };
   };
 
   outputs =
@@ -149,6 +154,7 @@
       cl-prolog-kit,
       chip-8-database,
       timendus-chip8-test-suite,
+      chip8archive,
     }:
     let
       systems = [
@@ -337,6 +343,9 @@
         packages.timendus = ctx.pkgs.runCommand "timendus-chip8-test-suite" { } ''
           cp -r ${timendus-chip8-test-suite} "$out"
         '';
+        packages.chip8archive = ctx.pkgs.runCommand "chip8archive" { } ''
+          cp -r ${chip8archive} "$out"
+        '';
         checks = {
           paredit-lint =
             ctx.pkgs.runCommand "cl-chip8-paredit-lint"
@@ -396,6 +405,7 @@
           checks.default = ctx.generated.checks.default.overrideAttrs (old: {
             preCheck = (old.preCheck or "") + ''
               export CHIP8_TIMENDUS_DIR=${timendus-chip8-test-suite}/bin
+              export CL_CHIP8_ROM_CORPUS=${chip8archive}
               rom_db_generated="$(mktemp)"
               trap 'rm -f "$rom_db_generated"' EXIT
               sbcl --script tools/generate-rom-database.lisp \

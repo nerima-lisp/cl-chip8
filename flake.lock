@@ -17,6 +17,23 @@
         "type": "github"
       }
     },
+    "chip8archive": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789524124,
+        "narHash": "sha256-I3fuKV0u8aQvIT5Hfk9GLVn45VB4VPsFL0QdoCDWc+I=",
+        "owner": "JohnEarnest",
+        "repo": "chip8Archive",
+        "rev": "761e3ffc63f43e6a849e80714122feff2afca208",
+        "type": "github"
+      },
+      "original": {
+        "owner": "JohnEarnest",
+        "repo": "chip8Archive",
+        "rev": "761e3ffc63f43e6a849e80714122feff2afca208",
+        "type": "github"
+      }
+    },
     "cl-audio-kit": {
       "inputs": {
         "cl-nix-forge": "cl-nix-forge",
@@ -635,6 +652,7 @@
     "root": {
       "inputs": {
         "chip-8-database": "chip-8-database",
+        "chip8archive": "chip8archive",
         "cl-audio-kit": "cl-audio-kit",
         "cl-boundary-kit": "cl-boundary-kit",
         "cl-cli": "cl-cli",
