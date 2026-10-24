@@ -26,13 +26,15 @@
 
 (defun %snapshot-framebuffer-for-render
     (framebuffer previous-framebuffer previous-mode mode row-count
-     source-rows-per-cell)
+     source-rows-per-cell previous-palette-generation palette-generation)
   (declare (type (array * (* *)) framebuffer)
            (type (or null (array * (* *))) previous-framebuffer)
            (type (or null (member :lores :half-block :quarter-block :braille))
                  previous-mode)
            (type (member :lores :half-block :quarter-block :braille) mode)
-           (type (integer 1 *) row-count source-rows-per-cell))
+           (type (integer 1 *) row-count source-rows-per-cell)
+           (type (or null (integer 0 *)) previous-palette-generation)
+           (type (integer 0 *) palette-generation))
   (let* ((height (array-dimension framebuffer 0))
          (width (array-dimension framebuffer 1))
          (same-geometry-p
@@ -40,6 +42,8 @@
                 (eq previous-mode mode)
                 (= height (array-dimension previous-framebuffer 0))
                 (= width (array-dimension previous-framebuffer 1))))
+         (palette-changed-p
+           (not (eql previous-palette-generation palette-generation)))
          (changed (make-array row-count
                               :element-type 'bit
                               :initial-element 0))
@@ -53,23 +57,27 @@
               (error "Framebuffer pixels must be integers from 0 through 3."))
             (setf (aref copy y x) pixel)
             (unless (and same-geometry-p
+                         (not palette-changed-p)
                          (eql pixel (aref previous-framebuffer y x)))
               (setf (sbit changed terminal-row) 1))))))
-    (unless same-geometry-p
+    (unless (and same-geometry-p (not palette-changed-p))
       (fill changed 1))
     (values changed copy)))
 
 (defun %render-row-snapshot
-    (snapshot mode &optional reusable-characters reusable-styles)
+    (snapshot mode &optional reusable-characters reusable-styles
+       (palette *chip8-render-palette*))
   (declare (type render-row-snapshot snapshot)
            (type (member :lores :half-block :quarter-block :braille) mode)
-           (type (or null string) reusable-characters))
+           (type (or null string) reusable-characters)
+           (type (simple-array t (4)) palette))
   (%render-framebuffer-row-data
    (render-row-snapshot-pixels snapshot)
    0
    mode
    reusable-characters
-   reusable-styles))
+   reusable-styles
+   palette))
 
 (defun %ensure-render-buffers
     (pipeline row-count source-width output-width source-rows-per-cell)
@@ -104,7 +112,7 @@
             (chip8-render-pipeline-style-buffer pipeline))))
 
 (defun %submit-render-batch-jobs
-    (snapshots results row-styles mode job-buffer jobs-channel worker-count
+    (snapshots results row-styles mode palette job-buffer jobs-channel worker-count
      chunk-size)
   (loop for job-index below worker-count
         for start = (* job-index chunk-size)
@@ -114,13 +122,14 @@
                    (render-batch-job-results job) results
                    (render-batch-job-row-styles job) row-styles
                    (render-batch-job-mode job) mode
+                   (render-batch-job-palette job) palette
                    (render-batch-job-start job) start
                    (render-batch-job-end job) end
                    (render-batch-job-caught-condition job) nil)
              (unless (try-send jobs-channel job)
                (error "Render job channel is unexpectedly full or closed.")))))
 
-(defun %render-snapshots-concurrently (snapshots pipeline mode)
+(defun %render-snapshots-concurrently (snapshots pipeline mode palette)
   (let* ((count (length snapshots))
          (parallelism (chip8-render-pipeline-parallelism pipeline))
          (workers (min parallelism (max 1 (ceiling count +concurrent-render-rows-per-job+))))
@@ -132,7 +141,7 @@
           (fill-pointer row-styles) count)
     (atomic-counter-incf (chip8-render-pipeline-submitted-counter pipeline) count)
     (%submit-render-batch-jobs
-     snapshots results row-styles mode jobs
+     snapshots results row-styles mode palette jobs
      (chip8-render-pipeline-jobs-channel pipeline)
      workers chunk-size)
     (loop repeat workers
@@ -177,7 +186,11 @@
   (check-type framebuffer (array * (* *)))
   (check-type mode (member :lores :half-block :quarter-block :braille))
   (check-type pipeline chip8-render-pipeline)
-  (let* ((height (array-dimension framebuffer 0))
+  (let* ((palette-snapshot (%capture-chip8-render-palette-snapshot))
+         (palette-generation
+           (chip8-render-palette-snapshot-generation palette-snapshot))
+         (palette (chip8-render-palette-snapshot-colors palette-snapshot))
+         (height (array-dimension framebuffer 0))
          (width (array-dimension framebuffer 1)))
     (unless (and (plusp height) (plusp width))
       (error "Framebuffer dimensions must be positive."))
@@ -213,7 +226,9 @@
                  (results (chip8-render-pipeline-result-buffer pipeline))
                  (row-styles (chip8-render-pipeline-style-buffer pipeline))
                  (previous-framebuffer (chip8-render-state-framebuffer state))
-                 (previous-mode (chip8-render-state-display-mode state)))
+                 (previous-mode (chip8-render-state-display-mode state))
+                 (previous-palette-generation
+                   (chip8-render-state-palette-generation state)))
             (multiple-value-bind (changed framebuffer-copy)
                 (%snapshot-framebuffer-for-render
                  framebuffer
@@ -221,7 +236,9 @@
                  previous-mode
                  mode
                  row-count
-                 source-rows-per-cell)
+                 source-rows-per-cell
+                 previous-palette-generation
+                 palette-generation)
               (setf (fill-pointer snapshots) 0)
               (let ((count 0))
                 (dotimes (terminal-row row-count)
@@ -236,7 +253,8 @@
                        (>= count parallel-threshold)
                        (>= count minimum-snapshot-count))
                       (multiple-value-bind (rendered-rows rendered-styles)
-                          (%render-snapshots-concurrently snapshots pipeline mode)
+                          (%render-snapshots-concurrently
+                           snapshots pipeline mode palette)
                         (loop for snapshot across snapshots
                               for characters across rendered-rows
                               for styles across rendered-styles
@@ -259,7 +277,8 @@
                                       snapshot
                                       mode
                                       (aref results index)
-                                      (aref row-styles index))
+                                      (aref row-styles index)
+                                      palette)
                                    (setf (aref results index) characters
                                          (aref row-styles index) styles)
                                    (%commit-render-row!
@@ -273,9 +292,11 @@
                                   sound-active-p
                                   (chip8-render-state-sound-active-p state))))
                     (render-sound-indicator-into-screen! screen sound-active-p))
-                (setf (chip8-render-state-framebuffer state)
-                      framebuffer-copy
-                      (chip8-render-state-display-mode state) mode
-                      (chip8-render-state-sound-active-p state) sound-active-p)
-                (incf (chip8-render-state-frame-count state)))))
+                  (setf (chip8-render-state-framebuffer state)
+                        framebuffer-copy
+                        (chip8-render-state-display-mode state) mode
+                        (chip8-render-state-palette-generation state)
+                        palette-generation
+                        (chip8-render-state-sound-active-p state) sound-active-p)
+                  (incf (chip8-render-state-frame-count state)))))
           screen))))))

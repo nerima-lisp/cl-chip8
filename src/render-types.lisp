@@ -38,6 +38,7 @@ terminal row, plus a 1-cell border on each side.")
   (framebuffer nil :type (or null (array * (* *))))
   (sound-active-p nil :type boolean)
   (frame-count 0 :type (unsigned-byte 64))
+  (palette-generation nil :type (or null (integer 0 *)))
   (display-mode :lores
                 :type (member :lores :half-block :quarter-block :braille)))
 
@@ -53,7 +54,9 @@ terminal row, plus a 1-cell border on each side.")
 
 (defun %changed-terminal-rows
     (state framebuffer
-     &optional (mode (chip8-render-state-display-mode state)))
+     &optional (mode (chip8-render-state-display-mode state))
+       (palette-generation
+         (chip8-render-state-palette-generation state)))
   (declare (type chip8-render-state state)
            (type (array * (* *)) framebuffer))
   (let* ((height (array-dimension framebuffer 0))
@@ -72,12 +75,16 @@ terminal row, plus a 1-cell border on each side.")
                        (array-dimensions framebuffer))))
          (mode-changed-p
            (not (eq mode (chip8-render-state-display-mode state))))
+         (palette-changed-p
+           (not (eql palette-generation
+                     (chip8-render-state-palette-generation state))))
          (rows (make-array terminal-row-count
                            :element-type 'bit :initial-element 0)))
     (dotimes (terminal-row terminal-row-count rows)
       (let ((y0 (* terminal-row pixels-per-terminal-row)))
         (when (or (not same-dimensions-p)
                   mode-changed-p
+                  palette-changed-p
                   (loop for y from y0
                           below (min height
                                      (+ y0 pixels-per-terminal-row))

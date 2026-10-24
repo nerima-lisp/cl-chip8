@@ -60,7 +60,8 @@
                             :initial-element nil)))
     (dotimes (index parallelism buffer)
       (setf (aref buffer index)
-            (%make-render-batch-job nil nil nil :lores 0 0)))))
+            (%make-render-batch-job
+             nil nil nil :lores *chip8-render-palette* 0 0)))))
 
 (defun %render-batch-job (job pipeline)
   "Render the rows assigned to JOB and signal its completion."
@@ -70,12 +71,14 @@
          (results (render-batch-job-results job))
          (row-styles (render-batch-job-row-styles job))
          (mode (render-batch-job-mode job))
+         (palette (render-batch-job-palette job))
          (start (render-batch-job-start job))
          (end (render-batch-job-end job))
          (completed 0)
          (caught-condition nil))
     (declare (type (vector t *) snapshots results row-styles)
-             (type fixnum start end completed))
+             (type fixnum start end completed)
+             (type (simple-array t (*)) palette))
     (handler-case
         (loop for snapshot-index from start below end
               do (let* ((snapshot
@@ -95,7 +98,8 @@
                         0
                         mode
                         reusable-characters
-                        reusable-styles)
+                        reusable-styles
+                        palette)
                      (setf (aref results snapshot-index) characters
                            (aref row-styles snapshot-index) styles)
                      (incf completed))))

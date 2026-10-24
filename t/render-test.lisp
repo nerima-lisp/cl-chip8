@@ -150,7 +150,7 @@
                 (cl-tty-kit:rgb-to-256 255 255 0)
                 (cl-tty-kit:rgb-to-256 255 255 255)))
               :to-be t))
-        (setf cl-chip8::*chip8-render-palette* original))))
+        (cl-chip8::%publish-chip8-render-palette! original))))
   (it "rejects unsupported palette counts and malformed colors"
     (dolist (pixels '(() ("#000000") ("#000000" "#ffffff" "#123456")
                       ("bad" "#ffffff")))
@@ -269,4 +269,44 @@
       (expect (cl-tty-kit:cell-char (cl-tty-kit:screen-cell screen 1 1))
               :to-be (code-char #x2580))
       (expect (cl-chip8::chip8-render-state-display-mode state)
-              :to-be :half-block))))
+              :to-be :half-block)))
+  (it "redraws every row when the palette changes"
+    (let* ((framebuffer
+             (make-array '(32 64) :element-type '(unsigned-byte 2)
+                         :initial-element 0))
+           (state (cl-chip8::make-chip8-render-state))
+           (screen
+             (cl-tty-kit:make-screen cl-chip8::+screen-width+
+                                      cl-chip8::+screen-height+))
+           (original (copy-seq cl-chip8::*chip8-render-palette*)))
+      (unwind-protect
+           (progn
+             (set-chip8-render-palette!
+              '("#000000" "#ff0000" "#00ff00" "#0000ff"))
+             (dotimes (row 16)
+               (dotimes (column 64)
+                 (setf (aref framebuffer (* row 2) column) 1)))
+             (render-chip8! screen framebuffer state :mode :half-block)
+             (dotimes (row 16)
+               (cl-tty-kit:screen-write-string
+                screen cl-chip8::+playfield-origin-x+
+                (+ cl-chip8::+playfield-origin-y+ row) "X"
+                :style (cl-tty-kit:make-style :reverse)))
+             (set-chip8-render-palette!
+              '("#000000" "#ffff00" "#00ffff" "#ffffff"))
+             (render-chip8! screen framebuffer state :mode :half-block)
+             (dotimes (row 16)
+               (let ((cell
+                       (cl-tty-kit:screen-cell
+                        screen cl-chip8::+playfield-origin-x+
+                        (+ cl-chip8::+playfield-origin-y+ row))))
+                 (expect (cl-tty-kit:cell-char cell)
+                         :to-be (code-char #x2580))
+                 (expect (cl-tty-kit:cell-style cell)
+                         :to-equal
+                         (cl-tty-kit:make-style
+                          (cl-tty-kit:style-fg
+                           (aref cl-chip8::*chip8-render-palette* 1))
+                          (cl-tty-kit:style-bg
+                           (aref cl-chip8::*chip8-render-palette* 0)))))))
+        (cl-chip8::%publish-chip8-render-palette! original)))))

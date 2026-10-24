@@ -3,11 +3,21 @@
 
 (declaim (inline half-block-character)
          (ftype (function (bit bit) character) half-block-character))
-(defparameter *chip8-render-palette*
-  (vector (cl-tty-kit:rgb-to-256 0 0 0)
-          (cl-tty-kit:rgb-to-256 0 255 0)
-          (cl-tty-kit:rgb-to-256 255 255 0)
-          (cl-tty-kit:rgb-to-256 255 255 255)))
+(progn
+  (defparameter *chip8-render-palette*
+    (vector (cl-tty-kit:rgb-to-256 0 0 0)
+            (cl-tty-kit:rgb-to-256 0 255 0)
+            (cl-tty-kit:rgb-to-256 255 255 0)
+            (cl-tty-kit:rgb-to-256 255 255 255)))
+  (defstruct (chip8-render-palette-snapshot
+              (:constructor %make-chip8-render-palette-snapshot
+                  (generation colors)))
+    (generation 0 :type (integer 0 *))
+    (colors #(nil nil nil nil) :type (simple-array t (4))))
+  (defvar *chip8-render-palette-lock* (sb-thread:make-mutex))
+  (defvar *chip8-render-palette-snapshot*
+    (%make-chip8-render-palette-snapshot
+     0 (copy-seq *chip8-render-palette*))))
 
 (defun half-block-character (top-pixel bottom-pixel)
   (declare (type bit top-pixel bottom-pixel))
@@ -45,23 +55,52 @@
    (parse-integer color :start 3 :end 5 :radix 16)
    (parse-integer color :start 5 :end 7 :radix 16)))
 
-(defun set-chip8-render-palette! (pixels)
-  (let ((color-count (and (listp pixels) (list-length pixels))))
-    (unless (member color-count '(2 4))
-      (error "Expected a proper list of two or four #RRGGBB colors."))
-    (let ((palette (make-array 4)))
-      (dotimes (index 4)
-        (setf (aref palette index)
-              (%chip8-render-color-to-256
-               (nth (if (= color-count 2) (min index 1) index)
-                    pixels))))
-      (setf *chip8-render-palette* palette))))
+(progn
+  (defun %publish-chip8-render-palette! (palette)
+    (declare (type (simple-array t (4)) palette))
+    (sb-thread:with-mutex (*chip8-render-palette-lock*)
+      (let* ((snapshot *chip8-render-palette-snapshot*)
+             (colors (copy-seq palette))
+             (next-snapshot
+               (if (equalp colors
+                           (chip8-render-palette-snapshot-colors snapshot))
+                   snapshot
+                   (%make-chip8-render-palette-snapshot
+                    (1+ (chip8-render-palette-snapshot-generation snapshot))
+                    colors))))
+        (setf *chip8-render-palette-snapshot* next-snapshot
+              *chip8-render-palette* palette)))
+    palette)
+  (defun %capture-chip8-render-palette-snapshot ()
+    (sb-thread:with-mutex (*chip8-render-palette-lock*)
+      (let ((snapshot *chip8-render-palette-snapshot*))
+        (unless (equalp *chip8-render-palette*
+                        (chip8-render-palette-snapshot-colors snapshot))
+          (setf snapshot
+                (%make-chip8-render-palette-snapshot
+                 (1+ (chip8-render-palette-snapshot-generation snapshot))
+                 (copy-seq *chip8-render-palette*))
+                *chip8-render-palette-snapshot* snapshot))
+        snapshot)))
+  (defun set-chip8-render-palette! (pixels)
+    (let ((color-count (and (listp pixels) (list-length pixels))))
+      (unless (member color-count '(2 4))
+        (error "Expected a proper list of two or four #RRGGBB colors."))
+      (let ((palette (make-array 4)))
+        (dotimes (index 4)
+          (setf (aref palette index)
+                (%chip8-render-color-to-256
+                 (nth (if (= color-count 2) (min index 1) index)
+                      pixels))))
+        (%publish-chip8-render-palette! palette)))))
 
 (defun %render-framebuffer-row-data
     (framebuffer pixel-row-start mode
-     &optional reusable-characters reusable-styles)
+     &optional reusable-characters reusable-styles
+       (palette *chip8-render-palette*))
   (declare (type (array * (* *)) framebuffer)
-           (type (integer 0 *) pixel-row-start))
+           (type (integer 0 *) pixel-row-start)
+           (type (simple-array t (4)) palette))
   (let* ((height (array-dimension framebuffer 0))
          (width (array-dimension framebuffer 1))
          (pixels-per-cell-width
@@ -125,8 +164,8 @@
                    (bottom (pixel (1+ y0) x0)))
                (setf (char characters cell) (code-char #x2580)
                      (aref styles cell)
-                     (style (aref *chip8-render-palette* top)
-                            (aref *chip8-render-palette* bottom)))))
+                     (style (aref palette top)
+                            (aref palette bottom)))))
             (:quarter-block
              (let* ((top-left (pixel y0 x0))
                     (top-right (pixel y0 (1+ x0)))
@@ -138,8 +177,8 @@
                                   (if (plusp bottom-right) 8 0))))
                (setf (char characters cell) (quarter-character mask)
                      (aref styles cell)
-                     (style (aref *chip8-render-palette* 1)
-                            (aref *chip8-render-palette* 0)))))
+                     (style (aref palette 1)
+                            (aref palette 0)))))
             (:braille
              (let ((mask 0))
                (loop for offset below 4
@@ -153,8 +192,8 @@
                (setf (char characters cell)
                      (code-char (+ #x2800 mask))
                      (aref styles cell)
-                     (style (aref *chip8-render-palette* 1)
-                            (aref *chip8-render-palette* 0))))))))
+                     (style (aref palette 1)
+                            (aref palette 0))))))))
       (values characters styles))))
 
 (defun render-sound-indicator-into-screen! (screen sound-active-p)
@@ -168,7 +207,13 @@
   (declare (type (array * (* *)) framebuffer)
            (type chip8-render-state state)
            (type boolean sound-active-p))
-  (let* ((changed (%changed-terminal-rows state framebuffer mode))
+  (let* ((palette-snapshot (%capture-chip8-render-palette-snapshot))
+         (palette-generation
+           (chip8-render-palette-snapshot-generation palette-snapshot))
+         (palette (chip8-render-palette-snapshot-colors palette-snapshot))
+         (changed
+           (%changed-terminal-rows
+            state framebuffer mode palette-generation))
          (pixels-per-terminal-row
            (ecase mode
              (:lores 2)
@@ -180,7 +225,8 @@
         (when (plusp (sbit changed terminal-row))
           (multiple-value-bind (characters styles)
               (%render-framebuffer-row-data
-               framebuffer (* terminal-row pixels-per-terminal-row) mode)
+               framebuffer (* terminal-row pixels-per-terminal-row) mode
+               nil nil palette)
             (if styles
                 (dotimes (column (length characters))
                   (screen-write-string
@@ -198,6 +244,7 @@
         (render-sound-indicator-into-screen! screen sound-active-p)))
     (setf (chip8-render-state-framebuffer state) (%copy-framebuffer framebuffer)
           (chip8-render-state-sound-active-p state) sound-active-p
+          (chip8-render-state-palette-generation state) palette-generation
           (chip8-render-state-display-mode state) mode)
     (incf (chip8-render-state-frame-count state))
     screen))

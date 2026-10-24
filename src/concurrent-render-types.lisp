@@ -21,11 +21,12 @@
 (defstruct (render-batch-job
             (:constructor
              %make-render-batch-job
-             (snapshots results row-styles mode start end)))
+             (snapshots results row-styles mode palette start end)))
   (snapshots nil :type (or null (vector t *)))
   (results nil :type (or null (vector t *)))
   (row-styles nil :type (or null (vector t *)))
   (mode :lores :type (member :lores :half-block :quarter-block :braille))
+  (palette *chip8-render-palette* :type (simple-array t (*)))
   (start 0 :type fixnum)
   (end 0 :type fixnum)
   (caught-condition nil :type (or null condition)))

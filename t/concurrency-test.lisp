@@ -309,3 +309,94 @@
                    serial-rows-before)
                 :to-be 17))
       (%expect-screens-equal serial parallel :width 66 :height 19))))
+(it
+    "invalidates every row when the palette changes"
+  (let* ((framebuffer
+           (make-array '(32 64) :element-type '(unsigned-byte 2)
+                       :initial-element 0))
+         (screen (cl-tty-kit:make-screen 66 18))
+         (original (copy-seq cl-chip8::*chip8-render-palette*)))
+    (unwind-protect
+         (progn
+           (set-chip8-render-palette!
+            '("#000000" "#ff0000" "#00ff00" "#0000ff"))
+           (dotimes (row 16)
+             (dotimes (column 64)
+               (setf (aref framebuffer (* row 2) column) 1)))
+           (cl-chip8::with-chip8-render-pipeline
+               (pipeline :parallelism 2 :parallel-threshold 1)
+             (render-chip8-concurrently!
+              screen framebuffer pipeline :mode :half-block)
+             (let ((submitted-before
+                     (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)))
+               (dotimes (row 16)
+                 (cl-tty-kit:screen-write-string
+                  screen cl-chip8::+playfield-origin-x+
+                  (+ cl-chip8::+playfield-origin-y+ row) "X"
+                  :style (cl-tty-kit:make-style :reverse)))
+               (set-chip8-render-palette!
+                '("#000000" "#ffff00" "#00ffff" "#ffffff"))
+               (render-chip8-concurrently!
+                screen framebuffer pipeline :mode :half-block)
+               (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows
+                           pipeline)
+                          submitted-before)
+                       :to-be 16)
+               (dotimes (row 16)
+                 (let ((cell
+                         (cl-tty-kit:screen-cell
+                          screen cl-chip8::+playfield-origin-x+
+                          (+ cl-chip8::+playfield-origin-y+ row))))
+                   (expect (cl-tty-kit:cell-char cell)
+                           :to-be (code-char #x2580))
+                   (expect (cl-tty-kit:cell-style cell)
+                           :to-equal
+                           (cl-tty-kit:make-style
+                            (cl-tty-kit:style-fg
+                             (aref cl-chip8::*chip8-render-palette* 1))
+                            (cl-tty-kit:style-bg
+                             (aref cl-chip8::*chip8-render-palette* 0)))))))))
+      (cl-chip8::%publish-chip8-render-palette! original))))
+(it
+    "uses one captured palette across parallel render jobs"
+  (let ((original (copy-seq cl-chip8::*chip8-render-palette*)))
+    (unwind-protect
+         (progn
+           (set-chip8-render-palette!
+            '("#000000" "#ff0000" "#00ff00" "#0000ff"))
+           (let* ((palette-snapshot
+                    (cl-chip8::%capture-chip8-render-palette-snapshot))
+                  (frame-palette
+                    (cl-chip8::chip8-render-palette-snapshot-colors
+                     palette-snapshot))
+                  (snapshots
+                    (make-array
+                     4
+                     :initial-contents
+                     (loop for row below 4
+                           collect
+                           (cl-chip8::%make-render-row-snapshot
+                            row
+                            (make-array
+                             '(2 1) :element-type '(unsigned-byte 2)
+                             :initial-contents '((1) (0))))))))
+             (set-chip8-render-palette!
+              '("#000000" "#ffff00" "#00ffff" "#ffffff"))
+             (cl-chip8::with-chip8-render-pipeline
+                 (pipeline :parallelism 2)
+               (cl-chip8::%ensure-render-buffers pipeline 4 1 1 2)
+               (multiple-value-bind (rendered-rows rendered-styles)
+                   (cl-chip8::%render-snapshots-concurrently
+                    snapshots pipeline :half-block frame-palette)
+                 (expect (cl-chip8::chip8-render-pipeline-submitted-rows
+                          pipeline)
+                         :to-be 4)
+                 (dotimes (row 4)
+                   (expect (char (aref rendered-rows row) 0)
+                           :to-be (code-char #x2580))
+                   (expect (aref (aref rendered-styles row) 0)
+                           :to-equal
+                           (cl-tty-kit:make-style
+                            (cl-tty-kit:style-fg (aref frame-palette 1))
+                            (cl-tty-kit:style-bg (aref frame-palette 0)))))))))
+      (cl-chip8::%publish-chip8-render-palette! original))))
