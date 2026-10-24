@@ -397,19 +397,19 @@ signals none instead."
                   :lores-scroll :full :mode-switch-clear t)
             (list :profile :schip
                   :vf-behavior :preserve :memory-i :preserve
-                  :display-wait :none :clipping :clip :shift-source :vy
+                  :display-wait :none :clipping :clip :shift-source :vx
                   :bnnn-register :vx :fx0a-completion :press
                   :lores-sprite :16x16 :collision :flag
                   :lores-scroll :full :mode-switch-clear t)
             (list :profile :schip-legacy
                   :vf-behavior :preserve :memory-i :preserve
-                  :display-wait :lores-only :clipping :clip :shift-source :vy
+                  :display-wait :lores-only :clipping :clip :shift-source :vx
                   :bnnn-register :vx :fx0a-completion :press
                   :lores-sprite :8x16 :collision :row-count
                   :lores-scroll :half :mode-switch-clear nil)
             (list :profile :xo-chip
                   :vf-behavior :preserve :memory-i :increment
-                  :display-wait :none :clipping :wrap :shift-source :vx
+                  :display-wait :none :clipping :wrap :shift-source :vy
                   :bnnn-register :v0 :fx0a-completion :press
                   :lores-sprite :16x16 :collision :flag
                   :lores-scroll :full :mode-switch-clear t)))

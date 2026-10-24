@@ -99,8 +99,8 @@
 
 (defun framebuffer-ascii (framebuffer)
   (with-output-to-string (out)
-    (dotimes (y +display-height+)
-      (dotimes (x +display-width+)
+    (dotimes (y (array-dimension framebuffer 0))
+      (dotimes (x (array-dimension framebuffer 1))
         (write-char (if (plusp (aref framebuffer y x)) #\# #\.) out))
       (terpri out))))
 
@@ -113,7 +113,8 @@
     (:jumping . 27)))
 
 (defparameter *timendus-quirk-flag-expectations*
-  '((:modern
+  (quote
+   ((:modern
      (:vf-reset :err)
      (:memory :err)
      (:display-wait :err)
@@ -126,7 +127,28 @@
      (:display-wait :ok)
      (:clipping :ok)
      (:shifting :ok)
-     (:jumping :ok))))
+     (:jumping :ok))
+    (:schip
+     (:vf-reset :ok)
+     (:memory :ok)
+     (:display-wait :ok)
+     (:clipping :ok)
+     (:shifting :ok)
+     (:jumping :ok))
+    (:xo-chip
+     (:vf-reset :ok)
+     (:memory :ok)
+     (:display-wait :ok)
+     (:clipping :ok)
+     (:shifting :ok)
+     (:jumping :ok))
+    (:schip-legacy
+     (:vf-reset :ok)
+     (:memory :ok)
+     (:display-wait :ok)
+     (:clipping :ok)
+     (:shifting :ok)
+     (:jumping :ok)))))
 
 (defun timendus-flag-row-mask (framebuffer y)
   (loop for x from 59 below 64
@@ -142,14 +164,19 @@
           ((equal (subseq rows 0 2) '(5 2)) :err)
           (t (list :unknown rows)))))
 
-(defun run-timendus (name profile)
-  (let ((machine (make-chip8-machine :quirks (make-chip8-quirks :profile profile))))
+(defun run-timendus (name profile &optional (mode 1))
+  (let ((machine (make-chip8-machine
+                  :platform profile
+                  :quirks (make-chip8-quirks :profile profile))))
     (load-rom-file machine (timendus-rom name))
-    (when (string= name "5-quirks")
-      (setf (aref (chip8-machine-memory machine) #x1ff) 1))
-    (if (string= name "5-quirks")
+    (when (member name (quote ("5-quirks" "8-scrolling")) :test (function string=))
+      (setf (aref (chip8-machine-memory machine) #x1ff) mode))
+    (if (member name (quote ("5-quirks" "8-scrolling")) :test (function string=))
         (chip8-run-ticks machine 10000 :instructions-per-tick 100)
-        (loop repeat (if (member name '("3-corax+" "4-flags") :test #'string=) 5000 500)
+        (loop repeat (if (member name (quote ("3-corax+" "4-flags"))
+                                 :test (function string=))
+                         5000
+                         500)
               for result = (chip8-run-instructions machine 1)
               do (when (eq (chip8-run-result-status result) :waiting)
                    (chip8-resume! machine :tick))))
@@ -158,9 +185,13 @@
 (describe "Timendus CHIP-8 test suite v4.2"
   (it-each
     (("1-chip8-logo" :modern) ("1-chip8-logo" :cosmac-vip)
+     ("1-chip8-logo" :schip) ("1-chip8-logo" :xo-chip)
      ("2-ibm-logo" :modern) ("2-ibm-logo" :cosmac-vip)
+     ("2-ibm-logo" :schip) ("2-ibm-logo" :xo-chip)
      ("3-corax+" :modern) ("3-corax+" :cosmac-vip)
+     ("3-corax+" :schip) ("3-corax+" :xo-chip)
      ("4-flags" :modern) ("4-flags" :cosmac-vip)
+     ("4-flags" :schip) ("4-flags" :xo-chip)
      ("5-quirks" :modern) ("5-quirks" :cosmac-vip))
     "runs ~A under ~A and matches the framebuffer golden"
     (name profile)
@@ -170,7 +201,7 @@
             (format nil "timendus/~A/~A" name profile)))
 
   (it-each
-    ((:modern) (:cosmac-vip))
+    ((:modern) (:cosmac-vip) (:schip) (:xo-chip))
     "decodes all 22 3-corax+ result markers under ~A"
     (profile)
     (expect (timendus-result-grid-p
@@ -185,7 +216,7 @@
             :to-be-truthy))
 
   (it-each
-    ((:modern) (:cosmac-vip))
+    ((:modern) (:cosmac-vip) (:schip) (:xo-chip))
     "decodes all 47 4-flags result markers under ~A"
     (profile)
     (expect (timendus-result-grid-p
@@ -204,20 +235,39 @@
             :to-be-truthy))
 
   (it-each
-    ((:modern :vf-reset) (:modern :memory) (:modern :display-wait)
-     (:modern :clipping) (:modern :shifting) (:modern :jumping)
-     (:cosmac-vip :vf-reset) (:cosmac-vip :memory)
-     (:cosmac-vip :display-wait) (:cosmac-vip :clipping)
-     (:cosmac-vip :shifting) (:cosmac-vip :jumping))
-    "reports the ~A ~A quirk flag"
-    (profile quirk)
-    (let* ((machine (run-timendus "5-quirks" profile))
+    ((1 :modern :vf-reset) (1 :modern :memory)
+     (1 :modern :display-wait) (1 :modern :clipping)
+     (1 :modern :shifting) (1 :modern :jumping)
+     (1 :cosmac-vip :vf-reset) (1 :cosmac-vip :memory)
+     (1 :cosmac-vip :display-wait) (1 :cosmac-vip :clipping)
+     (1 :cosmac-vip :shifting) (1 :cosmac-vip :jumping)
+     (2 :schip :vf-reset) (2 :schip :memory)
+     (2 :schip :display-wait) (2 :schip :clipping)
+     (2 :schip :shifting) (2 :schip :jumping)
+     (3 :xo-chip :vf-reset) (3 :xo-chip :memory)
+     (3 :xo-chip :display-wait) (3 :xo-chip :clipping)
+     (3 :xo-chip :shifting) (3 :xo-chip :jumping)
+     (4 :schip-legacy :vf-reset) (4 :schip-legacy :memory)
+     (4 :schip-legacy :display-wait) (4 :schip-legacy :clipping)
+     (4 :schip-legacy :shifting) (4 :schip-legacy :jumping))
+    "mode ~A under ~A reports the ~A quirk flag"
+    (mode profile quirk)
+    (let* ((machine (run-timendus "5-quirks" profile mode))
            (framebuffer (timendus-framebuffer machine))
            (y (cdr (assoc quirk *timendus-quirk-flag-rows*)))
            (expected (second (assoc quirk
                                     (cdr (assoc profile
                                                 *timendus-quirk-flag-expectations*))))))
       (expect (eq (timendus-quirk-flag framebuffer y) expected) :to-be-truthy)))
+  (it-each
+    ((1 :schip) (2 :schip-legacy) (3 :schip) (4 :xo-chip) (5 :xo-chip))
+    "renders 8-scrolling mode ~A under ~A"
+    (mode profile)
+    (expect (framebuffer-ascii
+             (timendus-framebuffer
+              (run-timendus "8-scrolling" profile mode)))
+            :to-match-snapshot
+            (format nil "timendus/8-scrolling/mode-~D" mode)))
 
   (it-each
     ((:modern "EX9E" :pressed) (:cosmac-vip "EX9E" :pressed)

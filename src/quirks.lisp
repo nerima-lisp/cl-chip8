@@ -57,7 +57,7 @@
            :memory-i :preserve
            :display-wait :none
            :clipping :clip
-           :shift-source :vy
+           :shift-source :vx
            :bnnn-register :vx
            :fx0a-completion :press
            :lores-sprite :16x16
@@ -69,7 +69,7 @@
            :memory-i :preserve
            :display-wait :lores-only
            :clipping :clip
-           :shift-source :vy
+           :shift-source :vx
            :bnnn-register :vx
            :fx0a-completion :press
            :lores-sprite :8x16
@@ -81,7 +81,7 @@
            :memory-i :increment
            :display-wait :none
            :clipping :wrap
-           :shift-source :vx
+           :shift-source :vy
            :bnnn-register :v0
            :fx0a-completion :press
            :lores-sprite :16x16
