@@ -232,9 +232,9 @@
                     (incf count)))
                 (setf (fill-pointer snapshots) count)
                 (with-screen-batch (screen)
-                  (if (and (< count row-count)
-                           (>= count parallel-threshold)
-                           (>= count minimum-snapshot-count))
+                  (if (and
+                       (>= count parallel-threshold)
+                       (>= count minimum-snapshot-count))
                       (multiple-value-bind (rendered-rows rendered-styles)
                           (%render-snapshots-concurrently snapshots pipeline mode)
                         (loop for snapshot across snapshots

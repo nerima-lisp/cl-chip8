@@ -214,6 +214,7 @@
   (dolist (geometry
             '((:lores 64 32 2 64 16)
               (:half-block 64 32 2 64 16)
+              (:half-block 128 64 2 128 32)
               (:quarter-block 128 64 2 64 32)
               (:braille 128 64 4 64 16)))
     (destructuring-bind
@@ -272,13 +273,18 @@
     (cl-chip8::with-chip8-render-pipeline (pipeline :parallelism 2)
       (render-chip8! serial framebuffer serial-state :mode :lores)
       (render-chip8-concurrently! parallel framebuffer pipeline :mode :lores)
-      (let ((serial-rows-before
+      (let ((submitted-before
+              (cl-chip8::chip8-render-pipeline-submitted-rows pipeline))
+            (serial-before
               (cl-chip8::chip8-render-pipeline-serial-rows pipeline)))
         (render-chip8! serial framebuffer serial-state :mode :half-block)
         (render-chip8-concurrently! parallel framebuffer pipeline :mode :half-block)
+        (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                   submitted-before)
+                :to-be 16)
         (expect (- (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
-                   serial-rows-before)
-                :to-be 16))
+                   serial-before)
+                :to-be 0))
       (%expect-screens-equal serial parallel :width 66 :height 18))))
 
 (it
