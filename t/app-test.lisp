@@ -398,6 +398,79 @@
               (expect (chip8-machine-pc machine) :to-be #x206)
               (expect (chip8-machine-instructions machine) :to-be 3))))))
   (it
+    "renders a lores draw while waiting before the next real-time advance resumes it"
+    (let* ((machine (make-chip8-machine :platform :schip-legacy))
+           (renderer (cl-tty-kit:make-renderer +screen-width+ +screen-height+))
+           (app (make-chip8-app
+                 :machine machine
+                 :renderer renderer
+                 :render-state (cl-chip8::make-chip8-render-state)
+                 :state-machine (cl-chip8::make-chip8-control-state-machine)
+                 :decoder (cl-tty-kit:make-input-decoder)
+                 :clock-hz 60))
+           (render-count 0)
+           (waiting-state nil)
+           (waiting-kind nil)
+           (waiting-pc nil)
+           (waiting-instructions nil)
+           (waiting-cell nil)
+           (waiting-frame nil)
+           (stream (make-string-output-stream))
+           (*standard-input* (make-string-input-stream "")))
+      (load-rom machine #(#xa3 #x00 #xd0 #x11 #x60 #x01))
+      (setf (aref (chip8-machine-memory machine) #x300) #x80)
+      (cl-tty-kit:tick-loop-run-realtime
+       app
+       #'cl-chip8::%advance-chip8!
+       (lambda (state)
+         (incf render-count)
+         (let ((frame (cl-chip8::%render-chip8-app! state)))
+           (when (= render-count 2)
+             (setf waiting-state
+                   (chip8-control-state (chip8-app-state-machine state))
+                   waiting-kind
+                   (cl-chip8::chip8-wait-state-kind
+                    (chip8-machine-waiting machine))
+                   waiting-pc (chip8-machine-pc machine)
+                   waiting-instructions (chip8-machine-instructions machine)
+                   waiting-cell
+                   (cl-tty-kit:cell-char
+                    (cl-tty-kit:screen-cell
+                     (cl-tty-kit:renderer-screen renderer)
+                     cl-chip8::+playfield-origin-x+
+                     cl-chip8::+playfield-origin-y+))
+                   waiting-frame frame))
+           frame))
+       (lambda (state)
+         (declare (ignore state))
+         (>= render-count 3))
+       :stream stream
+       :interval 1/1000)
+      (expect render-count :to-be 3)
+      (expect waiting-state :to-equal "waiting-display")
+      (expect waiting-kind :to-be :display)
+      (expect waiting-pc :to-be #x202)
+      (expect waiting-instructions :to-be 2)
+      (expect waiting-cell :to-be (code-char #x2580))
+      (expect (and (stringp waiting-frame)
+                   (plusp (length waiting-frame)))
+              :to-be
+              t)
+      (expect (chip8-control-state (chip8-app-state-machine app))
+              :to-equal
+              "running")
+      (expect (cl-chip8::chip8-wait-state-kind
+               (chip8-machine-waiting machine))
+              :to-be
+              nil)
+      (expect (chip8-machine-register machine 0) :to-be 1)
+      (expect (chip8-machine-pc machine) :to-be #x206)
+      (expect (chip8-machine-instructions machine) :to-be 3)
+      (let ((output (get-output-stream-string stream)))
+        (expect (and (stringp waiting-frame)
+                     (search waiting-frame output))
+                :to-be-truthy))))
+  (it
     "halts the app cleanly on SCHIP 00FD"
     (let* ((machine (make-chip8-machine :platform :schip))
            (app (make-chip8-app
@@ -450,6 +523,20 @@
           (expect tick-counts
                   :to-equal
                   (make-list 60 :initial-element 1000))))))
+  (it
+    "executes 60,000 instructions over sixty 60,000 Hz app ticks"
+    (let* ((machine (make-chip8-machine))
+           (app (make-chip8-app :machine machine :clock-hz 60000))
+           (*standard-input* (make-string-input-stream "")))
+      (load-rom machine #(#x12 #x00))
+      (loop repeat 60 do
+        (let ((instructions-before (chip8-machine-instructions machine)))
+          (cl-chip8::%advance-chip8! app)
+          (expect (- (chip8-machine-instructions machine)
+                     instructions-before)
+                  :to-be
+                  1000)))
+      (expect (chip8-machine-instructions machine) :to-be 60000)))
   (it
     "keeps the scheduler remainder bounded"
     (let ((app (make-chip8-app :clock-hz 700)))
