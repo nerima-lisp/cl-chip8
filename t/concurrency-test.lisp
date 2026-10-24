@@ -1,16 +1,21 @@
 (in-package #:cl-chip8/test)
 
-(defun %concurrency-test-framebuffer ()
-  (let ((framebuffer (make-array '(32 64) :element-type 'bit :initial-element 0)))
-    (dotimes (y 32 framebuffer)
-      (dotimes (x 64)
-        (when (zerop (mod (+ x y) 7))
-          (setf (aref framebuffer y x) 1))))))
+(defun %concurrency-test-framebuffer
+    (&key (terminal-row-count 16) (width 64))
+  (make-array (list (* 2 terminal-row-count) width)
+              :element-type (quote bit)
+              :initial-element 0))
 
-(defun %concurrency-test-framebuffer-with-rows (rows)
-  (let ((framebuffer (make-array '(32 64) :element-type 'bit :initial-element 0)))
+(defun %concurrency-test-framebuffer-with-rows
+    (rows &key (terminal-row-count 16) (width 64))
+  (let ((framebuffer
+          (make-array (list (* 2 terminal-row-count) width)
+                      :element-type (quote bit)
+                      :initial-element 0)))
     (dolist (terminal-row rows framebuffer)
-      (setf (aref framebuffer (* terminal-row 2) terminal-row) 1))))
+      (setf (aref framebuffer (* terminal-row 2)
+                  (mod terminal-row width))
+            1))))
 
 (defun %expect-screens-equal (expected actual)
   (dotimes (y +screen-height+)
@@ -121,3 +126,68 @@
         (expect (- (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
                    serial-before)
                 :to-be 1)))))
+
+(it
+    "scales the default threshold and row buffers with framebuffer geometry"
+  (dolist (geometry (quote ((16 64 12 13) (32 128 25 26))))
+    (destructuring-bind (terminal-row-count width below-count threshold)
+        geometry
+      (let* ((blank
+               (%concurrency-test-framebuffer
+                :terminal-row-count terminal-row-count :width width))
+             (below-threshold
+               (%concurrency-test-framebuffer-with-rows
+                (loop for row below below-count collect row)
+                :terminal-row-count terminal-row-count :width width))
+             (at-threshold
+               (%concurrency-test-framebuffer-with-rows
+                (loop for row below threshold collect row)
+                :terminal-row-count terminal-row-count :width width))
+             (screen
+               (cl-tty-kit:make-screen (+ width 2)
+                                       (+ terminal-row-count 2))))
+        (setf (aref at-threshold 0 (1- width)) 1)
+        (cl-chip8::with-chip8-render-pipeline (pipeline :parallelism 2)
+          (render-chip8-concurrently! screen blank pipeline)
+          (render-chip8-concurrently! screen below-threshold pipeline)
+          (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                  :to-be 0)
+          (render-chip8-concurrently! screen blank pipeline)
+          (render-chip8-concurrently! screen at-threshold pipeline)
+          (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                  :to-be threshold)
+          (let ((right-edge
+                  (cl-tty-kit:screen-cell
+                   screen
+                   (+ cl-chip8::+playfield-origin-x+ (1- width))
+                   cl-chip8::+playfield-origin-y+)))
+            (expect (cl-tty-kit:cell-char right-edge)
+                    :to-be (cl-chip8::half-block-character 1 0))))))))
+
+(it
+    "scales the minimum batch and keeps an explicit threshold"
+  (let* ((terminal-row-count 32)
+         (width 64)
+         (blank
+           (%concurrency-test-framebuffer
+            :terminal-row-count terminal-row-count :width width))
+         (below-minimum
+           (%concurrency-test-framebuffer-with-rows
+            (loop for row below 17 collect row)
+            :terminal-row-count terminal-row-count :width width))
+         (at-minimum
+           (%concurrency-test-framebuffer-with-rows
+            (loop for row below 18 collect row)
+            :terminal-row-count terminal-row-count :width width))
+         (screen (cl-tty-kit:make-screen (+ width 2)
+                                         (+ terminal-row-count 2))))
+    (cl-chip8::with-chip8-render-pipeline
+        (pipeline :parallelism 2 :parallel-threshold 1)
+      (render-chip8-concurrently! screen blank pipeline)
+      (render-chip8-concurrently! screen below-minimum pipeline)
+      (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+              :to-be 0)
+      (render-chip8-concurrently! screen blank pipeline)
+      (render-chip8-concurrently! screen at-minimum pipeline)
+      (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+              :to-be 18))))

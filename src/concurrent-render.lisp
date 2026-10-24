@@ -19,34 +19,29 @@
                (error
                 "Render worker readiness channel closed before startup completed.")))))
 
-(defun %make-render-snapshot-buffer ()
-  "Allocate the reusable row-snapshot buffer for a render pipeline."
-  (let* ((row-count +display-terminal-row-count+)
-         (buffer (make-array row-count
-                             :element-type t
-                             :initial-element nil
-                             :fill-pointer row-count)))
-    (declare (type (integer 1 16) row-count)
-             (type (vector t 16) buffer))
+(defun %make-render-snapshot-buffer (row-count width)
+  "Allocate reusable snapshots for the framebuffer geometry."
+  (declare (type (integer 1 *) row-count width))
+  (let ((buffer (make-array row-count
+                            :element-type t
+                            :initial-element nil
+                            :fill-pointer row-count)))
     (dotimes (index row-count buffer)
       (setf (aref buffer index)
             (%make-render-row-snapshot
-             0
-             (make-array +display-width+ :element-type 'bit)
-             (make-array +display-width+ :element-type 'bit))))))
+             index
+             (make-array width :element-type (quote bit))
+             (make-array width :element-type (quote bit)))))))
 
-(defun %make-render-result-buffer ()
-  "Allocate the reusable string buffer for rendered rows."
-  (let* ((row-count +display-terminal-row-count+)
-         (buffer (make-array row-count
-                             :element-type t
-                             :initial-element nil
-                             :fill-pointer row-count)))
-    (declare (type (integer 1 16) row-count)
-             (type (vector t 16) buffer))
+(defun %make-render-result-buffer (row-count width)
+  "Allocate reusable rendered strings for the framebuffer geometry."
+  (declare (type (integer 1 *) row-count width))
+  (let ((buffer (make-array row-count
+                            :element-type t
+                            :initial-element nil
+                            :fill-pointer row-count)))
     (dotimes (index row-count buffer)
-      (setf (aref buffer index)
-            (make-string +display-width+)))))
+      (setf (aref buffer index) (make-string width)))))
 
 (defun %make-render-job-buffer (parallelism)
   "Allocate reusable batch-job records for PARALLELISM workers."
@@ -123,11 +118,10 @@ Completion is reported through a reusable semaphore so the hot path does not
 allocate or shuttle one result payload through a second channel.
 SHUTDOWN-TIMEOUT is passed directly to the native cl-concurrent-kit
 executor shutdown operation."
-
   (unless parallelism-supplied-p
     (setf parallelism +concurrent-render-default-parallelism+))
   (unless parallel-threshold-supplied-p
-    (setf parallel-threshold 13))
+    (setf parallel-threshold +concurrent-render-default-parallel-threshold+))
   (check-type parallelism (integer 1 *))
   (check-type parallel-threshold (integer 1 *))
   (check-type shutdown-timeout duration)
@@ -141,16 +135,15 @@ executor shutdown operation."
                 ready-channel (make-channel :buffer-size parallelism))
           (let* ((completion-semaphore
                    (make-semaphore :name "cl-chip8 render completions"))
-                 (snapshot-buffer (%make-render-snapshot-buffer))
-                 (result-buffer (%make-render-result-buffer))
                  (job-buffer (%make-render-job-buffer parallelism))
                  (pipeline
                    (%make-chip8-render-pipeline
                     executor jobs-channel completion-semaphore parallelism
-                    parallel-threshold shutdown-timeout
+                    parallel-threshold parallel-threshold-supplied-p
+                    shutdown-timeout
                     (make-atomic-counter) (make-atomic-counter) 0
                     (make-lock :name "cl-chip8 render pipeline") nil
-                    snapshot-buffer result-buffer job-buffer
+                    nil nil job-buffer nil
                     (make-chip8-render-state))))
             (%start-render-workers
              executor ready-channel parallelism shutdown-timeout

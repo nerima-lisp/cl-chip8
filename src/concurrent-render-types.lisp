@@ -18,11 +18,11 @@
              (terminal-row
               top-pixels
               bottom-pixels)))
-  (terminal-row 0 :type display-terminal-row)
-  (top-pixels (make-array +display-width+ :element-type 'bit)
-              :type display-row-bits)
-  (bottom-pixels (make-array +display-width+ :element-type 'bit)
-                 :type display-row-bits))
+  (terminal-row 0 :type fixnum)
+  (top-pixels (make-array 0 :element-type (quote bit))
+              :type (simple-array bit (*)))
+  (bottom-pixels (make-array 0 :element-type (quote bit))
+                 :type (simple-array bit (*))))
 
 (defstruct (render-batch-job
             (:constructor
@@ -42,6 +42,7 @@
               completion-semaphore
               parallelism
               parallel-threshold
+              parallel-threshold-supplied-p
               shutdown-timeout
               submitted-counter
               completed-counter
@@ -51,23 +52,28 @@
               snapshot-buffer
               result-buffer
               job-buffer
+              previous-framebuffer
               state)))
   (executor nil :type (or null render-executor))
   (jobs-channel nil :type (or null render-channel))
   (completion-semaphore nil :type (or null render-semaphore))
   (parallelism 1 :type (integer 1 *))
   (parallel-threshold 13 :type (integer 1 *))
+  (parallel-threshold-supplied-p nil :type boolean)
   (shutdown-timeout nil :type (or null duration))
   submitted-counter
   completed-counter
   (serial-row-count 0 :type (unsigned-byte 64))
   (lock nil :type (or null render-lock))
   (closed-p nil :type boolean)
-  (snapshot-buffer nil :type (or null (vector t 16)))
-  (result-buffer nil :type (or null (vector t 16)))
+  (snapshot-buffer nil :type (or null (vector t *)))
+  (result-buffer nil :type (or null (vector t *)))
   (job-buffer nil :type (or null (vector t *)))
+  (previous-framebuffer nil :type (or null (array bit (* *))))
   (state (make-chip8-render-state) :type chip8-render-state))
 
-(defconstant +concurrent-render-minimum-snapshots+ 9 "Minimum partial batch that splits into multiple persistent CCK jobs.")
+(defconstant +concurrent-render-minimum-snapshots+ 9 "Minimum snapshot count at the reference terminal row count.")
+(defconstant +concurrent-render-default-parallel-threshold+ 13 "Default parallel threshold at the reference terminal row count.")
+(defconstant +concurrent-render-reference-row-count+ 16 "Reference terminal-row count for proportional render thresholds.")
 (defconstant +concurrent-render-default-parallelism+ 8 "Default number of persistent render workers.")
 (defconstant +concurrent-render-rows-per-job+ 2 "Maximum dirty terminal rows assigned to one render job.")

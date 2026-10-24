@@ -2,31 +2,80 @@
 
 (defun %snapshot-framebuffer-row
     (framebuffer terminal-row &optional reusable-snapshot)
-  (declare (type display-framebuffer framebuffer)
-           (type display-terminal-row terminal-row)
+  (declare (type (array bit (* *)) framebuffer)
+           (type fixnum terminal-row)
            (type (or null render-row-snapshot) reusable-snapshot))
   (let* ((y0 (ash terminal-row 1))
+         (width (array-dimension framebuffer 1))
          (snapshot (or reusable-snapshot
                        (%make-render-row-snapshot
                         terminal-row
-                        (make-array +display-width+ :element-type 'bit)
-                        (make-array +display-width+ :element-type 'bit)))))
-    (dotimes (x +display-width+)
+                        (make-array width :element-type (quote bit))
+                        (make-array width :element-type (quote bit))))))
+    (setf (render-row-snapshot-terminal-row snapshot) terminal-row)
+    (dotimes (x width)
       (setf (sbit (render-row-snapshot-top-pixels snapshot) x)
             (aref framebuffer y0 x)
             (sbit (render-row-snapshot-bottom-pixels snapshot) x)
             (aref framebuffer (1+ y0) x)))
     snapshot))
 
+(defun %snapshot-framebuffer-for-render
+    (framebuffer previous-framebuffer)
+  (declare (type (array bit (* *)) framebuffer)
+           (type (or null (array bit (* *))) previous-framebuffer))
+  (let* ((height (array-dimension framebuffer 0))
+         (width (array-dimension framebuffer 1))
+         (row-count (ash height -1))
+         (same-geometry-p
+           (and previous-framebuffer
+                (= height (array-dimension previous-framebuffer 0))
+                (= width (array-dimension previous-framebuffer 1))))
+         (changed (make-array row-count
+                              :element-type (quote bit)
+                              :initial-element 0))
+         (copy (make-array (array-dimensions framebuffer)
+                           :element-type (quote bit))))
+    (dotimes (y height)
+      (let ((terminal-row (ash y -1)))
+        (dotimes (x width)
+          (let ((pixel (aref framebuffer y x)))
+            (setf (aref copy y x) pixel)
+            (unless (and same-geometry-p
+                         (= pixel (aref previous-framebuffer y x)))
+              (setf (sbit changed terminal-row) 1))))))
+    (values changed copy)))
+
 (defun %render-row-snapshot (snapshot &optional reusable-characters)
   (declare (type render-row-snapshot snapshot)
            (type (or null string) reusable-characters))
-  (let ((characters (or reusable-characters (make-string +display-width+))))
-    (dotimes (x +display-width+ characters)
+  (let* ((width (length (render-row-snapshot-top-pixels snapshot)))
+         (characters (or reusable-characters (make-string width))))
+    (dotimes (x width characters)
       (setf (char characters x)
             (half-block-character
              (sbit (render-row-snapshot-top-pixels snapshot) x)
              (sbit (render-row-snapshot-bottom-pixels snapshot) x))))))
+
+(defun %ensure-render-buffers (pipeline row-count width)
+  (declare (type chip8-render-pipeline pipeline)
+           (type (integer 1 *) row-count width))
+  (let ((snapshots (chip8-render-pipeline-snapshot-buffer pipeline))
+        (results (chip8-render-pipeline-result-buffer pipeline)))
+    (unless (and snapshots
+                 (= (array-dimension snapshots 0) row-count)
+                 (= (length
+                     (render-row-snapshot-top-pixels (aref snapshots 0)))
+                    width)
+                 results
+                 (= (array-dimension results 0) row-count)
+                 (= (length (aref results 0)) width))
+      (setf (chip8-render-pipeline-snapshot-buffer pipeline)
+            (%make-render-snapshot-buffer row-count width)
+            (chip8-render-pipeline-result-buffer pipeline)
+            (%make-render-result-buffer row-count width)))
+    (values (chip8-render-pipeline-snapshot-buffer pipeline)
+            (chip8-render-pipeline-result-buffer pipeline))))
 
 (defun %submit-render-batch-jobs
     (snapshots results job-buffer jobs-channel worker-count chunk-size)
@@ -81,45 +130,75 @@
 
 (defun render-chip8-concurrently!
     (screen framebuffer pipeline &key (sound-active-p nil))
-  (declare (type display-framebuffer framebuffer)
+  (declare (type (array bit (* *)) framebuffer)
            (type boolean sound-active-p))
+  (check-type framebuffer (array bit (* *)))
   (check-type pipeline chip8-render-pipeline)
-  (with-lock-held ((chip8-render-pipeline-lock pipeline))
-    (%ensure-open-render-pipeline pipeline)
-    (let* ((state (chip8-render-pipeline-state pipeline))
-           (changed (%changed-terminal-rows state framebuffer))
-           (snapshots (make-array +display-terminal-row-count+
-                                  :element-type 't :fill-pointer 0))
-           (count 0))
-      (dotimes (terminal-row +display-terminal-row-count+)
-        (when (plusp (sbit changed terminal-row))
-          (vector-push (%snapshot-framebuffer-row framebuffer terminal-row)
-                       snapshots)
-          (incf count)))
-      (with-screen-batch (screen)
-        (if (and (< count +display-terminal-row-count+)
-                 (>= count (chip8-render-pipeline-parallel-threshold pipeline))
-                 (>= count +concurrent-render-minimum-snapshots+))
-            (let ((results (%render-snapshots-concurrently snapshots pipeline)))
-              (loop for snapshot across snapshots
-                    for characters across results
-                    do (%commit-render-row!
-                        screen (render-row-snapshot-terminal-row snapshot)
-                        characters)))
-            (progn
-              (incf (chip8-render-pipeline-serial-row-count pipeline) count)
-              (unless (= count +display-terminal-row-count+)
-                (atomic-counter-incf
-                 (chip8-render-pipeline-completed-counter pipeline)
-                 count))
-              (loop for snapshot across snapshots
-                    do (%commit-render-row!
-                        screen (render-row-snapshot-terminal-row snapshot)
-                        (%render-row-snapshot snapshot)))))
-        (when (or (null (chip8-render-state-framebuffer state))
-                  (not (eql sound-active-p (chip8-render-state-sound-active-p state))))
-          (render-sound-indicator-into-screen! screen sound-active-p)))
-      (setf (chip8-render-state-framebuffer state) (%copy-framebuffer framebuffer)
-            (chip8-render-state-sound-active-p state) sound-active-p)
-      (incf (chip8-render-state-frame-count state))
-      screen)))
+  (let* ((height (array-dimension framebuffer 0))
+         (width (array-dimension framebuffer 1)))
+    (unless (and (plusp height) (plusp width) (evenp height))
+      (error "Framebuffer width must be positive and height must be positive and even."))
+    (let* ((row-count (ash height -1))
+           (default-threshold
+             (ceiling (* row-count
+                         +concurrent-render-default-parallel-threshold+)
+                      +concurrent-render-reference-row-count+))
+           (minimum-snapshot-count
+             (ceiling (* row-count +concurrent-render-minimum-snapshots+)
+                      +concurrent-render-reference-row-count+))
+           (parallel-threshold
+             (if (chip8-render-pipeline-parallel-threshold-supplied-p pipeline)
+                 (chip8-render-pipeline-parallel-threshold pipeline)
+                 default-threshold)))
+      (with-lock-held ((chip8-render-pipeline-lock pipeline))
+        (%ensure-open-render-pipeline pipeline)
+        (%ensure-render-buffers pipeline row-count width)
+        (let* ((state (chip8-render-pipeline-state pipeline))
+               (snapshots (chip8-render-pipeline-snapshot-buffer pipeline))
+               (previous-framebuffer
+                 (chip8-render-pipeline-previous-framebuffer pipeline)))
+          (multiple-value-bind (changed framebuffer-copy)
+              (%snapshot-framebuffer-for-render
+               framebuffer previous-framebuffer)
+            (setf (fill-pointer snapshots) 0)
+            (let ((count 0))
+              (dotimes (terminal-row row-count)
+                (when (= 1 (sbit changed terminal-row))
+                  (%snapshot-framebuffer-row
+                   framebuffer terminal-row (aref snapshots count))
+                  (incf count)))
+              (setf (fill-pointer snapshots) count)
+              (with-screen-batch (screen)
+                (if (and (< count row-count)
+                         (>= count parallel-threshold)
+                         (>= count minimum-snapshot-count))
+                    (let ((results
+                            (%render-snapshots-concurrently snapshots pipeline)))
+                      (loop for snapshot across snapshots
+                            for characters across results
+                            do (%commit-render-row!
+                                screen
+                                (render-row-snapshot-terminal-row snapshot)
+                                characters)))
+                    (progn
+                      (incf (chip8-render-pipeline-serial-row-count pipeline)
+                            count)
+                      (unless (= count row-count)
+                        (atomic-counter-incf
+                         (chip8-render-pipeline-completed-counter pipeline)
+                         count))
+                      (loop for snapshot across snapshots
+                            do (%commit-render-row!
+                                screen
+                                (render-row-snapshot-terminal-row snapshot)
+                                (%render-row-snapshot snapshot)))))
+                (when (or (zerop (chip8-render-state-frame-count state))
+                          (not (eql
+                                sound-active-p
+                                (chip8-render-state-sound-active-p state))))
+                  (render-sound-indicator-into-screen! screen sound-active-p)))
+              (setf (chip8-render-pipeline-previous-framebuffer pipeline)
+                    framebuffer-copy
+                    (chip8-render-state-sound-active-p state) sound-active-p)
+              (incf (chip8-render-state-frame-count state)))))
+        screen))))
