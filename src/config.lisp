@@ -4,6 +4,8 @@
 ;; The clock default is defined before this file's merge function because ASDF
 ;; loads configuration before the application structure.
 (defconstant +default-clock-hz+ 700)
+(defparameter +default-chip8-render-colors+
+  '("#000000" "#00FF00" "#FFFF00" "#FFFFFF"))
 
 ;; Each entry is (TOML-NAME TYPE). TYPE supplies both validation and the
 ;; normalized value consumed by the configuration merger.
@@ -21,7 +23,8 @@
                  ("collision" . (:enum "flag" "row-count"))
                  ("lores_scroll" . (:enum "full" "half"))
                  ("mode_switch_clear" . :boolean)))
-    ("logging" . (("path" . :string)))))
+    ("logging" . (("path" . :string)))
+    ("colors" . (("pixels" . :pixel-colors)))))
 ;; Each entry is (DB-KEY DB-NAME PROFILE PLATFORM-OVERRIDES FALSE-MEMORY-I).
 ;; The mapping also names unsupported upstream platforms for diagnostics.
 (defparameter +rom-database-platform-mappings+
@@ -122,6 +125,34 @@
          (if (stringp value) :lores-only value)))
       ((eq type :string)
        (%require-type value #'stringp "expected a string" path source-name))
+      ((eq type :pixel-colors)
+       (let* ((pixels
+                (cond ((and (vectorp value) (not (stringp value)))
+                       (coerce value 'list))
+                      ((listp value) value)))
+              (pixel-count
+                (and pixels
+                     (handler-case (list-length pixels)
+                       (type-error () nil))))
+              (trim-characters '(#\Space #\Tab #\Newline #\Return)))
+         (unless (and (member pixel-count '(2 4))
+                      (every
+                       (lambda (color)
+                         (and (stringp color)
+                              (let ((color (string-trim trim-characters color)))
+                                (and (= (length color) 7)
+                                     (char= (char color 0) #\#)
+                                     (loop for index from 1 below 7
+                                           for digit = (char color index)
+                                           always (or (char<= #\0 digit #\9)
+                                                      (char<= #\A digit #\F)
+                                                      (char<= #\a digit #\f)))))))
+                       pixels))
+           (%config-error "expected two or four #RRGGBB colors"
+                          :source-name source-name :path path :key key))
+         (mapcar (lambda (color)
+                   (string-upcase (string-trim trim-characters color)))
+                 pixels)))
       ((and (consp type) (eq (car type) :enum))
        (if (and (stringp value) (member value (cdr type) :test #'string=))
            (intern (string-upcase value) :keyword)
@@ -250,7 +281,8 @@
                                   rom-record rom-sha1)
   (%validate-keys defaults (quote ("rom" "clock_hz" "quirks" "platform"))
                   "defaults" nil)
-  (%validate-keys cli (quote ("rom" "clock_hz" "quirks" "platform" "log"))
+  (%validate-keys cli (quote ("rom" "clock_hz" "quirks" "platform" "log"
+                              "colors_pixels"))
                   "cli" nil)
   (let* ((toml-chip8 (and (hash-table-p toml) (gethash "chip8" toml)))
          (toml-logging (and (hash-table-p toml) (gethash "logging" toml)))
@@ -345,8 +377,45 @@
              (%rom-database-quirk-overrides rom-record db-quirk-mapping))
            (overrides (copy-list database-quirk-overrides))
            (toml-quirk-overrides-p nil)
-           (colors-pixels (getf (getf rom-record :colors) :pixels))
-           (colors-source (if colors-pixels :db :default))
+           (colors-pixels
+             (let* ((cli-colors-p
+                      (nth-value 1 (%source-value cli "colors_pixels")))
+                    (toml-colors-table (%source-value toml "colors"))
+                    (toml-colors-p
+                      (nth-value 1 (%source-value toml-colors-table "pixels")))
+                    (db-colors-table (getf rom-record :colors))
+                    (db-colors-p
+                      (nth-value 1 (%source-value db-colors-table "pixels")))
+                    (cli-colors
+                      (when cli-colors-p
+                        (%schema-value "colors" "pixels"
+                                       (%source-value cli "colors_pixels")
+                                       "command line")))
+                    (toml-colors
+                      (when toml-colors-p
+                        (%schema-value "colors" "pixels"
+                                       (%source-value toml-colors-table "pixels")
+                                       (or source-name "configuration"))))
+                    (db-colors
+                      (when db-colors-p
+                        (%schema-value "colors" "pixels"
+                                       (%source-value db-colors-table "pixels")
+                                       "ROM database")))
+                    (default-colors
+                      (copy-list +default-chip8-render-colors+)))
+               (cond (cli-colors-p cli-colors)
+                     (toml-colors-p toml-colors)
+                     (db-colors-p db-colors)
+                     (t default-colors))))
+           (colors-source
+             (cond ((nth-value 1 (%source-value cli "colors_pixels")) :cli)
+                   ((nth-value
+                     1 (%source-value (%source-value toml "colors") "pixels"))
+                    :toml)
+                   ((nth-value
+                     1 (%source-value (getf rom-record :colors) "pixels"))
+                    :db)
+                   (t :default)))
            (clock nil)
            (clock-source nil))
       (setf clock

@@ -105,6 +105,13 @@ Pass a TOML file with `--config`:
 cl-chip8 path/to/rom.ch8 --config config.toml
 ```
 
+You can override the pixel palette on the command line with two or four
+comma-separated `#RRGGBB` colors:
+
+```sh
+cl-chip8 path/to/rom.ch8 --colors-pixels "#000000,#00FF00,#FFFF00,#FFFFFF"
+```
+
 For example, `config.toml` can contain:
 
 ```toml
@@ -114,10 +121,23 @@ clock_hz = 500
 
 [logging]
 path = "/tmp/cl-chip8.log"
+
+[colors]
+pixels = ["#000000", "#00FF00", "#FFFF00", "#FFFFFF"]
 ```
 
 The `chip8` table supports `quirks`,
 `clock_hz`, `display_wait`, `clipping`, `shift_source`, `bnnn_register`,
 `fx0a_completion`, `memory_i`, and `vf_reset`. The `logging` table supports
-`path`. Explicit command-line values take precedence over TOML values, and
-TOML values take precedence over defaults.
+`path`. The `colors` table supports `pixels`, with two or four `#RRGGBB`
+strings. Palette indices follow framebuffer values 0 through 3. With two
+colors, the second color fills indices 1 through 3. The renderer maps each
+color to a terminal 256-color entry. High-resolution half-block rendering uses
+all four colors when the terminal has at least 130 columns and 34 rows.
+Otherwise, high-resolution output uses quarter-block mode at 66 columns by 34
+rows or larger, or braille mode at 66 columns by 18 rows or larger. These modes
+use only indices 0 and 1. Low-resolution rendering does not use this palette.
+
+The palette order is command line, TOML, ROM database, then built-in defaults.
+The ROM database supplies a matched ROM's colors when neither the command line
+nor TOML specifies them.

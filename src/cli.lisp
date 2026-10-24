@@ -29,6 +29,11 @@ enter its terminal session."
                             (list :quirks (getf options :quirks)))
                           (when (getf options :platform)
                             (list :platform (getf options :platform)))
+                          (when (getf options :colors-pixels)
+                            (list :colors_pixels
+                                  (uiop:split-string
+                                   (getf options :colors-pixels)
+                                   :separator ",")))
                           (when log-path (list :log log-path))))
              (config-path (getf options :config-path))
              (path-config
@@ -52,6 +57,8 @@ enter its terminal session."
                    (setf result
                          (handler-case
                              (progn
+                               (set-chip8-render-palette!
+                                (chip8-config-colors-pixels config))
                                (chip8-log-info logger "startup"
                                                (list :rom (chip8-config-rom-path config)
                                                      :sha1 rom-sha1
@@ -67,7 +74,8 @@ enter its terminal session."
                                                      :quirks_source
                                                      (chip8-config-quirks-source config)
                                                      :colors_pixels
-                                                     (chip8-config-colors-pixels config)
+                                                     (format nil "~{~a~^,~}"
+                                                             (chip8-config-colors-pixels config))
                                                      :colors_source
                                                      (chip8-config-colors-source config)))
                                (let ((on-audio-fallback
@@ -172,6 +180,8 @@ at https://nerima-lisp.github.io/cl-chip8/guide/terminal/ for the full table."
                       :description "Path to the configuration file.")
          (make-option :key :log :name "log" :kind :value
                       :description "Logging destination.")
+         (make-option :key :colors-pixels :name "colors-pixels" :kind :value
+                      :description "Comma-separated two or four #RRGGBB pixel colors.")
          (make-option :key :clock-hz :name "clock-hz" :kind :value :type :integer :min 1
                       :description
                       (format nil "CPU instructions per second (default ~D). ~
@@ -191,6 +201,7 @@ off disables audio (default auto).")))
         :clock-hz (option-value invocation :clock-hz)
         :quirks (option-value invocation :quirks)
         :platform (option-value invocation :platform)
+        :colors-pixels (option-value invocation :colors-pixels)
         :audio-mode (cdr (assoc (or (option-value invocation :audio) "auto")
                                 '(("auto" . :auto) ("pcm" . :pcm)
                                   ("bell" . :bell) ("off" . :off))

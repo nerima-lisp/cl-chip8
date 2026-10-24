@@ -113,9 +113,10 @@
                           "--config" "chip8.toml" "--log" "stderr" "game.ch8"))))
       (expect (chip8-run-options invocation)
               :to-equal
-              '(:rom-path "game.ch8" :clock-hz 321 :quirks "cosmac-vip"
-                :platform "schip" :audio-mode :pcm
-                :config-path "chip8.toml" :log-path "stderr")))))
+              (quote
+               (:rom-path "game.ch8" :clock-hz 321 :quirks "cosmac-vip"
+                :platform "schip" :colors-pixels nil :audio-mode :pcm
+                :config-path "chip8.toml" :log-path "stderr"))))))
 
 (describe "the cl-chip8 configuration error boundary"
   (it
@@ -539,7 +540,7 @@
         (when (probe-file rom-path)
           (delete-file rom-path)))))
 
-  (it "logs startup provenance and forwards the exact ROM bytes to run"
+  (it "logs database colors and applies them to the render palette"
     (let* ((bytes (make-array 1 :element-type '(unsigned-byte 8) :initial-element 0))
            (sha1 (cl-chip8::%rom-sha1 bytes))
            (rom-path
@@ -561,6 +562,7 @@
                                 internal-time-units-per-second)))
            (startup-fields nil)
            (run-arguments nil)
+           (original-palette (copy-seq cl-chip8::*chip8-render-palette*))
            (original-log-info (symbol-function 'cl-chip8:chip8-log-info))
            (original-run (symbol-function 'cl-chip8:run)))
       (unwind-protect
@@ -597,14 +599,134 @@
              (expect (getf startup-fields :quirks) :to-be :cosmac-vip)
              (expect (getf startup-fields :quirks_source) :to-equal "db")
              (expect (getf startup-fields :colors_pixels)
-                     :to-equal (quote ("#112233" "#ddeeff")))
+                     :to-equal "#112233,#DDEEFF")
              (expect (getf startup-fields :colors_source) :to-equal "db")
+             (expect
+              (equalp
+               cl-chip8::*chip8-render-palette*
+               (vector
+                (cl-tty-kit:rgb-to-256 #x11 #x22 #x33)
+                (cl-tty-kit:rgb-to-256 #xdd #xee #xff)
+                (cl-tty-kit:rgb-to-256 #xdd #xee #xff)
+                (cl-tty-kit:rgb-to-256 #xdd #xee #xff)))
+              :to-be t)
              (expect (equalp (getf run-arguments :rom-bytes) bytes) :to-be t)
              (expect (getf run-arguments :clock-hz) :to-be 420)
              (expect (cl-chip8:chip8-platform-name
                       (getf run-arguments :platform))
                      :to-be :cosmac-vip))
         (setf (symbol-function 'cl-chip8:chip8-log-info) original-log-info
-              (symbol-function 'cl-chip8:run) original-run)
+              (symbol-function 'cl-chip8:run) original-run
+              cl-chip8::*chip8-render-palette* original-palette)
         (when (probe-file rom-path)
-          (delete-file rom-path))))))
+          (delete-file rom-path)))))
+
+  (it "applies default and CLI colors to the render palette"
+    (let* ((machine (cl-chip8:make-chip8-machine))
+           (app (cl-chip8::make-chip8-app
+                 :machine machine
+                 :render-state (cl-chip8::make-chip8-render-state)
+                 :started-at (- (get-internal-real-time)
+                                internal-time-units-per-second)))
+           (startup-fields nil)
+           (original-palette (copy-seq cl-chip8::*chip8-render-palette*))
+           (original-log-info (symbol-function 'cl-chip8:chip8-log-info))
+           (original-run (symbol-function 'cl-chip8:run)))
+      (unwind-protect
+           (progn
+             (setf (cl-chip8:chip8-machine-instructions machine) 1)
+             (setf (symbol-function 'cl-chip8:chip8-log-info)
+                   (lambda (logger message &optional fields)
+                     (declare (ignore logger))
+                     (when (string= message "startup")
+                       (setf startup-fields fields))))
+             (setf (symbol-function 'cl-chip8:run)
+                   (lambda (&rest arguments)
+                     (declare (ignore arguments))
+                     app))
+             (render-chip8! (cl-tty-kit:make-screen +screen-width+ +screen-height+)
+                            (cl-chip8:chip8-framebuffer-snapshot machine)
+                            (cl-chip8::chip8-app-render-state app))
+             (flet ((run-color-case
+                        (label byte record options expected-pixels expected-source
+                         expected-palette)
+                      (let* ((bytes
+                               (make-array 1 :element-type '(unsigned-byte 8)
+                                             :initial-element byte))
+                             (sha1 (cl-chip8::%rom-sha1 bytes))
+                             (rom-path
+                               (merge-pathnames
+                                (format nil "cl-chip8-p4b-colors-~A-~D.ch8"
+                                        label (random 1000000))
+                                (uiop:temporary-directory)))
+                             (cl-chip8::*rom-database-records*
+                               (list (cons sha1 record)))
+                             (invocation
+                               (parse-argv
+                                *app*
+                                (append
+                                 (list "cl-chip8" (namestring rom-path))
+                                 options))))
+                        (unwind-protect
+                             (progn
+                               (with-open-file (stream rom-path :direction :output
+                                                       :if-exists :supersede
+                                                       :if-does-not-exist :create
+                                                       :element-type '(unsigned-byte 8))
+                                 (write-sequence bytes stream))
+                               (setf startup-fields nil)
+                               (let ((error-output (make-string-output-stream)))
+                                 (let ((*error-output* error-output))
+                                   (let ((status (cl-chip8::%run-handler invocation)))
+                                     (unless (zerop status)
+                                       (error "CLI handler returned ~D: ~A" status
+                                              (get-output-stream-string error-output))))))
+                               (expect (getf startup-fields :sha1) :to-equal sha1)
+                               (expect (getf startup-fields :colors_pixels)
+                                       :to-equal (format nil "~{~a~^,~}" expected-pixels))
+                               (expect (getf startup-fields :colors_source)
+                                       :to-equal expected-source)
+                               (expect
+                                (equalp cl-chip8::*chip8-render-palette*
+                                        expected-palette)
+                                :to-be t))
+                          (when (probe-file rom-path)
+                            (delete-file rom-path))))))
+              (run-color-case
+                "db" 1
+                (quote (:platforms (:original-chip8)
+                         :colors (:pixels ("#123456" "#abcdef"))))
+                nil
+                (quote ("#123456" "#ABCDEF"))
+                "db"
+                (vector
+                 (cl-tty-kit:rgb-to-256 #x12 #x34 #x56)
+                 (cl-tty-kit:rgb-to-256 #xab #xcd #xef)
+                 (cl-tty-kit:rgb-to-256 #xab #xcd #xef)
+                 (cl-tty-kit:rgb-to-256 #xab #xcd #xef)))
+              (run-color-case
+                "default" 2
+                (quote (:platforms (:original-chip8)))
+                nil
+                (quote ("#000000" "#00FF00" "#FFFF00" "#FFFFFF"))
+                "default"
+                (vector
+                 (cl-tty-kit:rgb-to-256 0 0 0)
+                 (cl-tty-kit:rgb-to-256 0 255 0)
+                 (cl-tty-kit:rgb-to-256 255 255 0)
+                 (cl-tty-kit:rgb-to-256 255 255 255)))
+              (run-color-case
+                "cli" 3
+                (quote (:platforms (:original-chip8)
+                         :colors (:pixels ("#112233" "#ddeeff"))))
+                (list "--colors-pixels" "#010203,#a0b0c0")
+                (quote ("#010203" "#A0B0C0"))
+                "cli"
+                (vector
+                 (cl-tty-kit:rgb-to-256 #x01 #x02 #x03)
+                 (cl-tty-kit:rgb-to-256 #xa0 #xb0 #xc0)
+                 (cl-tty-kit:rgb-to-256 #xa0 #xb0 #xc0)
+                 (cl-tty-kit:rgb-to-256 #xa0 #xb0 #xc0)))))
+        (setf (symbol-function 'cl-chip8:chip8-log-info) original-log-info
+              (symbol-function 'cl-chip8:run) original-run
+              cl-chip8::*chip8-render-palette* original-palette)))))

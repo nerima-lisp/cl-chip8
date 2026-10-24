@@ -466,7 +466,7 @@ signals none instead."
        :to-equal
        (list :cosmac-vip "db" 900 "db-platform"
              "d6d8efef811350e7fba6197024c4973b360749b8"
-             (quote ("#123456" "#abcdef")) "db"))))
+             (quote ("#123456" "#ABCDEF")) "db"))))
 
   (it "reports the winning clock source across CLI, TOML, and database defaults"
     (let* ((record (quote (:platforms (:original-chip8) :tickrate 7)))
@@ -572,3 +572,64 @@ signals none instead."
         (cl-chip8:chip8-quirks-memory-i
          (cl-chip8:chip8-config-quirks absent-config)))
        :to-equal (quote (:increment-x :preserve))))))
+(describe "P4b ROM database colors"
+  (it "normalizes database colors into the configuration API"
+    (let* ((sha1 "018442698067c95d67e27a94e6642c11f049f108")
+           (record (cl-chip8:find-rom-record sha1))
+           (config (cl-chip8:merge-chip8-config
+                    :rom-record record :rom-sha1 sha1)))
+      (expect (cl-chip8:chip8-config-rom-sha1 config) :to-equal sha1)
+      (expect
+       (list (cl-chip8:chip8-config-colors-pixels config)
+             (cl-chip8:chip8-config-colors-source config))
+       :to-equal
+       (quote (("#274A17" "#00F80A") "db")))))
+
+  (it "rejects invalid colors from a database record"
+    (let ((condition
+            (%signalled-config-error
+             (lambda ()
+               (cl-chip8:merge-chip8-config
+                :rom-record
+                (quote (:platforms (:modern-chip8)
+                         :colors (:pixels ("#GGGGGG" "#123456")))))))))
+      (expect (cl-chip8:chip8-config-error-source-name condition)
+              :to-equal "ROM database")
+      (expect (cl-chip8:chip8-config-error-path condition)
+              :to-equal "colors.pixels")
+      (expect (cl-chip8:chip8-config-error-reason condition)
+              :to-equal "expected two or four #RRGGBB colors")))
+
+  (it "resolves colors from CLI before TOML, database, and defaults"
+    (let* ((record
+             (quote (:platforms (:modern-chip8)
+                      :colors (:pixels ("#304050" "#c0d0e0")))))
+           (cli
+             (cl-chip8:merge-chip8-config
+              :cli (quote (:colors_pixels ("#102030" "#a0b0c0")))
+              :toml (%config-table
+                     "colors" (%config-table "pixels" (quote ("#213243" "#b1c2d3"))))
+              :rom-record record))
+           (toml
+             (cl-chip8:merge-chip8-config
+              :toml (%config-table
+                     "colors" (%config-table "pixels" (quote ("#213243" "#b1c2d3"))))
+              :rom-record record))
+           (database (cl-chip8:merge-chip8-config :rom-record record))
+           (default (cl-chip8:merge-chip8-config)))
+      (expect
+       (list (cl-chip8:chip8-config-colors-pixels cli)
+             (cl-chip8:chip8-config-colors-pixels toml)
+             (cl-chip8:chip8-config-colors-pixels database)
+             (cl-chip8:chip8-config-colors-pixels default))
+       :to-equal
+       (quote (("#102030" "#A0B0C0")
+               ("#213243" "#B1C2D3")
+               ("#304050" "#C0D0E0")
+               ("#000000" "#00FF00" "#FFFF00" "#FFFFFF"))))
+      (expect
+       (list (cl-chip8:chip8-config-colors-source cli)
+             (cl-chip8:chip8-config-colors-source toml)
+             (cl-chip8:chip8-config-colors-source database)
+             (cl-chip8:chip8-config-colors-source default))
+       :to-equal (quote ("cli" "toml" "db" "default"))))))
