@@ -23,6 +23,7 @@
                "cl-concurrent-kit" ; render workers
                "cl-date-kit"
                "cl-host-kit"
+               "cl-crypto-kit"
                ;; SBCL bundled; used by ROM.LISP for regular-file checks.
                #:sb-posix)
   :pathname "src"
@@ -33,7 +34,7 @@
                (:file "machine-types") (:file "machine") (:file "memory") (:file "fontset")
                (:file "display-types") (:file "display") (:file "opcode-data")
                (:file "opcode-execution") (:file "opcode-dispatch") (:file "opcode-cps")
-               (:file "timers") (:file "keypad") (:file "rom") (:file "headless")
+               (:file "timers") (:file "keypad") (:file "rom") (:file "rom-database-data") (:file "rom-database") (:file "headless")
                (:file "render-types")
                (:file "render")
                (:file "concurrent-render-types")
@@ -71,7 +72,8 @@
                "cl-host-kit")
   :pathname "t"
   :serial t
-  :components ((:file "package") (:file "cpu-test") (:file "memory-test")
+  :components ((:file "package") (:file "cpu-test")
+               (:file "rom-database-test") (:file "memory-test")
                (:file "mutation-test")
                (:file "display-test") (:file "fontset-test") (:file "keypad-test")
                (:file "timers-test") (:file "rom-test")

@@ -149,6 +149,8 @@
         "x86_64-linux"
         "aarch64-darwin"
       ];
+      flakeLock = builtins.fromJSON (builtins.readFile ./flake.lock);
+      databaseRevision = flakeLock.nodes."chip-8-database".locked.rev;
     in
     cl-nix-forge.lib.${builtins.head systems}.mkPackageFlake {
       inherit self systems nixpkgs;
@@ -188,6 +190,12 @@
             version = ctx.cl.fromAsdSystem "${cl-json-kit}/cl-json-kit.asd";
             src = cl-json-kit;
             lispSystem = "cl-json-kit";
+          };
+          cryptoKit = ctx.cl.lispDerivation {
+            pname = "cl-crypto-kit";
+            version = ctx.cl.fromAsdSystem "${cl-crypto-kit}/cl-crypto-kit.asd";
+            src = cl-crypto-kit;
+            lispSystem = "cl-crypto-kit";
           };
           boundaryKit = ctx.cl.lispDerivation {
             pname = "cl-boundary-kit";
@@ -288,6 +296,7 @@
           })
           dateKit
           concurrentKit
+          cryptoKit
           hostKit
           jsonKit
           logKit
@@ -335,6 +344,13 @@
         checks.default = ctx.generated.checks.default.overrideAttrs (old: {
           preCheck = (old.preCheck or "") + ''
             export CHIP8_TIMENDUS_DIR=${timendus-chip8-test-suite}/bin
+            rom_db_generated="$(mktemp)"
+            trap 'rm -f "$rom_db_generated"' EXIT
+            sbcl --script tools/generate-rom-database.lisp \
+              --input-dir "${chip-8-database}" \
+              --output "$rom_db_generated" \
+              --source-revision "${databaseRevision}"
+            cmp "$rom_db_generated" src/rom-database-data.lisp
           '';
         });
       };

@@ -22,7 +22,8 @@
                                       "cl-concurrent-kit" "cl-boundary-kit"
                                       "cl-date-kit" "cl-host-kit" "cl-codec-kit"
                                       "cl-weave" "cl-parser-kit" "cl-log-kit"
-                                      "cl-json-kit" "cl-toml-kit"
+                                      "cl-json-kit"
+                                      "cl-crypto-kit" "cl-toml-kit"
                                       "cl-observability-kit")
                         for directory = (merge-pathnames
                                          (format nil "~A/" name) organization-root)
@@ -40,7 +41,7 @@
 (defparameter *chip8-build-dependencies*
   '("cl-dataflow-kit" "cl-tty-kit" "cl-cli" "cl-toml-kit"
     "cl-log-kit" "cl-observability-kit" "cl-concurrent-kit"
-    "cl-date-kit" "cl-host-kit" "cl-weave" "cl-json-kit"))
+    "cl-date-kit" "cl-host-kit" "cl-weave" "cl-json-kit" "cl-crypto-kit"))
 
 (defun chip8-path-prefix-p (path root)
   (let ((path (namestring (truename path)))
