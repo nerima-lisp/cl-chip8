@@ -22,67 +22,79 @@ All recoverable ROM-loading and runtime errors become a diagnostic on
 enter its terminal session."
   (handler-case
       (let* ((options (chip8-run-options invocation))
-             (cli (list :rom (getf options :rom-path)
-                        :clock_hz (getf options :clock-hz)
-                        :quirks (getf options :quirks)
-                        :log (or (getf options :log)
-                                 (getf options :log-path))))
+             (log-path (or (getf options :log) (getf options :log-path)))
+             (cli (append (list :rom (getf options :rom-path)
+                                :clock_hz (getf options :clock-hz))
+                          (when (getf options :quirks)
+                            (list :quirks (getf options :quirks)))
+                          (when (getf options :platform)
+                            (list :platform (getf options :platform)))
+                          (when log-path (list :log log-path))))
              (config (make-chip8-config-from-sources
-                      :toml-path (getf options :config-path) :cli cli)))
+                      :toml-path (getf options :config-path) :cli cli
+                      :db-rom-tickrate nil :db-platform-tickrate nil)))
         (let ((logger (make-chip8-logger :path (chip8-config-log-path config))))
           (unwind-protect
-             (let ((metrics (make-chip8-metrics)))
-               (let ((result nil) (app nil))
-                 (setf result
-                       (handler-case
-                           (progn
-                             (unless (and (chip8-config-rom-path config)
-                                          (probe-file (chip8-config-rom-path config)))
-                               (error "ROM file does not exist: ~A"
-                                      (chip8-config-rom-path config)))
-                             (chip8-log-info logger "startup"
-                                             (list :rom (chip8-config-rom-path config)
-                                                   :clock_hz (chip8-config-clock-hz config)
-                                                   :quirks (chip8-quirks-profile
-                                                            (chip8-config-quirks config))))
-                             (setf app (run :rom-path (chip8-config-rom-path config)
-                                            :clock-hz (chip8-config-clock-hz config)
-                                            :quirks (chip8-config-quirks config)))
-                             (if (chip8-app-error app)
-                                 (progn
-                                   (chip8-log-error logger "runtime-error"
-                                                    (list :error
-                                                          (princ-to-string
-                                                           (chip8-app-error app))))
-                                   (format *error-output* "~&cl-chip8: ~A~%"
-                                           (chip8-app-error app))
-                                   1)
-                                 0))
-                         (error (condition)
-                           (chip8-log-error logger "runtime-error"
-                                            (list :error (princ-to-string condition)))
-                           (format *error-output* "~&cl-chip8: ~A~%" condition)
-                           1)))
-                 (chip8-log-info logger "metrics"
-                                  (chip8-metrics-fields
-                                   (finalize-chip8-metrics!
-                                    metrics
-                                    :machine (and app (chip8-app-machine app))
-                                    :render-state
-                                    (and app (chip8-app-render-state app))
-                                    :render-pipeline
-                                    (and app (chip8-app-render-pipeline app))
-                                    :effective-hz
-                                    (when (and app (chip8-app-started-at app))
-                                      (let ((elapsed (- (get-internal-real-time)
-                                                        (chip8-app-started-at app))))
-                                        (when (plusp elapsed)
-                                          (float
-                                           (/ (* (chip8-machine-instructions
-                                                  (chip8-app-machine app))
-                                                 internal-time-units-per-second)
-                                              elapsed))))))))
-                 result))
+               (let ((metrics (make-chip8-metrics)))
+                 (let ((result nil) (app nil))
+                   (setf result
+                         (handler-case
+                             (progn
+                               (unless (and (chip8-config-rom-path config)
+                                            (probe-file (chip8-config-rom-path config)))
+                                 (error "ROM file does not exist: ~A"
+                                        (chip8-config-rom-path config)))
+                               (chip8-log-info logger "startup"
+                                               (list :rom (chip8-config-rom-path config)
+                                                     :clock_hz (chip8-config-clock-hz config)
+                                                     :platform (chip8-platform-name
+                                                                (chip8-config-platform config))
+                                                     :quirks (chip8-quirks-profile
+                                                              (chip8-config-quirks config))))
+                               (setf app
+                                     (if (chip8-config-quirks-explicit-p config)
+                                         (run :rom-path (chip8-config-rom-path config)
+                                              :clock-hz (chip8-config-clock-hz config)
+                                              :platform (chip8-config-platform config)
+                                              :quirks (chip8-config-quirks config))
+                                         (run :rom-path (chip8-config-rom-path config)
+                                              :clock-hz (chip8-config-clock-hz config)
+                                              :platform (chip8-config-platform config))))
+                               (if (chip8-app-error app)
+                                   (progn
+                                     (chip8-log-error logger "runtime-error"
+                                                      (list :error
+                                                            (princ-to-string
+                                                             (chip8-app-error app))))
+                                     (format *error-output* "~&cl-chip8: ~A~%"
+                                             (chip8-app-error app))
+                                     1)
+                                   0))
+                           (error (condition)
+                             (chip8-log-error logger "runtime-error"
+                                              (list :error (princ-to-string condition)))
+                             (format *error-output* "~&cl-chip8: ~A~%" condition)
+                             1)))
+                   (chip8-log-info logger "metrics"
+                                   (chip8-metrics-fields
+                                    (finalize-chip8-metrics!
+                                     metrics
+                                     :machine (and app (chip8-app-machine app))
+                                     :render-state
+                                     (and app (chip8-app-render-state app))
+                                     :render-pipeline
+                                     (and app (chip8-app-render-pipeline app))
+                                     :effective-hz
+                                     (when (and app (chip8-app-started-at app))
+                                       (let ((elapsed (- (get-internal-real-time)
+                                                         (chip8-app-started-at app))))
+                                         (when (plusp elapsed)
+                                           (float
+                                            (/ (* (chip8-machine-instructions
+                                                   (chip8-app-machine app))
+                                                  internal-time-units-per-second)
+                                               elapsed))))))))
+                   result))
             (unwind-protect
                  (flush-chip8-logger logger)
               (close-chip8-logger logger)))))
@@ -104,8 +116,11 @@ at https://nerima-lisp.github.io/cl-chip8/guide/terminal/ for the full table."
                                        :description "Path to the CHIP-8 ROM file to run."))
    :global-options
    (list (make-option :key :quirks :name "quirks" :kind :value
-                      :choices '("modern" "cosmac-vip")
+                      :choices '("modern" "cosmac-vip" "schip" "schip-legacy" "xo-chip")
                       :description "CHIP-8 compatibility quirks profile.")
+         (make-option :key :platform :name "platform" :kind :value
+                      :choices '("cosmac-vip" "modern" "schip" "schip-legacy" "xo-chip")
+                      :description "CHIP-8 platform defaults.")
          (make-option :key :config :name "config" :kind :value
                       :description "Path to the configuration file.")
          (make-option :key :log :name "log" :kind :value
@@ -123,6 +138,7 @@ Timers always run at a fixed 60Hz regardless."
   (list :rom-path (positional-value invocation :rom)
         :clock-hz (option-value invocation :clock-hz)
         :quirks (option-value invocation :quirks)
+        :platform (option-value invocation :platform)
         :config-path (option-value invocation :config)
         :log-path (option-value invocation :log)))
 

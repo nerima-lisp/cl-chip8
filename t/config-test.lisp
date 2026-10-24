@@ -85,6 +85,72 @@ signals none instead."
               :to-be cl-chip8::+default-clock-hz+)
       (expect (cl-chip8:chip8-app-clock-hz (cl-chip8:make-chip8-app))
               :to-be cl-chip8::+default-clock-hz+)))
+  (it "uses every selected platform's profile and tickrate"
+    (dolist (case '(("cosmac-vip" :cosmac-vip 900)
+                    ("modern" :modern 720)
+                    ("schip" :schip 1800)
+                    ("schip-legacy" :schip-legacy 1800)
+                    ("xo-chip" :xo-chip 6000)))
+      (destructuring-bind (name expected-profile expected-clock) case
+        (let* ((config (cl-chip8:merge-chip8-config
+                        :toml (%config-toml "platform" name)))
+               (platform (cl-chip8:chip8-config-platform config))
+               (quirks (cl-chip8:chip8-config-quirks config)))
+          (expect (list (cl-chip8:chip8-platform-name platform)
+                        (cl-chip8:chip8-quirks-profile quirks)
+                        (cl-chip8:chip8-config-clock-hz config))
+                  :to-equal
+                  (list expected-profile expected-profile expected-clock))))))
+  (it "honors CLI, TOML, and defaults for platform selection"
+    (let* ((all-sources
+             (cl-chip8:merge-chip8-config
+              :defaults '(:platform "cosmac-vip" :clock_hz 111)
+              :toml (%config-table
+                     "chip8" (%config-table "platform" "schip" "clock_hz" 222))
+              :cli '(:platform "xo-chip" :clock_hz 333)
+              :db-rom-tickrate 7 :db-platform-tickrate 8))
+           (toml-over-defaults
+             (cl-chip8:merge-chip8-config
+              :defaults '(:platform "cosmac-vip")
+              :toml (%config-toml "platform" "schip")
+              :db-rom-tickrate 7 :db-platform-tickrate 8))
+           (defaults-only
+             (cl-chip8:merge-chip8-config
+              :defaults '(:platform "cosmac-vip"))))
+      (expect
+       (list (cl-chip8:chip8-platform-name
+              (cl-chip8:chip8-config-platform all-sources))
+             (cl-chip8:chip8-quirks-profile
+              (cl-chip8:chip8-config-quirks all-sources))
+             (cl-chip8:chip8-config-clock-hz all-sources)
+             (cl-chip8:chip8-platform-name
+              (cl-chip8:chip8-config-platform toml-over-defaults))
+             (cl-chip8:chip8-quirks-profile
+              (cl-chip8:chip8-config-quirks toml-over-defaults))
+             (cl-chip8:chip8-config-clock-hz toml-over-defaults)
+             (cl-chip8:chip8-platform-name
+              (cl-chip8:chip8-config-platform defaults-only))
+             (cl-chip8:chip8-config-clock-hz defaults-only))
+       :to-equal '(:xo-chip :xo-chip 333 :schip :schip 420 :cosmac-vip 900))))
+  (it "resolves clock precedence and platform tickrates"
+    (expect
+     (list (cl-chip8:resolve-chip8-clock-hz
+            :cli-clock-hz 321 :toml-clock-hz 654
+            :db-rom-tickrate 12 :db-platform-tickrate 13
+            :platform-default-tickrate 30)
+           (cl-chip8:resolve-chip8-clock-hz
+            :toml-clock-hz 654 :db-rom-tickrate 12
+            :db-platform-tickrate 13 :platform-default-tickrate 30)
+           (cl-chip8:resolve-chip8-clock-hz
+            :db-rom-tickrate 12 :db-platform-tickrate 13
+            :platform-default-tickrate 30)
+           (cl-chip8:resolve-chip8-clock-hz
+            :db-platform-tickrate 13 :platform-default-tickrate 30)
+           (cl-chip8:resolve-chip8-clock-hz :platform-default-tickrate 30)
+           (cl-chip8:resolve-chip8-clock-hz)
+           (cl-chip8:resolve-chip8-clock-hz
+            :platform-default-tickrate 15 :fallback-clock-hz 600))
+     :to-equal '(321 654 720 780 1800 700 900)))
 
   (it "keeps the app predicate internal"
     (expect (nth-value 1 (find-symbol "CHIP8-APP-P" :cl-chip8))
@@ -200,59 +266,77 @@ signals none instead."
   ;; Each row must signal through the real TOML loading path and identify the
   ;; schema path, so a table entry cannot pass by merely returning a value.
   (it "rejects every invalid configuration key value"
-    (dolist (case
-             '(("profile type" "[chip8]~%quirks = ~S" "legacy"
-                "chip8.quirks" "profile must be modern or cosmac-vip")
-               ("clock type" "[chip8]~%clock_hz = ~S" "fast"
-                "chip8.clock_hz" "expected a positive integer")
-               ("clock range" "[chip8]~%clock_hz = 0" nil
-                "chip8.clock_hz" "expected a positive integer")
-               ("display wait type" "[chip8]~%display_wait = ~S" "yes"
-                "chip8.display_wait" "expected a boolean")
-               ("clipping enum" "[chip8]~%clipping = ~S" "diagonal"
-                "chip8.clipping" "invalid value")
-               ("shift source enum" "[chip8]~%shift_source = ~S" "vz"
-                "chip8.shift_source" "invalid value")
-               ("BNNN register enum" "[chip8]~%bnnn_register = ~S" "vy"
-                "chip8.bnnn_register" "invalid value")
-               ("FX0A completion enum" "[chip8]~%fx0a_completion = ~S" "hold"
-                "chip8.fx0a_completion" "invalid value")
-               ("memory I enum" "[chip8]~%memory_i = ~S" "reset"
-                "chip8.memory_i" "invalid value")
-               ("VF reset enum" "[chip8]~%vf_reset = ~S" "clear"
-                "chip8.vf_reset" "invalid value")
-               ("logging path type" "[logging]~%path = 7" nil
-                "logging.path" "expected a string")))
-      (destructuring-bind (label control arg expected-path expected-reason) case
-        (%with-toml-file (path control arg)
-          (let ((condition (%signalled-config-error
-                            (lambda () (cl-chip8:load-chip8-config-file path)))))
-            (expect (list label (typep condition 'cl-chip8:chip8-config-error))
-                    :to-equal (list label t))
-            (expect (cl-chip8:chip8-config-error-path condition)
-                    :to-equal expected-path)
-            (expect (cl-chip8:chip8-config-error-reason condition)
-                    :to-equal expected-reason))))))
+  (dolist (case
+           '(("profile type" "[chip8]~%quirks = ~S" "legacy"
+              "chip8.quirks" "profile must be modern, cosmac-vip, schip, schip-legacy, or xo-chip")
+             ("unknown platform" "[chip8]~%platform = ~S" "legacy"
+              "chip8.platform" "platform must be modern, cosmac-vip, schip, schip-legacy, or xo-chip")
+             ("clock type" "[chip8]~%clock_hz = ~S" "fast"
+              "chip8.clock_hz" "expected a positive integer")
+             ("clock range" "[chip8]~%clock_hz = 0" nil
+              "chip8.clock_hz" "expected a positive integer")
+             ("display wait type" "[chip8]~%display_wait = ~S" "yes"
+              "chip8.display_wait" "expected a boolean or lores-only")
+             ("clipping enum" "[chip8]~%clipping = ~S" "diagonal"
+              "chip8.clipping" "invalid value")
+             ("shift source enum" "[chip8]~%shift_source = ~S" "vz"
+              "chip8.shift_source" "invalid value")
+             ("BNNN register enum" "[chip8]~%bnnn_register = ~S" "vy"
+              "chip8.bnnn_register" "invalid value")
+             ("FX0A completion enum" "[chip8]~%fx0a_completion = ~S" "hold"
+              "chip8.fx0a_completion" "invalid value")
+             ("memory I enum" "[chip8]~%memory_i = ~S" "reset"
+              "chip8.memory_i" "invalid value")
+             ("VF reset enum" "[chip8]~%vf_reset = ~S" "clear"
+              "chip8.vf_reset" "invalid value")
+             ("lores sprite enum" "[chip8]~%lores_sprite = ~S" "32x32"
+              "chip8.lores_sprite" "invalid value")
+             ("collision enum" "[chip8]~%collision = ~S" "rows"
+              "chip8.collision" "invalid value")
+             ("lores scroll enum" "[chip8]~%lores_scroll = ~S" "pixel"
+              "chip8.lores_scroll" "invalid value")
+             ("mode switch clear type" "[chip8]~%mode_switch_clear = ~S" "yes"
+              "chip8.mode_switch_clear" "expected a boolean")
+             ("logging path type" "[logging]~%path = 7" nil
+              "logging.path" "expected a string")))
+    (destructuring-bind (label control arg expected-path expected-reason) case
+      (%with-toml-file (path control arg)
+        (let ((condition (%signalled-config-error
+                          (lambda () (cl-chip8:load-chip8-config-file path)))))
+          (expect (list label (typep condition 'cl-chip8:chip8-config-error))
+                  :to-equal (list label t))
+          (expect (cl-chip8:chip8-config-error-path condition)
+                  :to-equal expected-path)
+          (expect (cl-chip8:chip8-config-error-reason condition)
+                  :to-equal expected-reason))))))
 
   ;; The TOML override names are intentionally different from the structure
   ;; accessors. This table proves that every registered override reaches its
   ;; corresponding observable slot on the resulting quirks object.
   (it "applies every TOML quirks override slot"
-    (dolist (case
-             '(("vf_reset" chip8-quirks-vf-behavior "reset" :reset)
-               ("memory_i" chip8-quirks-memory-i "increment" :increment)
-               ("display_wait" chip8-quirks-display-wait t :wait)
-               ("clipping" chip8-quirks-clipping "wrap" :wrap)
-               ("shift_source" chip8-quirks-shift-source "vy" :vy)
-               ("bnnn_register" chip8-quirks-bnnn-register "vx" :vx)
-               ("fx0a_completion" chip8-quirks-fx0a-completion "release" :release)))
-      (destructuring-bind (key accessor value expected) case
-        (let* ((toml (%config-toml key value))
-               (config (cl-chip8:merge-chip8-config
-                        :toml toml
-                        :defaults '(:quirks "modern"))))
-          (expect (list key (funcall accessor (cl-chip8:chip8-config-quirks config)))
-                  :to-equal (list key expected))))))
+  (dolist (case
+           '(("vf_reset" chip8-quirks-vf-behavior "reset" :reset)
+             ("memory_i" chip8-quirks-memory-i "increment-x" :increment-x)
+             ("memory_i" chip8-quirks-memory-i "increment" :increment)
+             ("display_wait" chip8-quirks-display-wait t :wait)
+             ("display_wait" chip8-quirks-display-wait nil :none)
+             ("display_wait" chip8-quirks-display-wait "lores-only" :lores-only)
+             ("clipping" chip8-quirks-clipping "wrap" :wrap)
+             ("shift_source" chip8-quirks-shift-source "vy" :vy)
+             ("bnnn_register" chip8-quirks-bnnn-register "vx" :vx)
+             ("fx0a_completion" chip8-quirks-fx0a-completion "release" :release)
+             ("lores_sprite" chip8-quirks-lores-sprite "8x16" :8x16)
+             ("collision" chip8-quirks-collision "row-count" :row-count)
+             ("lores_scroll" chip8-quirks-lores-scroll "half" :half)
+             ("mode_switch_clear" chip8-quirks-mode-switch-clear nil nil)
+             ("mode_switch_clear" chip8-quirks-mode-switch-clear t t)))
+    (destructuring-bind (key accessor value expected) case
+      (let* ((toml (%config-table "chip8" (%config-table key value)))
+             (config (cl-chip8:merge-chip8-config
+                      :toml toml
+                      :defaults '(:quirks "modern"))))
+        (expect (list key (funcall accessor (cl-chip8:chip8-config-quirks config)))
+                :to-equal (list key expected))))))
 
 (it "defaults every CHIP-8 quirk profile from the compatibility matrix"
   ;; Timendus labels SCHIP_MODERN and SCHIP_LEGACY; these map to :schip and

@@ -39,30 +39,44 @@
         (delete-file script)))))
 
 (describe "the cl-chip8 app spec"
-  (it-each (("quirks" "--quirks" "modern" :quirks)
-            ("config" "--config" "chip8.toml" :config)
-            ("log" "--log" "stderr" :log)
-            ("clock" "--clock-hz" "500" :clock-hz))
-      "parses the ~A option"
-      (label option value key)
-    (declare (ignore label))
-    (let ((invocation (parse-argv *app* (list "cl-chip8" option value "game.ch8"))))
-      (expect (option-value invocation key) :to-equal
-              (if (eq key :clock-hz) 500 value))))
+  (it-each (("quirks modern" "--quirks" "modern" :quirks)
+              ("quirks cosmac-vip" "--quirks" "cosmac-vip" :quirks)
+              ("quirks schip" "--quirks" "schip" :quirks)
+              ("quirks schip-legacy" "--quirks" "schip-legacy" :quirks)
+              ("quirks xo-chip" "--quirks" "xo-chip" :quirks)
+              ("platform modern" "--platform" "modern" :platform)
+              ("platform cosmac-vip" "--platform" "cosmac-vip" :platform)
+              ("platform schip" "--platform" "schip" :platform)
+              ("platform schip-legacy" "--platform" "schip-legacy" :platform)
+              ("platform xo-chip" "--platform" "xo-chip" :platform)
+              ("config" "--config" "chip8.toml" :config)
+              ("log" "--log" "stderr" :log)
+              ("clock" "--clock-hz" "500" :clock-hz))
+    "parses the ~A option"
+    (label option value key)
+  (declare (ignore label))
+  (let ((invocation (parse-argv *app* (list "cl-chip8" option value "game.ch8"))))
+    (expect (option-value invocation key) :to-equal
+            (if (eq key :clock-hz) 500 value))))
 
   (it "leaves optional options unset by default"
     (let ((invocation (parse-argv *app* '("cl-chip8" "game.ch8"))))
-      (expect (loop for key in '(:quirks :config :log :clock-hz)
+      (expect (loop for key in '(:quirks :platform :config :log :clock-hz)
                     always (null (option-value invocation key)))
               :to-be t)))
 
-  (it-each (("zero" "0") ("negative" "-1") ("non-integer" "not-a-number"))
-      "rejects an invalid --clock-hz value: ~A"
-      (label value)
-    (declare (ignore label))
-    (expect (signals cli-invalid-option-value
-                    (parse-argv *app* (list "cl-chip8" "--clock-hz" value "game.ch8")))
-            :to-be-truthy)))
+  (it-each (("zero" "--clock-hz" "0")
+              ("negative" "--clock-hz" "-1")
+              ("non-integer" "--clock-hz" "not-a-number")
+              ("unknown profile" "--quirks" "legacy")
+              ("unknown platform" "--platform" "legacy"))
+    "rejects an invalid ~A value: ~A"
+    (label option value)
+  (declare (ignore label))
+  (expect (signals cli-invalid-option-value
+                  (parse-argv *app*
+                              (list "cl-chip8" option value "game.ch8")))
+          :to-be-truthy)))
 
 (describe "the cl-chip8 app spec: the rom positional"
   (it "binds the positional rom path"
@@ -74,16 +88,17 @@
 
 (describe "the cl-chip8 run boundary"
   (it
-    "projects a parsed invocation into the pure run options plist"
-    (let ((invocation
-            (parse-argv *app*
-                        '("cl-chip8" "--clock-hz" "321" "--quirks"
-                          "cosmac-vip" "--config" "chip8.toml" "--log"
-                          "stderr" "game.ch8"))))
-      (expect (chip8-run-options invocation)
-              :to-equal
-              '(:rom-path "game.ch8" :clock-hz 321 :quirks "cosmac-vip"
-                :config-path "chip8.toml" :log-path "stderr")))))
+  "projects a parsed invocation into the pure run options plist"
+  (let ((invocation
+          (parse-argv *app*
+                      '("cl-chip8" "--clock-hz" "321" "--quirks"
+                        "cosmac-vip" "--platform" "schip" "--config"
+                        "chip8.toml" "--log" "stderr" "game.ch8"))))
+    (expect (chip8-run-options invocation)
+            :to-equal
+            '(:rom-path "game.ch8" :clock-hz 321 :quirks "cosmac-vip"
+              :platform "schip" :config-path "chip8.toml"
+              :log-path "stderr")))))
 
 (describe "the cl-chip8 configuration error boundary"
   (it
@@ -141,7 +156,7 @@
       (expect (search path output) :to-be-truthy))))
 
 (describe "the cl-chip8 CLI termination boundary"
-  (it "logs a non-zero instruction count when run returns"
+  (it "forwards platform defaults and only explicit quirks to run"
     (let* ((rom-path (format nil "/tmp/cl-chip8-cli-metrics-~D.ch8" (random 1000000)))
            (log-path (format nil "/tmp/cl-chip8-cli-metrics-~D.json" (random 1000000)))
            (machine (cl-chip8:make-chip8-machine))
@@ -151,7 +166,14 @@
                  :started-at (- (get-internal-real-time)
                                 internal-time-units-per-second)))
            (invocation (parse-argv *app*
-                                   (list "cl-chip8" "--log" log-path rom-path)))
+                                  (list "cl-chip8" "--log" log-path
+                                        "--platform" "schip" rom-path)))
+           (explicit-invocation
+             (parse-argv *app*
+                         (list "cl-chip8" "--log" log-path
+                               "--platform" "schip" "--quirks" "cosmac-vip"
+                               rom-path)))
+           (run-calls nil)
            (original-run (symbol-function 'cl-chip8:run)))
       (unwind-protect
            (progn
@@ -160,18 +182,31 @@
                (write-byte 0 stream))
              (setf (cl-chip8:chip8-machine-instructions machine) 7)
              (setf (symbol-function 'cl-chip8:run)
-                   (lambda (&key rom-path clock-hz quirks stream)
-                     (declare (ignore rom-path clock-hz quirks stream))
+                   (lambda (&key rom-path clock-hz platform
+                                 (quirks nil quirks-p) stream)
+                     (declare (ignore rom-path clock-hz stream))
+                     (push (list platform quirks-p quirks) run-calls)
                      app))
              (render-chip8! (cl-tty-kit:make-screen +screen-width+ +screen-height+)
                             (cl-chip8::%renderer-framebuffer machine)
                             (cl-chip8::chip8-app-render-state app))
-             (let ((error-output (make-string-output-stream)))
-               (let ((*error-output* error-output))
-                 (let ((status (cl-chip8::%run-handler invocation)))
-                   (unless (zerop status)
-                     (error "CLI handler returned ~D: ~A" status
-                            (get-output-stream-string error-output))))))
+             (dolist (call-invocation (list invocation explicit-invocation))
+               (let ((error-output (make-string-output-stream)))
+                 (let ((*error-output* error-output))
+                   (let ((status (cl-chip8::%run-handler call-invocation)))
+                     (unless (zerop status)
+                       (error "CLI handler returned ~D: ~A" status
+                              (get-output-stream-string error-output)))))))
+             (expect
+              (reverse
+               (mapcar (lambda (call)
+                         (destructuring-bind (platform quirks-p quirks) call
+                           (list (cl-chip8:chip8-platform-name platform)
+                                 quirks-p
+                                 (and quirks-p
+                                      (cl-chip8:chip8-quirks-profile quirks)))))
+                       run-calls))
+              :to-equal '((:schip nil nil) (:schip t :cosmac-vip)))
              (let ((contents (uiop:read-file-string log-path)))
                (expect (search "chip8_instructions_total" contents) :to-be-truthy)
                (expect (search ":7" contents) :to-be-truthy)
@@ -194,12 +229,12 @@
                     (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
       (expect (search "--clock-hz" output) :to-be-truthy)))
 
-  (it-each (("--quirks") ("--config") ("--log"))
-      "lists ~A in the help output"
-      (option)
-    (let ((output (with-output-to-string (out)
-                    (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
-      (expect (search option output) :to-be-truthy)))
+  (it-each (("--quirks") ("--platform") ("--config") ("--log"))
+    "lists ~A in the help output"
+    (option)
+  (let ((output (with-output-to-string (out)
+                  (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
+    (expect (search option output) :to-be-truthy)))
 
   (it "describes --log as a file destination rather than a log level"
     (let ((output (with-output-to-string (out)

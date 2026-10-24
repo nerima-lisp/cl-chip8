@@ -140,9 +140,11 @@
       (member (chip8-control-state (chip8-app-state-machine app))
               '("finished" "error") :test #'string=)))
 
-(defun run (&key rom-path (clock-hz +default-clock-hz+)
-                 (quirks (make-chip8-quirks)) (stream *standard-output*))
-  (let ((machine (make-chip8-machine :quirks quirks)))
+(defun run (&key rom-path (clock-hz +default-clock-hz+) (platform :modern)
+                 (quirks nil quirks-p) (stream *standard-output*))
+  (let ((machine (if quirks-p
+                     (make-chip8-machine :platform platform :quirks quirks)
+                     (make-chip8-machine :platform platform))))
     (load-rom-file machine rom-path)
     (with-chip8-render-pipeline (pipeline)
       (let ((app (make-chip8-app

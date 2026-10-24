@@ -30,7 +30,7 @@
    #:chip8-app-quit-p #:chip8-app-error #:chip8-app-instruction-remainder #:chip8-app-paused-p #:chip8-app-started-at
    #:with-chip8-render-pipeline #:+screen-width+ #:+screen-height+
    #:chip8-config-error #:chip8-config-error-source-name #:chip8-config-error-line #:chip8-config-error-column #:chip8-config-error-path #:chip8-config-error-key #:chip8-config-error-reason
-   #:chip8-config #:chip8-config-rom-path #:chip8-config-clock-hz #:chip8-config-quirks #:chip8-config-log-path #:merge-chip8-config #:load-chip8-config-file #:make-chip8-config-from-sources
+   #:chip8-config #:chip8-config-rom-path #:chip8-config-clock-hz #:chip8-config-platform #:resolve-chip8-clock-hz #:chip8-config-quirks #:chip8-config-log-path #:merge-chip8-config #:load-chip8-config-file #:make-chip8-config-from-sources
    #:make-chip8-logger #:close-chip8-logger #:chip8-log #:chip8-log-info #:chip8-log-error #:flush-chip8-logger
    #:chip8-metrics #:make-chip8-metrics #:chip8-metric-add #:chip8-metric-set #:flush-chip8-metrics! #:finalize-chip8-metrics! #:chip8-metrics-snapshot #:chip8-metrics-fields
    #:chip8-run-options #:*app* #:main #:image-entry-point #:find-rom-record #:chip8-quirks-lores-sprite #:chip8-quirks-collision #:chip8-quirks-lores-scroll #:chip8-quirks-mode-switch-clear))
