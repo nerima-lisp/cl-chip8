@@ -526,7 +526,10 @@
   (it
     "executes 60,000 instructions over sixty 60,000 Hz app ticks"
     (let* ((machine (make-chip8-machine))
-           (app (make-chip8-app :machine machine :clock-hz 60000))
+           (app (make-chip8-app
+                 :machine machine
+                 :state-machine (cl-chip8::make-chip8-control-state-machine)
+                 :clock-hz 60000))
            (*standard-input* (make-string-input-stream "")))
       (load-rom machine #(#x12 #x00))
       (loop repeat 60 do
