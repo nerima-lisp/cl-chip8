@@ -348,6 +348,55 @@
       (expect (cl-chip8::chip8-control-state
                (chip8-app-state-machine app))
               :to-equal "running")))
+  (it-each
+    ((:lores :display) (:hires nil))
+    "applies :schip-legacy display waiting in ~A mode"
+    (resolution expected-wait)
+    (let* ((machine (make-chip8-machine :platform :schip-legacy))
+           (app (make-chip8-app
+                 :machine machine
+                 :state-machine (cl-chip8::make-chip8-control-state-machine)
+                 :decoder (cl-tty-kit:make-input-decoder)
+                 :clock-hz 60)))
+      (when (eq resolution :hires)
+        (set-chip8-machine-resolution! machine :hires))
+      (load-rom machine #(#xa3 #x00 #xd0 #x11 #x60 #x01 #x61 #x02))
+      (setf (aref (chip8-machine-memory machine) #x300) #x80)
+      (let ((*standard-input* (make-string-input-stream "")))
+        (cl-chip8::%advance-chip8! app)
+        (cl-chip8::%advance-chip8! app)
+        (expect
+          (cl-chip8::chip8-wait-state-kind
+           (chip8-machine-waiting machine))
+          :to-be
+          expected-wait)
+        (expect (chip8-control-state (chip8-app-state-machine app))
+                :to-equal
+                (if expected-wait "waiting-display" "running"))
+        (if expected-wait
+            (progn
+              (expect (chip8-machine-pc machine) :to-be #x202)
+              (expect (chip8-machine-instructions machine) :to-be 2)
+              (cl-chip8::%advance-chip8! app)
+              (expect
+                (cl-chip8::chip8-wait-state-kind
+                 (chip8-machine-waiting machine))
+                :to-be
+                nil)
+              (expect (chip8-machine-register machine 0) :to-be 1)
+              (expect (chip8-machine-pc machine) :to-be #x206)
+              (expect (chip8-machine-instructions machine) :to-be 3)
+              (cl-chip8::%advance-chip8! app)
+              (expect (chip8-machine-register machine 1) :to-be 2)
+              (expect (chip8-machine-pc machine) :to-be #x208)
+              (expect (chip8-machine-instructions machine) :to-be 4))
+            (progn
+              (expect (chip8-machine-pc machine) :to-be #x204)
+              (expect (chip8-machine-instructions machine) :to-be 2)
+              (cl-chip8::%advance-chip8! app)
+              (expect (chip8-machine-register machine 0) :to-be 1)
+              (expect (chip8-machine-pc machine) :to-be #x206)
+              (expect (chip8-machine-instructions machine) :to-be 3))))))
   (it
     "halts the app cleanly on SCHIP 00FD"
     (let* ((machine (make-chip8-machine :platform :schip))
@@ -389,12 +438,18 @@
   "application worker scheduling"
   (it
     "distributes the configured clock over exactly sixty ticks"
-    (dolist (clock-hz '(1 59 60 700))
-      (let ((app (make-chip8-app :clock-hz clock-hz)))
-        (expect
-          (loop repeat 60 sum (cl-chip8::%instructions-per-tick app))
-          :to-be
-          clock-hz))))
+    (dolist (clock-hz '(1 59 60 700 60000))
+      (let* ((app (make-chip8-app :clock-hz clock-hz))
+             (tick-counts
+               (loop repeat 60
+                     collect (cl-chip8::%instructions-per-tick app))))
+        (expect (loop for count in tick-counts sum count)
+                :to-be
+                clock-hz)
+        (when (= clock-hz 60000)
+          (expect tick-counts
+                  :to-equal
+                  (make-list 60 :initial-element 1000))))))
   (it
     "keeps the scheduler remainder bounded"
     (let ((app (make-chip8-app :clock-hz 700)))
