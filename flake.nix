@@ -331,10 +331,30 @@
           cp -r ${timendus-chip8-test-suite} "$out"
         '';
         checks = {
-          paredit-lint = paredit-cli.lib.${ctx.system}.mkLintCheck {
-            inherit (ctx) src;
-            name = "cl-chip8-paredit-lint";
-          };
+          paredit-lint =
+            ctx.pkgs.runCommand "cl-chip8-paredit-lint"
+              {
+                nativeBuildInputs = [
+                  paredit-cli.packages.${ctx.system}.default
+                  ctx.pkgs.jq
+                ];
+              }
+              ''
+                set -o pipefail
+                paredit inspect workspace --output json "${ctx.src}" | jq -r '
+                  . as $report
+                  | (
+                      [
+                        $report.files[]
+                        | select(.status == "parse-error")
+                        | "\(.path): \(.error)"
+                      ]
+                      + ["paredit-lint: \($report.parsed_count) file(s) parsed, \($report.parse_error_count) parse error(s)"]
+                    )[],
+                    (if $report.parse_error_count == 0 then empty else error("parse errors found") end)
+                '
+                touch "$out"
+              '';
 
           build = ctx.executable;
         };
