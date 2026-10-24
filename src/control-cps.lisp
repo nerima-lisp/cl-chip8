@@ -63,8 +63,9 @@
              (chip8-app-state-machine app) :quit)))
     (let ((wait-kind (chip8-wait-state-kind (chip8-machine-waiting machine)))
           (state-machine (chip8-app-state-machine app)))
-      (when (and (eq (cl-dataflow-kit:state-machine-state state-machine)
-                     "running") wait-kind)
+      (when (and (string= (cl-dataflow-kit:state-machine-state state-machine)
+                    "running")
+           wait-kind)
         (setf (chip8-app-state-machine app)
               (step-chip8-control-state
                state-machine (if (eq wait-kind :key)
