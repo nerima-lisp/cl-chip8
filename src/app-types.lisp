@@ -5,4 +5,9 @@
   (clock-hz +default-clock-hz+ :type (integer 1 *))
   (instruction-remainder 0 :type (integer 0 59))
   (paused-p nil :type boolean) (quit-p nil :type boolean)
-  (error nil :type (or null condition)) stream started-at)
+  (error nil :type (or null condition))
+  audio-output
+  (audio-mode :off :type (member :auto :pcm :bell :off))
+  (last-audio-sound-timer 0 :type integer)
+  (last-audio-bell-time nil :type (or null integer))
+  stream started-at)

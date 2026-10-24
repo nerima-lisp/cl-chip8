@@ -24,6 +24,7 @@
                "cl-date-kit"
                "cl-host-kit"
                "cl-crypto-kit"
+               "cl-audio-kit"
                ;; SBCL bundled; used by ROM.LISP for regular-file checks.
                #:sb-posix)
   :pathname "src"
@@ -45,6 +46,7 @@
                (:file "control-events")
                (:file "state-machine")
                (:file "app-types")
+               (:file "audio-output")
                (:file "control-cps")
                (:file "app")
                (:file "cli"))
@@ -70,14 +72,15 @@
                "cl-json-kit"
                "cl-concurrent-kit"
                "cl-date-kit"
-               "cl-host-kit")
+               "cl-host-kit"
+               "cl-audio-kit")
   :pathname "t"
   :serial t
   :components ((:file "package") (:file "cpu-test")
                (:file "rom-database-test") (:file "memory-test")
                (:file "mutation-test")
                (:file "display-test") (:file "fontset-test") (:file "keypad-test")
-               (:file "timers-test") (:file "audio-test") (:file "rom-test")
+               (:file "timers-test") (:file "audio-test") (:file "audio-output-test") (:file "rom-test")
                (:file "render-test") (:file "concurrency-test")
                (:file "corpus-test")
                (:file "config-test") (:file "cli-test")

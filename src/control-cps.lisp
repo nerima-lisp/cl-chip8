@@ -28,7 +28,13 @@
   (let ((machine (chip8-app-machine app)))
     (when (and advance-timers-p
                (not (chip8-machine-halted-p machine)))
-      (step-timers! machine))
+      (let ((sound-was-active-p
+              (plusp (chip8-machine-sound-timer machine))))
+        (step-timers! machine)
+        (when (and sound-was-active-p
+                   (zerop (chip8-machine-sound-timer machine))
+                   (chip8-app-audio-output app))
+          (reset-chip8-audio-phase! (chip8-app-audio-output app)))))
     (unless (or (chip8-machine-halted-p machine)
                 (chip8-app-paused-p app))
       (handler-case

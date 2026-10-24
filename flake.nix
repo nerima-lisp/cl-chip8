@@ -29,6 +29,11 @@
       flake = false;
     };
 
+    cl-audio-kit = {
+      url = "github:nerima-lisp/cl-audio-kit/v0.1.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     cl-crypto-kit = {
       url = "github:nerima-lisp/cl-crypto-kit/v0.2.1";
       flake = false;
@@ -126,6 +131,7 @@
       cl-tty-kit,
       cl-cli,
       cl-concurrent-kit,
+      cl-audio-kit,
       cl-crypto-kit,
       cl-boundary-kit,
       cl-date-kit,
@@ -296,6 +302,7 @@
           })
           dateKit
           concurrentKit
+          cl-audio-kit.packages.${ctx.system}.cl-audio-kit
           cryptoKit
           hostKit
           jsonKit
@@ -360,19 +367,44 @@
         };
       };
 
-      overrideOutputs = ctx: {
-        checks.default = ctx.generated.checks.default.overrideAttrs (old: {
-          preCheck = (old.preCheck or "") + ''
-            export CHIP8_TIMENDUS_DIR=${timendus-chip8-test-suite}/bin
-            rom_db_generated="$(mktemp)"
-            trap 'rm -f "$rom_db_generated"' EXIT
-            sbcl --script tools/generate-rom-database.lisp \
-              --input-dir "${chip-8-database}" \
-              --output "$rom_db_generated" \
-              --source-revision "${databaseRevision}"
-            cmp "$rom_db_generated" src/rom-database-data.lisp
-          '';
-        });
-      };
+      overrideOutputs =
+        ctx:
+        let
+          portaudioLibrary = "${ctx.pkgs.portaudio}/lib/${
+            if ctx.pkgs.stdenv.hostPlatform.isDarwin then "libportaudio.dylib" else "libportaudio.so"
+          }";
+          audioLauncher =
+            ctx.pkgs.runCommand "cl-chip8-audio-launcher"
+              {
+                nativeBuildInputs = [ ctx.pkgs.makeWrapper ];
+                meta.mainProgram = "cl-chip8";
+                meta.description = "Run cl-chip8 with its Nix PortAudio library available.";
+              }
+              ''
+                mkdir -p "$out/bin"
+                makeWrapper "${ctx.executable}/bin/cl-chip8" "$out/bin/cl-chip8" \
+                  --set-default CL_AUDIO_KIT_PORTAUDIO_LIBRARY "${portaudioLibrary}"
+              '';
+          audioApp = ctx.cl.mkApp { drv = audioLauncher; };
+        in
+        {
+          apps = {
+            default = audioApp;
+            cl-chip8 = audioApp;
+          };
+
+          checks.default = ctx.generated.checks.default.overrideAttrs (old: {
+            preCheck = (old.preCheck or "") + ''
+              export CHIP8_TIMENDUS_DIR=${timendus-chip8-test-suite}/bin
+              rom_db_generated="$(mktemp)"
+              trap 'rm -f "$rom_db_generated"' EXIT
+              sbcl --script tools/generate-rom-database.lisp \
+                --input-dir "${chip-8-database}" \
+                --output "$rom_db_generated" \
+                --source-revision "${databaseRevision}"
+              cmp "$rom_db_generated" src/rom-database-data.lisp
+            '';
+          });
+        };
     };
 }

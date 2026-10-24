@@ -64,8 +64,12 @@
        t)
       ((eq special :backspace)
        (chip8-reset! (chip8-app-machine app))
-       (setf (chip8-app-paused-p app) nil
-             (chip8-app-state-machine app) (make-chip8-control-state-machine))
+       (when (chip8-app-audio-output app)
+         (reset-chip8-audio-phase! (chip8-app-audio-output app)))
+       (setf (chip8-app-last-audio-sound-timer app) 0
+             (chip8-app-paused-p app) nil
+             (chip8-app-state-machine app)
+             (make-chip8-control-state-machine))
        t)
       (t nil))))
 
@@ -104,6 +108,7 @@
                     '("paused" "waiting-key" "waiting-display" "finished" "error")
                     :test #'string=)
       (step-chip8-app! app)))
+  (%synchronize-chip8-audio-state! app)
   app)
 
 (defun %renderer-framebuffer (machine)
@@ -141,24 +146,62 @@
               '("finished" "error") :test #'string=)))
 
 (defun run (&key rom-path (clock-hz +default-clock-hz+) (platform :modern)
-                 (quirks nil quirks-p) (stream *standard-output*))
+                 (quirks nil quirks-p) (stream *standard-output*)
+                 (audio-mode :off) on-audio-fallback)
   (let ((machine (if quirks-p
                      (make-chip8-machine :platform platform :quirks quirks)
                      (make-chip8-machine :platform platform))))
     (load-rom-file machine rom-path)
     (with-chip8-render-pipeline (pipeline)
-      (let ((app (make-chip8-app
-                  :machine machine :state-machine (make-chip8-control-state-machine)
-                  :renderer (make-renderer +screen-width+ +screen-height+)
-                  :render-state (make-chip8-render-state)
-                  :render-pipeline pipeline
-                  :decoder (make-input-decoder) :clock-hz clock-hz
-                  :started-at (get-internal-real-time))))
-        (with-raw-mode ()
-          (with-terminal-session
-              (session-stream :stream stream :hide-cursor t :alternate-screen t
-                              :keyboard-enhancements 10)
-            (tick-loop-run-realtime app #'%advance-chip8! #'%render-chip8-app!
-                                     #'%chip8-app-finished-p
-                                     :stream session-stream :interval 1/60)))
+      (let* ((app (make-chip8-app
+                   :machine machine
+                   :state-machine (make-chip8-control-state-machine)
+                   :renderer (make-renderer +screen-width+ +screen-height+)
+                   :render-state (make-chip8-render-state)
+                   :render-pipeline pipeline
+                   :decoder (make-input-decoder)
+                   :clock-hz clock-hz
+                   :audio-mode audio-mode
+                   :started-at (get-internal-real-time)))
+             (audio-output nil)
+             (audio-stream nil)
+             (resolved-audio-mode :off))
+        (unwind-protect
+             (progn
+               (multiple-value-setq (resolved-audio-mode audio-stream)
+                 (%resolve-chip8-audio-mode
+                  audio-mode
+                  :on-fallback
+                  (or on-audio-fallback
+                      (lambda (condition)
+                        (format *error-output*
+                                "~&cl-chip8: audio output unavailable (~A); using terminal bell.~%"
+                                condition)))))
+               (setf (chip8-app-audio-mode app) resolved-audio-mode)
+               (when (eq resolved-audio-mode :pcm)
+                 (setf audio-output
+                       (start-chip8-audio-output
+                        audio-stream
+                        :sound-timer (chip8-machine-sound-timer machine)
+                        :pattern +default-audio-pattern+
+                        :pitch 64)
+                       audio-stream nil))
+               (setf (chip8-app-audio-output app) audio-output)
+               (with-raw-mode ()
+                 (with-terminal-session
+                     (session-stream :stream stream :hide-cursor t
+                                     :alternate-screen t
+                                     :keyboard-enhancements 10)
+                   (setf (chip8-app-stream app) session-stream)
+                   (%synchronize-chip8-audio-state! app)
+                   (tick-loop-run-realtime app
+                                           #'%advance-chip8!
+                                           #'%render-chip8-app!
+                                           #'%chip8-app-finished-p
+                                           :stream session-stream
+                                           :interval 1/60))))
+          (when audio-output
+            (stop-chip8-audio-output! audio-output))
+          (when audio-stream
+            (cl-audio-kit:close-output-stream audio-stream)))
         app))))
