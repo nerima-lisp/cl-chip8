@@ -133,6 +133,22 @@
     (loop for raw-id across (expect-array value context)
           for id = (expect-string raw-id context)
           collect (id-keyword id +platform-id-keywords+ context)))
+  (defun platform-default-tickrates (value context)
+    (let ((entries (expect-array value context)))
+      (unless (plusp (length entries))
+        (error "~A must not be empty." context))
+      (loop for entry across entries
+            for index from 0
+            for entry-context = (format nil "~A entry ~D" context index)
+            for id = (expect-string
+                      (required-field entry "id" entry-context)
+                      (format nil "~A.id" entry-context))
+            for tickrate = (required-field entry "defaultTickrate" entry-context)
+            do (unless (and (realp tickrate) (> tickrate 0))
+                 (error "~A.defaultTickrate must be a positive JSON number."
+                        entry-context))
+            collect (cons (id-keyword id +platform-id-keywords+ context)
+                          tickrate))))
   (defun quirk-overrides-plist (value context)
     (let ((overrides (expect-object value context)))
       (validate-known-keys
@@ -287,23 +303,25 @@
                        sha1
                        (rom-record-plist
                         program rom (format nil "SHA1 ~A" sha1))))))))))
-  (defun write-rom-database (output-path source-revision records)
+  (defun write-rom-database (output-path source-revision records platform-default-tickrates)
     (with-open-file (stream output-path
                             :direction :output
                             :if-exists :supersede
                             :if-does-not-exist :create
                             :external-format :utf-8)
       (format stream
-              ";;;; Generated from chip-8/chip-8-database at revision ~A~%;;;; Copyright 2023 The CHIP-8 database authors~%~%(in-package #:cl-chip8)~%~%(defparameter *rom-database-records*~%  '("
+              ";;;; Generated from chip-8/chip-8-database at revision ~A~%;;;; Copyright 2023 The CHIP-8 database authors~%~%(in-package #:cl-chip8)~%~%(defparameter *rom-database-platform-default-tickrates*~%  '"
               source-revision)
       (let ((*print-case* :downcase)
             (*print-readably* t)
             (*print-pretty* nil))
+        (prin1 platform-default-tickrates stream)
+        (format stream ")~%~%(defparameter *rom-database-records*~%  '(")
         (dolist (record records)
           (terpri stream)
           (write-string "    " stream)
-          (prin1 record stream)))
-      (format stream "~%    ))~%")))
+          (prin1 record stream))
+        (format stream "~%    ))~%"))))
   (defun main ()
     (multiple-value-bind (input-directory output-path source-revision)
         (parse-generator-arguments)
@@ -324,9 +342,12 @@
                              "database/platforms.json")
         (validate-id-catalog quirks +quirk-id-keywords+
                              "database/quirks.json")
-        (let ((records (collect-rom-records programs sha1-hashes)))
-          (write-rom-database output-path source-revision records)
-          (format t "Generated ~D ROM records in ~A.~%"
-                  (length records) (namestring output-path))))))
+        (let ((platform-default-tickrates
+                (platform-default-tickrates platforms "database/platforms.json")))
+          (let ((records (collect-rom-records programs sha1-hashes)))
+            (write-rom-database output-path source-revision records
+                                platform-default-tickrates)
+            (format t "Generated ~D ROM records in ~A.~%"
+                    (length records) (namestring output-path)))))))
   (in-package #:cl-user)
   (main)

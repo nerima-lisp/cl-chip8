@@ -10,28 +10,17 @@
                                   report-control
                                   &key
                                   documentation)
-  "Define NAME as a CHIP8-ERROR subcondition, with one slot per (SLOT-NAME
-READER) entry of SLOTS and a :REPORT that applies REPORT-CONTROL, a FORMAT
-control string, to every slot's READER in SLOTS' own order. DOCUMENTATION, if
-given, becomes NAME's :DOCUMENTATION.
+  "Define NAME as a CHIP8-ERROR subcondition.
 
-All seven of this package's public conditions share that exact shape -- an
-:INITARG/:READER pair per offending value, plus a report built only from
-those readers -- so this macro is the declarative definition form for it, per
-the nerima-lisp API standard's rule that a macro needs a reason beyond what
-DEFINE-CONDITION alone already gives. Every argument is a name or a literal
-string read at macro-expansion time, never a runtime value, so nothing here
-needs gensym protection for evaluation order; CONDITION and STREAM below are
-gensymed only so the expansion cannot capture a binding a caller's own code
-happens to use.
+Each item in SLOTS is a (SLOT-NAME READER) pair. REPORT-CONTROL is a FORMAT
+control string applied to each reader in slot order. DOCUMENTATION, when
+supplied, becomes the :DOCUMENTATION option on NAME.
 
-    (define-chip8-condition chip8-stack-underflow ()
-      \"RET was executed with an empty call stack.\"
-      :documentation \"Signaled when RET has no return address to pop.\")
-
-expands to a DEFINE-CONDITION of CHIP8-STACK-UNDERFLOW under CHIP8-ERROR with
-no slots, a :REPORT lambda that applies that literal string to no arguments,
-and that :DOCUMENTATION string."
+The generated condition uses one :INITARG/:READER pair per slot and a :REPORT
+that formats those reader values. The macro keeps these definitions
+declarative; its arguments are names and literal strings read at macro
+expansion, so only the generated CONDITION and STREAM bindings need gensyms
+to avoid capturing caller bindings."
   (let ((condition (gensym "CONDITION"))
         (stream (gensym "STREAM")))
     `(define-condition ,name (chip8-error)
@@ -81,10 +70,7 @@ machine's memory.")
   (expected-size chip8-rom-short-read-expected-size))
  "ROM ended after ~D byte(s); expected ~D."
  :documentation
- "Signaled by READ-FILE-BYTES when the stream reaches EOF before
-the size reported by FILE-LENGTH has been read. This protects the returned
-byte vector from silently containing its initial zero fill when a file is
-truncated while it is being read.")
+ "Signaled by %READ-ROM-FILE when READ-SEQUENCE reads fewer bytes than FILE-LENGTH reported. This prevents returning a byte vector whose unread tail contains zeroes.")
 
 (define-chip8-condition
  chip8-invalid-opcode
@@ -119,24 +105,53 @@ call stack already holding +CALL-STACK-LIMIT+ (16) entries.")
   (span chip8-memory-access-out-of-bounds-span))
  "A memory access at ~D spanning ~D byte(s) falls outside this machine's memory capacity."
  :documentation
- "Signaled by CHECK-MEMORY-ACCESS (see memory.lisp) when an
-opcode -- FX55/FX65's register block, FX33's BCD digits (via MEMORY-WRITE),
-or DXYN's sprite bytes -- would read or write *MEMORY* outside its valid
-[0, memory-size) index range, where MEMORY-SIZE is this machine's allocated
-capacity, computed from a ROM-controlled I register (plus an offset). Raised
-explicitly instead of relying on the implicit SBCL array-bounds check on
-AREF, so a malformed ROM produces a documented CHIP8-ERROR rather than an
-unspecified condition.")
+ "Signaled when a memory operation uses an invalid address or a span outside the machine memory. The condition carries the rejected address and span in a CHIP8-ERROR instead of exposing an array bounds failure.")
 
 (define-chip8-condition
  chip8-rom-not-regular-file
  ((path chip8-rom-not-regular-file-path))
  "~A exists but is not a regular file; refusing to read it as a CHIP-8 ROM."
  :documentation
- "Signaled by LOAD-ROM-FILE! when PATH resolves (PROBE-FILE
-succeeds) but is not a regular file -- a FIFO or character device such as
-/dev/zero can make FILE-LENGTH/READ-SEQUENCE return an unreliable length or
-block indefinitely, so this is checked before the ROM path is ever opened for
-reading. A PATH that does not resolve at all is left to the ordinary
-FILE-ERROR the eventual OPEN raises, which is the more specific condition for
-that case.")
+ "Signaled by LOAD-ROM-FILE when PATH exists but is not a regular file, such as a FIFO or character device. FILE-LENGTH may be unreliable for these paths, and reads may block. A missing path is left to OPEN to signal as FILE-ERROR.")
+(define-condition chip8-config-error (chip8-error)
+  ((source-name :initarg :source-name :initform nil
+                :reader chip8-config-error-source-name)
+   (line :initarg :line :initform nil
+         :reader chip8-config-error-line)
+   (column :initarg :column :initform nil
+           :reader chip8-config-error-column)
+   (path :initarg :path :initform nil
+         :reader chip8-config-error-path)
+   (key :initarg :key :initform nil
+        :reader chip8-config-error-key)
+   (reason :initarg :reason :initform nil
+           :reader chip8-config-error-reason))
+  (:report
+   (lambda (condition stream)
+     (format stream "Invalid CHIP-8 configuration")
+     (when (chip8-config-error-source-name condition)
+       (format stream " in ~A" (chip8-config-error-source-name condition)))
+     (when (chip8-config-error-line condition)
+       (format stream " at ~D" (chip8-config-error-line condition))
+       (when (chip8-config-error-column condition)
+         (format stream ":~D" (chip8-config-error-column condition))))
+     (let ((key-path (or (chip8-config-error-path condition)
+                         (chip8-config-error-key condition))))
+       (when key-path
+         (format stream " for ~A" key-path)))
+     (when (chip8-config-error-reason condition)
+       (format stream "; ~A" (chip8-config-error-reason condition))))))
+(define-chip8-condition
+ chip8-unsupported-platform
+ ((platform chip8-unsupported-platform-name))
+ "ROM requires unsupported platform ~A."
+ :documentation
+ "Signaled before the application starts when a ROM database record lists only platforms that cl-chip8 does not implement. An explicit CLI platform or quirk profile bypasses this selection error.")
+(defun %config-error (reason &key source-name line column path key)
+  (error (quote chip8-config-error)
+         :reason reason
+         :source-name source-name
+         :line line
+         :column column
+         :path path
+         :key key))

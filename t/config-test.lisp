@@ -444,3 +444,131 @@ signals none instead."
                   (cl-chip8:chip8-quirks-mode-switch-clear merged-false)
                   (cl-chip8:chip8-quirks-mode-switch-clear legacy-merged))
             :to-equal (list t nil nil nil))))
+
+(describe "P4b ROM database configuration"
+  (it "selects the first supported database platform and records its defaults"
+    (let* ((record
+             (quote (:platforms (:original-chip8 :superchip)
+                      :colors (:pixels ("#123456" "#abcdef")))))
+           (config
+             (cl-chip8:merge-chip8-config
+              :rom-record record
+              :rom-sha1 "d6d8efef811350e7fba6197024c4973b360749b8")))
+      (expect
+       (list
+        (cl-chip8:chip8-platform-name (cl-chip8:chip8-config-platform config))
+        (cl-chip8:chip8-config-platform-source config)
+        (cl-chip8:chip8-config-clock-hz config)
+        (cl-chip8:chip8-config-clock-source config)
+        (cl-chip8:chip8-config-rom-sha1 config)
+        (cl-chip8:chip8-config-colors-pixels config)
+        (cl-chip8:chip8-config-colors-source config))
+       :to-equal
+       (list :cosmac-vip "db" 900 "db-platform"
+             "d6d8efef811350e7fba6197024c4973b360749b8"
+             (quote ("#123456" "#abcdef")) "db"))))
+
+  (it "reports the winning clock source across CLI, TOML, and database defaults"
+    (let* ((record (quote (:platforms (:original-chip8) :tickrate 7)))
+           (no-rom-rate (quote (:platforms (:original-chip8))))
+           (cli (cl-chip8:merge-chip8-config
+                 :defaults (quote (:clock_hz 111))
+                 :toml (%config-table "chip8" (%config-table "clock_hz" 222))
+                 :cli (quote (:clock_hz 333))
+                 :rom-record record))
+           (toml (cl-chip8:merge-chip8-config
+                  :toml (%config-table "chip8" (%config-table "clock_hz" 222))
+                  :rom-record record))
+           (rom-rate (cl-chip8:merge-chip8-config :rom-record record))
+           (platform-rate (cl-chip8:merge-chip8-config :rom-record no-rom-rate))
+           (platform-default (cl-chip8:merge-chip8-config
+                              :cli (quote (:platform "schip"))))
+           (fallback (cl-chip8:merge-chip8-config)))
+      (expect
+       (list
+        (list (cl-chip8:chip8-config-clock-hz cli)
+              (cl-chip8:chip8-config-clock-source cli))
+        (list (cl-chip8:chip8-config-clock-hz toml)
+              (cl-chip8:chip8-config-clock-source toml))
+        (list (cl-chip8:chip8-config-clock-hz rom-rate)
+              (cl-chip8:chip8-config-clock-source rom-rate))
+        (list (cl-chip8:chip8-config-clock-hz platform-rate)
+              (cl-chip8:chip8-config-clock-source platform-rate))
+        (list (cl-chip8:chip8-config-clock-hz platform-default)
+              (cl-chip8:chip8-config-clock-source platform-default))
+        (list (cl-chip8:chip8-config-clock-hz fallback)
+              (cl-chip8:chip8-config-clock-source fallback)))
+       :to-equal
+       (quote ((333 "cli") (222 "toml") (420 "db-rom")
+               (900 "db-platform") (1800 "platform-default")
+               (700 "default"))))))
+
+  (it "rejects unsupported database platforms unless a CLI override is explicit"
+    (let* ((record (quote (:platforms (:hybrid-vip))))
+           (condition
+             (handler-case
+                 (progn
+                   (cl-chip8:merge-chip8-config :rom-record record)
+                   nil)
+               (cl-chip8:chip8-unsupported-platform (condition) condition)))
+           (platform-override
+             (cl-chip8:merge-chip8-config
+              :rom-record record :cli (quote (:platform "xo-chip"))))
+           (quirks-override
+             (cl-chip8:merge-chip8-config
+              :rom-record record :cli (quote (:quirks "schip")))))
+      (expect condition :to-be-type-of 'cl-chip8:chip8-unsupported-platform)
+      (expect (cl-chip8:chip8-unsupported-platform-name condition)
+              :to-equal "hybridVIP")
+      (expect
+       (list (cl-chip8:chip8-platform-name
+              (cl-chip8:chip8-config-platform platform-override))
+             (cl-chip8:chip8-config-platform-source platform-override)
+             (cl-chip8:chip8-quirks-profile
+              (cl-chip8:chip8-config-quirks quirks-override)))
+       :to-equal (quote (:xo-chip "cli" :schip)))))
+
+  (it "distinguishes a database nil quirk from an absent quirk and lets TOML override it"
+    (let* ((database-nil
+             (quote (:platforms (:modern-chip8)
+                      :quirky-platforms (:modern-chip8 (:shift nil)))))
+           (database-absent
+             (quote (:platforms (:modern-chip8)
+                      :quirky-platforms (:modern-chip8 nil))))
+           (nil-config (cl-chip8:merge-chip8-config :rom-record database-nil))
+           (absent-config
+             (cl-chip8:merge-chip8-config :rom-record database-absent))
+           (toml-config
+             (cl-chip8:merge-chip8-config
+              :toml (%config-table
+                     "chip8" (%config-table "shift_source" "vy"))
+              :rom-record database-nil)))
+      (expect
+       (list
+        (cl-chip8:chip8-quirks-shift-source
+         (cl-chip8:chip8-config-quirks nil-config))
+        (cl-chip8:chip8-quirks-shift-source
+         (cl-chip8:chip8-config-quirks absent-config))
+        (cl-chip8:chip8-quirks-shift-source
+         (cl-chip8:chip8-config-quirks toml-config))
+        (cl-chip8:chip8-config-quirks-source toml-config))
+       :to-equal (quote (:vy :vx :vy "db+toml")))))
+
+  (it "preserves the chip48 database false-I default and does not invent it when absent"
+    (let* ((database-nil
+             (quote (:platforms (:chip48)
+                      :quirky-platforms
+                      (:chip48 (:memory-leave-i-unchanged nil)))))
+           (database-absent
+             (quote (:platforms (:chip48)
+                      :quirky-platforms (:chip48 nil))))
+           (nil-config (cl-chip8:merge-chip8-config :rom-record database-nil))
+           (absent-config
+             (cl-chip8:merge-chip8-config :rom-record database-absent)))
+      (expect
+       (list
+        (cl-chip8:chip8-quirks-memory-i
+         (cl-chip8:chip8-config-quirks nil-config))
+        (cl-chip8:chip8-quirks-memory-i
+         (cl-chip8:chip8-config-quirks absent-config)))
+       :to-equal (quote (:increment-x :preserve))))))

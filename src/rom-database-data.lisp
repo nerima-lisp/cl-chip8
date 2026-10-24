@@ -3,6 +3,9 @@
 
 (in-package #:cl-chip8)
 
+(defparameter *rom-database-platform-default-tickrates*
+  '((:original-chip8 . 15) (:hybrid-vip . 15) (:modern-chip8 . 12) (:chip8x . 15) (:chip48 . 30) (:superchip1 . 30) (:superchip . 30) (:megachip8 . 1000) (:xochip . 100)))
+
 (defparameter *rom-database-records*
   '(
     ("004fa49c91fbd387484bda62f843e8c5bd2c53d2" :title "Lainchain" :platforms (:original-chip8))

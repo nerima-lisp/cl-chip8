@@ -16,6 +16,17 @@
     (let ((record
             (cl-chip8:find-rom-record "b693e60f161e69c98b0bb2bc1761cf434f8fbb0e")))
       (expect (first (getf record :platforms)) :to-be :xochip)))
+  (it "contains default tickrates for all database platforms"
+    (let* ((tickrates
+             cl-chip8::*rom-database-platform-default-tickrates*)
+           (platforms (mapcar #'car tickrates)))
+      (expect (not (null tickrates)) :to-be t)
+      (expect (length platforms) :to-be 9)
+      (expect platforms :to-equal
+              (list :original-chip8 :hybrid-vip :modern-chip8 :chip8x
+                    :chip48 :superchip1 :superchip :megachip8 :xochip))
+      (expect (mapcar #'cdr tickrates) :to-equal
+              (list 15 15 12 15 30 30 30 1000 100))))
   (it "preserves an explicit false quirk override"
     (let* ((record
              (cl-chip8:find-rom-record "440c5fbe9f5f840e76c308738fb0d37772d66674"))

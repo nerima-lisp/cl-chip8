@@ -30,9 +30,21 @@ enter its terminal session."
                           (when (getf options :platform)
                             (list :platform (getf options :platform)))
                           (when log-path (list :log log-path))))
+             (config-path (getf options :config-path))
+             (path-config
+               (make-chip8-config-from-sources
+                :toml-path config-path :cli cli))
+             (rom-path (chip8-config-rom-path path-config))
+             (rom-bytes
+               (progn
+                 (unless (and rom-path (probe-file rom-path))
+                   (error "ROM file does not exist: ~A" rom-path))
+                 (%read-rom-file rom-path)))
+             (rom-sha1 (%rom-sha1 rom-bytes))
+             (rom-record (find-rom-record rom-sha1))
              (config (make-chip8-config-from-sources
-                      :toml-path (getf options :config-path) :cli cli
-                      :db-rom-tickrate nil :db-platform-tickrate nil)))
+                      :toml-path config-path :cli cli
+                      :rom-record rom-record :rom-sha1 rom-sha1)))
         (let ((logger (make-chip8-logger :path (chip8-config-log-path config))))
           (unwind-protect
                (let ((metrics (make-chip8-metrics)))
@@ -40,17 +52,24 @@ enter its terminal session."
                    (setf result
                          (handler-case
                              (progn
-                               (unless (and (chip8-config-rom-path config)
-                                            (probe-file (chip8-config-rom-path config)))
-                                 (error "ROM file does not exist: ~A"
-                                        (chip8-config-rom-path config)))
                                (chip8-log-info logger "startup"
                                                (list :rom (chip8-config-rom-path config)
+                                                     :sha1 rom-sha1
                                                      :clock_hz (chip8-config-clock-hz config)
+                                                     :clock_source
+                                                     (chip8-config-clock-source config)
                                                      :platform (chip8-platform-name
                                                                 (chip8-config-platform config))
+                                                     :platform_source
+                                                     (chip8-config-platform-source config)
                                                      :quirks (chip8-quirks-profile
-                                                              (chip8-config-quirks config))))
+                                                              (chip8-config-quirks config))
+                                                     :quirks_source
+                                                     (chip8-config-quirks-source config)
+                                                     :colors_pixels
+                                                     (chip8-config-colors-pixels config)
+                                                     :colors_source
+                                                     (chip8-config-colors-source config)))
                                (let ((on-audio-fallback
                                        (lambda (condition)
                                          (chip8-log
@@ -63,10 +82,11 @@ enter its terminal session."
                                                  "~&cl-chip8: WARN audio output unavailable (~A); using terminal bell.~%"
                                                  condition))))
                                  (setf app
-                                       (apply #'run
+                                       (apply (function run)
                                               (append
                                                (list :rom-path
                                                      (chip8-config-rom-path config)
+                                                     :rom-bytes rom-bytes
                                                      :clock-hz
                                                      (chip8-config-clock-hz config)
                                                      :platform

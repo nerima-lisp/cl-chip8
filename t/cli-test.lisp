@@ -184,10 +184,8 @@
                                       :element-type '(unsigned-byte 8))
                (write-byte 0 stream))
              (setf (symbol-function 'cl-chip8:run)
-                   (lambda (&key rom-path clock-hz platform quirks stream audio-mode
-                                  on-audio-fallback)
-                     (declare (ignore rom-path clock-hz platform quirks stream
-                                      on-audio-fallback))
+                   (lambda (&key rom-path rom-bytes clock-hz platform quirks stream audio-mode on-audio-fallback)
+                     (declare (ignore rom-path rom-bytes clock-hz platform quirks stream on-audio-fallback))
                      (setf selected-audio-mode audio-mode)
                      (error 'cl-audio-kit:audio-error :operation "open")))
              (let ((diagnostic
@@ -229,10 +227,8 @@
                (write-byte 0 stream))
              (setf (cl-chip8:chip8-machine-instructions machine) 7)
              (setf (symbol-function 'cl-chip8:run)
-                   (lambda (&key rom-path clock-hz platform quirks stream audio-mode
-                                  on-audio-fallback)
-                     (declare (ignore rom-path clock-hz platform quirks stream
-                                      on-audio-fallback))
+                   (lambda (&key rom-path rom-bytes clock-hz platform quirks stream audio-mode on-audio-fallback)
+                     (declare (ignore rom-path rom-bytes clock-hz platform quirks stream on-audio-fallback))
                      (setf selected-audio-mode audio-mode)
                      app))
              (render-chip8! (cl-tty-kit:make-screen +screen-width+ +screen-height+)
@@ -290,11 +286,8 @@
                (write-byte 0 stream))
              (setf (cl-chip8:chip8-machine-instructions machine) 7)
              (setf (symbol-function 'cl-chip8:run)
-                   (lambda (&key rom-path clock-hz platform
-                                 (quirks nil quirks-p) stream audio-mode
-                                 on-audio-fallback)
-                     (declare (ignore rom-path clock-hz stream audio-mode
-                                      on-audio-fallback))
+                   (lambda (&key rom-path rom-bytes clock-hz platform (quirks nil quirks-p) stream audio-mode on-audio-fallback)
+                     (declare (ignore rom-path rom-bytes clock-hz stream audio-mode on-audio-fallback))
                      (push (list platform quirks-p quirks) run-calls)
                      app))
              (render-chip8! (cl-tty-kit:make-screen +screen-width+ +screen-height+)
@@ -346,9 +339,8 @@
                                       :element-type '(unsigned-byte 8))
                (write-byte 0 stream))
              (setf (symbol-function 'cl-chip8:run)
-                   (lambda (&key rom-path clock-hz platform quirks stream audio-mode
-                                  on-audio-fallback)
-                     (declare (ignore rom-path clock-hz platform quirks stream))
+                   (lambda (&key rom-path rom-bytes clock-hz platform quirks stream audio-mode on-audio-fallback)
+                     (declare (ignore rom-path rom-bytes clock-hz platform quirks stream))
                      (setf selected-audio-mode audio-mode)
                      (expect (functionp on-audio-fallback) :to-be t)
                      (incf fallback-calls)
@@ -428,42 +420,191 @@
 
 (describe "the cl-chip8 CLI resource cleanup boundary"
   (it "closes the logger when metrics initialization fails"
-    (let ((invocation (parse-argv *app* '("cl-chip8" "missing.ch8")))
-          (closed nil)
-          (original-make-metrics (symbol-function 'cl-chip8::make-chip8-metrics))
-          (original-close-logger (symbol-function 'cl-chip8::close-chip8-logger)))
-      (unwind-protect
-           (progn
-             (setf (symbol-function 'cl-chip8::make-chip8-metrics)
-                   (lambda () (error "metrics initialization failed")))
-             (setf (symbol-function 'cl-chip8::close-chip8-logger)
-                   (lambda (logger)
-                     (declare (ignore logger))
-                     (setf closed t)))
-             (let ((error-output (make-string-output-stream)))
-               (let ((*error-output* error-output))
-                 (expect (cl-chip8::%run-handler invocation) :to-be 1)))
-             (expect closed :to-be t))
-        (setf (symbol-function 'cl-chip8::make-chip8-metrics) original-make-metrics
-              (symbol-function 'cl-chip8::close-chip8-logger) original-close-logger))))
+      (let* ((rom-path
+              (merge-pathnames
+               (format nil "cl-chip8-cli-metrics-fail-~D.ch8" (random 1000000))
+               (uiop:temporary-directory)))
+             (invocation
+              (parse-argv *app* (list "cl-chip8" (namestring rom-path))))
+             (closed nil)
+             (original-make-metrics
+              (symbol-function (quote cl-chip8::make-chip8-metrics)))
+             (original-close-logger
+              (symbol-function (quote cl-chip8::close-chip8-logger))))
+        (unwind-protect
+            (progn
+              (with-open-file (stream rom-path
+                                      :direction :output
+                                      :if-exists :supersede
+                                      :if-does-not-exist :create
+                                      :element-type (quote (unsigned-byte 8)))
+                (write-sequence
+                 (make-array 0 :element-type (quote (unsigned-byte 8)))
+                 stream))
+              (setf (symbol-function (quote cl-chip8::make-chip8-metrics))
+                    (lambda () (error "metrics initialization failed")))
+              (setf (symbol-function (quote cl-chip8::close-chip8-logger))
+                    (lambda (logger)
+                      (declare (ignore logger))
+                      (setf closed t)))
+              (let ((error-output (make-string-output-stream)))
+                (let ((*error-output* error-output))
+                  (expect (cl-chip8::%run-handler invocation) :to-be 1)))
+              (expect closed :to-be t))
+          (setf (symbol-function (quote cl-chip8::make-chip8-metrics))
+                original-make-metrics
+                (symbol-function (quote cl-chip8::close-chip8-logger))
+                original-close-logger)
+          (when (probe-file rom-path)
+            (delete-file rom-path)))))
 
   (it "closes the logger when flushing signals an error"
-    (let ((invocation (parse-argv *app* '("cl-chip8" "missing.ch8")))
-          (closed nil)
-          (original-flush (symbol-function 'cl-chip8::flush-chip8-logger))
-          (original-close (symbol-function 'cl-chip8::close-chip8-logger)))
+      (let* ((rom-path
+              (merge-pathnames
+               (format nil "cl-chip8-cli-flush-fail-~D.ch8" (random 1000000))
+               (uiop:temporary-directory)))
+             (invocation
+              (parse-argv *app* (list "cl-chip8" (namestring rom-path))))
+             (closed nil)
+             (app
+              (cl-chip8:make-chip8-app
+               :machine (cl-chip8:make-chip8-machine)
+               :render-state (cl-chip8::make-chip8-render-state)))
+             (original-flush
+              (symbol-function (quote cl-chip8::flush-chip8-logger)))
+             (original-close
+              (symbol-function (quote cl-chip8::close-chip8-logger)))
+             (original-run (symbol-function (quote cl-chip8:run))))
+        (unwind-protect
+            (progn
+              (with-open-file (stream rom-path
+                                      :direction :output
+                                      :if-exists :supersede
+                                      :if-does-not-exist :create
+                                      :element-type (quote (unsigned-byte 8)))
+                (write-sequence
+                 (make-array 0 :element-type (quote (unsigned-byte 8)))
+                 stream))
+              (setf (symbol-function (quote cl-chip8::flush-chip8-logger))
+                    (lambda (logger)
+                      (declare (ignore logger))
+                      (error "flush failed")))
+              (setf (symbol-function (quote cl-chip8::close-chip8-logger))
+                    (lambda (logger)
+                      (declare (ignore logger))
+                      (setf closed t)))
+              (setf (symbol-function (quote cl-chip8:run))
+                    (lambda (&key rom-path rom-bytes clock-hz platform quirks stream
+                                  audio-mode on-audio-fallback)
+                      (declare (ignore rom-path rom-bytes clock-hz platform quirks
+                                       stream audio-mode on-audio-fallback))
+                      app))
+              (let ((*error-output* (make-string-output-stream)))
+                (expect (cl-chip8::%run-handler invocation) :to-be 1))
+              (expect closed :to-be t))
+          (setf (symbol-function (quote cl-chip8::flush-chip8-logger))
+                original-flush
+                (symbol-function (quote cl-chip8::close-chip8-logger))
+                original-close
+                (symbol-function (quote cl-chip8:run))
+                original-run)
+          (when (probe-file rom-path)
+            (delete-file rom-path))))))
+
+(describe "P4b ROM database CLI integration"
+  (it "reports the database platform when a ROM has no supported selection"
+    (let* ((bytes (make-array 1 :element-type '(unsigned-byte 8) :initial-element 0))
+           (sha1 (cl-chip8::%rom-sha1 bytes))
+           (rom-path
+             (merge-pathnames
+              (format nil "cl-chip8-p4b-unsupported-~D.ch8" (random 1000000))
+              (uiop:temporary-directory)))
+           (cl-chip8::*rom-database-records*
+             (list (cons sha1 (quote (:platforms (:hybrid-vip))))))
+           (invocation
+             (parse-argv *app* (list "cl-chip8" (namestring rom-path)))))
       (unwind-protect
            (progn
-             (setf (symbol-function 'cl-chip8::flush-chip8-logger)
-                   (lambda (logger)
+             (with-open-file (stream rom-path :direction :output
+                                     :if-exists :supersede
+                                     :if-does-not-exist :create
+                                     :element-type '(unsigned-byte 8))
+               (write-sequence bytes stream))
+             (let ((diagnostic
+                     (with-output-to-string (output)
+                       (let ((*error-output* output))
+                         (expect (cl-chip8::%run-handler invocation) :to-be 1)))))
+               (expect diagnostic :to-contain "unsupported platform")
+               (expect diagnostic :to-contain "hybridVIP")))
+        (when (probe-file rom-path)
+          (delete-file rom-path)))))
+
+  (it "logs startup provenance and forwards the exact ROM bytes to run"
+    (let* ((bytes (make-array 1 :element-type '(unsigned-byte 8) :initial-element 0))
+           (sha1 (cl-chip8::%rom-sha1 bytes))
+           (rom-path
+             (merge-pathnames
+              (format nil "cl-chip8-p4b-startup-~D.ch8" (random 1000000))
+              (uiop:temporary-directory)))
+           (cl-chip8::*rom-database-records*
+             (list
+              (cons sha1
+                    (quote (:platforms (:original-chip8)
+                             :tickrate 7
+                             :colors (:pixels ("#112233" "#ddeeff")))))))
+           (invocation (parse-argv *app* (list "cl-chip8" (namestring rom-path))))
+           (machine (cl-chip8:make-chip8-machine))
+           (app (cl-chip8::make-chip8-app
+                 :machine machine
+                 :render-state (cl-chip8::make-chip8-render-state)
+                 :started-at (- (get-internal-real-time)
+                                internal-time-units-per-second)))
+           (startup-fields nil)
+           (run-arguments nil)
+           (original-log-info (symbol-function 'cl-chip8:chip8-log-info))
+           (original-run (symbol-function 'cl-chip8:run)))
+      (unwind-protect
+           (progn
+             (with-open-file (stream rom-path :direction :output
+                                     :if-exists :supersede
+                                     :if-does-not-exist :create
+                                     :element-type '(unsigned-byte 8))
+               (write-sequence bytes stream))
+             (setf (cl-chip8:chip8-machine-instructions machine) 1)
+             (setf (symbol-function 'cl-chip8:chip8-log-info)
+                   (lambda (logger message &optional fields)
                      (declare (ignore logger))
-                     (error "flush failed")))
-             (setf (symbol-function 'cl-chip8::close-chip8-logger)
-                   (lambda (logger)
-                     (declare (ignore logger))
-                     (setf closed t)))
-             (let ((*error-output* (make-string-output-stream)))
-               (expect (cl-chip8::%run-handler invocation) :to-be 1))
-             (expect closed :to-be t))
-        (setf (symbol-function 'cl-chip8::flush-chip8-logger) original-flush
-              (symbol-function 'cl-chip8::close-chip8-logger) original-close)))))
+                     (when (string= message "startup")
+                       (setf startup-fields fields))))
+             (setf (symbol-function 'cl-chip8:run)
+                   (lambda (&rest arguments)
+                     (setf run-arguments arguments)
+                     app))
+             (render-chip8! (cl-tty-kit:make-screen +screen-width+ +screen-height+)
+                            (cl-chip8::%renderer-framebuffer machine)
+                            (cl-chip8::chip8-app-render-state app))
+             (let ((error-output (make-string-output-stream)))
+               (let ((*error-output* error-output))
+                 (let ((status (cl-chip8::%run-handler invocation)))
+                   (unless (zerop status)
+                     (error "CLI handler returned ~D: ~A" status
+                            (get-output-stream-string error-output))))))
+             (expect (getf startup-fields :sha1) :to-equal sha1)
+             (expect (getf startup-fields :clock_hz) :to-be 420)
+             (expect (getf startup-fields :clock_source) :to-equal "db-rom")
+             (expect (getf startup-fields :platform) :to-be :cosmac-vip)
+             (expect (getf startup-fields :platform_source) :to-equal "db")
+             (expect (getf startup-fields :quirks) :to-be :cosmac-vip)
+             (expect (getf startup-fields :quirks_source) :to-equal "db")
+             (expect (getf startup-fields :colors_pixels)
+                     :to-equal (quote ("#112233" "#ddeeff")))
+             (expect (getf startup-fields :colors_source) :to-equal "db")
+             (expect (equalp (getf run-arguments :rom-bytes) bytes) :to-be t)
+             (expect (getf run-arguments :clock-hz) :to-be 420)
+             (expect (cl-chip8:chip8-platform-name
+                      (getf run-arguments :platform))
+                     :to-be :cosmac-vip))
+        (setf (symbol-function 'cl-chip8:chip8-log-info) original-log-info
+              (symbol-function 'cl-chip8:run) original-run)
+        (when (probe-file rom-path)
+          (delete-file rom-path))))))
