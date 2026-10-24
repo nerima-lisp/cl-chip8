@@ -19,20 +19,12 @@
       (chip8-machine-register machine y)
       (chip8-machine-register machine x)))
 
-; P2 can land before P3 adds these quirk accessors.
-(defun %quirk-value (accessor quirks default)
-  (if (fboundp accessor)
-      (funcall (symbol-function accessor) quirks)
-    default))
-
 (defun %schip-lores-scroll-distance (machine pixels)
   (if (and (eq (chip8-machine-resolution machine) :lores)
-           (eq (%quirk-value 'chip8-quirks-lores-scroll
-                             (chip8-machine-quirks machine)
-                             :full)
+           (eq (chip8-quirks-lores-scroll (chip8-machine-quirks machine))
                :half))
       pixels
-    (* pixels (if (eq (chip8-machine-resolution machine) :lores) 2 1))))
+      (* pixels (if (eq (chip8-machine-resolution machine) :lores) 2 1))))
 
 (defun %scroll-display! (machine horizontal vertical)
   (with-lock-held ((chip8-machine-framebuffer-lock machine))
@@ -61,9 +53,7 @@
 
 (defun %set-chip8-resolution-from-opcode! (machine resolution)
   (setf (chip8-machine-resolution-state machine) resolution)
-  (when (%quirk-value 'chip8-quirks-mode-switch-clear
-                      (chip8-machine-quirks machine)
-                      t)
+  (when (chip8-quirks-mode-switch-clear (chip8-machine-quirks machine))
     (chip8-clear-display! machine))
   machine)
 (defvar *chip8-rpl-flags*
@@ -79,16 +69,16 @@
     (setf (chip8-machine-register machine register)
           (aref *chip8-rpl-flags* register))))
 
-(defun %draw-vf-value (quirks collision-rows clipped-rows)
-  (if (eq (%quirk-value 'chip8-quirks-collision quirks :flag) :row-count)
+(defun %draw-vf-value (machine quirks collision-rows clipped-rows)
+  (if (and (eq (chip8-quirks-collision quirks) :row-count)
+           (eq (chip8-machine-resolution machine) :hires))
       (+ collision-rows clipped-rows)
-    (if (plusp collision-rows) 1 0)))
+      (if (plusp collision-rows) 1 0)))
 
 (defun %draw-sprite! (machine x y n)
   (with-lock-held ((chip8-machine-framebuffer-lock machine))
     (let* ((quirks (chip8-machine-quirks machine))
-           (lores-sprite (%quirk-value 'chip8-quirks-lores-sprite quirks
-                                       :16x16))
+           (lores-sprite (chip8-quirks-lores-sprite quirks))
            (logical-width (chip8-machine-logical-width machine))
            (logical-height (chip8-machine-logical-height machine))
            (sprite-width
@@ -144,7 +134,7 @@
       (setf (chip8-machine-register machine 15)
             (if (= plane-mask 3)
                 (if (plusp collision-rows) 1 0)
-                (%draw-vf-value quirks collision-rows clipped-rows))))))
+                (%draw-vf-value machine quirks collision-rows clipped-rows))))))
 
 
 (defun %store-registers! (machine x)
@@ -153,8 +143,10 @@
     (dotimes (register (1+ x))
       (setf (memory-read machine (+ i register))
             (chip8-machine-register machine register)))
-    (when (eq (chip8-quirks-memory-i (chip8-machine-quirks machine)) :increment)
-      (setf (chip8-machine-i machine) (ldb (byte 16 0) (+ i x 1))))))
+    (let ((memory-i (chip8-quirks-memory-i (chip8-machine-quirks machine))))
+      (when (member memory-i '(:increment :increment-x) :test #'eq)
+        (setf (chip8-machine-i machine)
+              (ldb (byte 16 0) (+ i x (if (eq memory-i :increment) 1 0))))))))
 
 (defun %load-registers! (machine x)
   (let ((i (chip8-machine-i machine)))
@@ -162,8 +154,10 @@
     (dotimes (register (1+ x))
       (setf (chip8-machine-register machine register)
             (memory-read machine (+ i register))))
-    (when (eq (chip8-quirks-memory-i (chip8-machine-quirks machine)) :increment)
-      (setf (chip8-machine-i machine) (ldb (byte 16 0) (+ i x 1))))))
+    (let ((memory-i (chip8-quirks-memory-i (chip8-machine-quirks machine))))
+      (when (member memory-i '(:increment :increment-x) :test #'eq)
+        (setf (chip8-machine-i machine)
+              (ldb (byte 16 0) (+ i x (if (eq memory-i :increment) 1 0))))))))
 
 (defun %install-key-wait! (machine x)
   (let ((pc (chip8-machine-pc machine)))

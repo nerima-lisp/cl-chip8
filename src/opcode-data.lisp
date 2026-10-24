@@ -161,9 +161,13 @@
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode))
      (n (ldb (byte 4 0) opcode)))
   (%draw-sprite! machine x y n)
-  (if (eq (chip8-quirks-display-wait (chip8-machine-quirks machine)) :wait)
-      (%install-display-wait! machine)
-      (advance-pc! machine)))
+  (let ((display-wait (chip8-quirks-display-wait
+                       (chip8-machine-quirks machine))))
+    (if (or (eq display-wait :wait)
+            (and (eq display-wait :lores-only)
+                 (eq (chip8-machine-resolution machine) :lores)))
+        (%install-display-wait! machine)
+        (advance-pc! machine))))
 
 (define-chip8-opcode skip-key #xe09e #xf0ff
     ((x (ldb (byte 4 8) opcode)))

@@ -546,7 +546,106 @@
       (test-opcode machine #x00fe)
       (expect (chip8-machine-resolution machine) :to-be :lores)
       (expect (aref framebuffer 3 7) :to-be 0)
-      (expect (aref framebuffer 4 8) :to-be 0))))
+      (expect (aref framebuffer 4 8) :to-be 0)))
+  (it "executes extended quirk values on their affected opcodes"
+    (let ((store-machine
+            (make-chip8-machine
+             :platform :modern
+             :quirks (make-chip8-quirks :profile :modern
+                                        :memory-i :increment-x)))
+          (load-machine
+            (make-chip8-machine
+             :platform :modern
+             :quirks (make-chip8-quirks :profile :modern
+                                        :memory-i :increment-x))))
+      (setf (chip8-machine-i store-machine) #x300
+            (chip8-machine-register store-machine 0) 10
+            (chip8-machine-register store-machine 1) 20)
+      (test-opcode store-machine #xf155)
+      (expect (chip8-machine-i store-machine) :to-be #x301)
+      (expect (list (aref (chip8-machine-memory store-machine) #x300)
+                    (aref (chip8-machine-memory store-machine) #x301))
+              :to-equal '(10 20))
+      (setf (chip8-machine-i load-machine) #x300
+            (aref (chip8-machine-memory load-machine) #x300) 10
+            (aref (chip8-machine-memory load-machine) #x301) 20)
+      (test-opcode load-machine #xf165)
+      (expect (chip8-machine-i load-machine) :to-be #x301)
+      (expect (list (chip8-machine-register load-machine 0)
+                    (chip8-machine-register load-machine 1))
+              :to-equal '(10 20)))
+    (dolist (case '((:lores :display #x200)
+                    (:hires nil #x202)))
+      (destructuring-bind (resolution expected-wait expected-pc) case
+        (let ((machine
+                (make-chip8-machine
+                 :platform :schip
+                 :quirks (make-chip8-quirks :profile :modern
+                                            :display-wait :lores-only))))
+          (set-chip8-machine-resolution! machine resolution)
+          (setf (chip8-machine-i machine) #x300
+                (aref (chip8-machine-memory machine) #x300) #x80)
+          (test-opcode machine #xd010)
+          (expect (if (chip8-machine-waiting machine) (cl-chip8::chip8-wait-state-kind (chip8-machine-waiting machine)) nil)
+                  :to-be expected-wait)
+          (expect (chip8-machine-pc machine) :to-be expected-pc))))
+    (let ((machine
+            (make-chip8-machine
+             :platform :schip
+             :quirks (make-chip8-quirks :profile :modern
+                                        :lores-sprite :8x16))))
+      (setf (chip8-machine-i machine) #x300
+            (aref (chip8-machine-memory machine) #x300) #x80
+            (aref (chip8-machine-memory machine) #x301) #x40)
+      (test-opcode machine #xd010)
+      (expect (display-pixel-value machine 0 0) :to-be 1)
+      (expect (display-pixel-value machine 1 0) :to-be 0)
+      (expect (display-pixel-value machine 0 1) :to-be 0)
+      (expect (display-pixel-value machine 1 1) :to-be 1))
+    (let ((machine (make-chip8-machine :platform :schip-legacy)))
+      (set-chip8-machine-resolution! machine :hires)
+      (setf (chip8-machine-i machine) #x300
+            (aref (chip8-machine-memory machine) #x300) #x80
+            (aref (chip8-machine-memory machine) #x302) #x80
+            (aref (chip8-machine-memory machine) #x304) #x40)
+      (display-xor-pixel! machine 0 0)
+      (display-xor-pixel! machine 0 1)
+      (display-xor-pixel! machine 1 2)
+      (test-opcode machine #xd010)
+      (progn
+        (expect (chip8-machine-register machine 15) :to-be 3)
+        (setf (chip8-machine-register machine 1) 63)
+        (test-opcode machine #xd010)
+        (expect (chip8-machine-register machine 15) :to-be 15)))
+    (let ((machine (make-chip8-machine :platform :schip-legacy)))
+      (setf (chip8-machine-i machine) #x300
+            (aref (chip8-machine-memory machine) #x300) #x80
+            (aref (chip8-machine-memory machine) #x301) #x80)
+      (display-xor-pixel! machine 0 0)
+      (display-xor-pixel! machine 0 1)
+      (test-opcode machine #xd010)
+      (expect (chip8-machine-register machine 15) :to-be 1))
+    (dolist (case '((:half 5) (:full 6)))
+      (destructuring-bind (lores-scroll expected-y) case
+        (let ((machine
+                (make-chip8-machine
+                 :platform :schip
+                 :quirks (make-chip8-quirks :profile :modern
+                                            :lores-scroll lores-scroll))))
+          (display-xor-pixel! machine 3 4)
+          (test-opcode machine #x00c2)
+          (expect (display-pixel-value machine 3 4) :to-be 0)
+          (expect (display-pixel-value machine 3 expected-y) :to-be 1))))
+    (let ((machine
+            (make-chip8-machine
+             :platform :schip
+             :quirks (make-chip8-quirks :profile :modern
+                                        :mode-switch-clear nil))))
+      (set-chip8-machine-resolution! machine :hires)
+      (setf (aref (chip8-machine-framebuffer machine) 12 10) 1)
+      (test-opcode machine #x00fe)
+      (expect (chip8-machine-resolution machine) :to-be :lores)
+      (expect (aref (chip8-machine-framebuffer machine) 12 10) :to-be 1))))
 (cl-weave:it-property
  "register writes remain octets"
  ((value (cl-weave:gen-integer :min 0 :max 65535)))
