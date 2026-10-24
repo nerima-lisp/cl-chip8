@@ -33,6 +33,12 @@
 
 (defun chip8-machine-memory-size (machine)
   (length (chip8-machine-memory machine)))
+(defun %chip8-machine-audio-snapshot (machine)
+  (with-lock-held ((chip8-machine-framebuffer-lock machine))
+    (values (chip8-platform-name (chip8-machine-platform machine))
+            (chip8-machine-sound-timer machine)
+            (copy-seq (chip8-machine-audio-pattern machine))
+            (chip8-machine-pitch machine))))
 
 (defun chip8-machine-logical-width (machine)
   (if (eq (chip8-machine-resolution machine) :hires)
@@ -71,7 +77,10 @@
   (fill (chip8-machine-v machine) 0)
   (fill (chip8-machine-stack machine) 0)
   (fill (chip8-machine-keypad machine) 0)
-  (fill (chip8-machine-audio-pattern machine) 0)
+  (with-lock-held ((chip8-machine-framebuffer-lock machine))
+    (fill (chip8-machine-audio-pattern machine) 0)
+    (setf (chip8-machine-sound-timer machine) 0
+          (chip8-machine-pitch machine) 64))
   (display-reset! machine)
   (set-chip8-machine-resolution! machine :lores)
   (set-chip8-machine-plane-mask! machine 1)
@@ -79,8 +88,6 @@
         (chip8-machine-pc machine) +initial-pc+
         (chip8-machine-sp machine) 0
         (chip8-machine-delay-timer machine) 0
-        (chip8-machine-sound-timer machine) 0
-        (chip8-machine-pitch machine) 64
         (chip8-machine-halted-p machine) nil
         (chip8-machine-waiting machine) (make-chip8-wait-state)
         (chip8-machine-instructions machine) 0)

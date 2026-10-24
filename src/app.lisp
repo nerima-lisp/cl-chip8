@@ -252,11 +252,7 @@
                (setf (chip8-app-audio-mode app) resolved-audio-mode)
                (when (eq resolved-audio-mode :pcm)
                  (setf audio-output
-                       (start-chip8-audio-output
-                        audio-stream
-                        :sound-timer (chip8-machine-sound-timer machine)
-                        :pattern +default-audio-pattern+
-                        :pitch 64)
+                       (start-chip8-audio-output audio-stream machine)
                        audio-stream nil))
                (setf (chip8-app-audio-output app) audio-output)
                (with-raw-mode ()

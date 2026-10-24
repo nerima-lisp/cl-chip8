@@ -217,8 +217,9 @@
 
 (define-chip8-opcode ld-sound-from-vx #xf018 #xf0ff
     ((x (ldb (byte 4 8) opcode)))
-  (setf (chip8-machine-sound-timer machine)
-        (chip8-machine-register machine x))
+  (with-lock-held ((chip8-machine-framebuffer-lock machine))
+    (setf (chip8-machine-sound-timer machine)
+          (chip8-machine-register machine x)))
   (advance-pc! machine))
 
 (define-chip8-opcode add-i #xf01e #xf0ff
@@ -325,11 +326,13 @@
   (let ((address (chip8-machine-i machine))
         (pattern (chip8-machine-audio-pattern machine)))
     (check-memory-access machine address 16)
-    (replace pattern (chip8-machine-memory machine)
-             :start2 address :end2 (+ address 16)))
+    (with-lock-held ((chip8-machine-framebuffer-lock machine))
+      (replace pattern (chip8-machine-memory machine)
+               :start2 address :end2 (+ address 16))))
   (advance-pc! machine))
 (define-chip8-opcode pitch #xf03a #xf0ff
     ((x (ldb (byte 4 8) opcode)))
-  (setf (chip8-machine-pitch machine)
-        (chip8-machine-register machine x))
+  (with-lock-held ((chip8-machine-framebuffer-lock machine))
+    (setf (chip8-machine-pitch machine)
+          (chip8-machine-register machine x)))
   (advance-pc! machine))

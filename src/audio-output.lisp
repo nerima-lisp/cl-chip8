@@ -4,13 +4,9 @@
   480)
 
 (defstruct (chip8-audio-output (:constructor %make-chip8-audio-output))
-  stream thread
+  stream thread machine
   (writer (function cl-audio-kit:write-frames) :type function)
   (lock (sb-thread:make-mutex))
-  (sound-timer 0 :type integer)
-  (pattern (copy-seq +default-audio-pattern+)
-           :type (simple-array (unsigned-byte 8) (16)))
-  (pitch 64 :type (unsigned-byte 8))
   (phase-reset-generation 0 :type integer)
   (frames-written 0 :type integer)
   (stopped-p nil :type boolean)
@@ -18,12 +14,18 @@
 
 (defun %audio-output-snapshot (output)
   (sb-thread:with-mutex ((chip8-audio-output-lock output))
-                        (values (chip8-audio-output-stopped-p output)
-                                (chip8-audio-output-sound-timer output)
-                                (chip8-audio-output-pattern output)
-                                (chip8-audio-output-pitch output)
-                                (chip8-audio-output-phase-reset-generation
-                                 output))))
+    (values (chip8-audio-output-stopped-p output)
+            (chip8-audio-output-phase-reset-generation output))))
+(defun %synthesize-machine-audio-frames (machine frame-count bit-phase)
+  (multiple-value-bind (platform sound-timer pattern pitch)
+      (%chip8-machine-audio-snapshot machine)
+    (if (eq platform :xo-chip)
+        (synthesize-audio-frames frame-count sound-timer pattern pitch bit-phase)
+        (synthesize-audio-frames frame-count
+                                  sound-timer
+                                  +default-audio-pattern+
+                                  64
+                                  bit-phase))))
 
 (defun %record-audio-output-failure! (output condition)
   (sb-thread:with-mutex ((chip8-audio-output-lock output))
@@ -35,7 +37,7 @@
         (seen-generation 0))
     (handler-case
         (loop
-          (multiple-value-bind (stopped-p sound-timer pattern pitch generation)
+          (multiple-value-bind (stopped-p generation)
               (%audio-output-snapshot output)
             (when stopped-p
               (return))
@@ -43,8 +45,10 @@
               (setf phase 0d0
                     seen-generation generation))
             (multiple-value-bind (samples next-phase)
-                (synthesize-audio-frames +audio-frames-per-write+
-                                         sound-timer pattern pitch phase)
+                (%synthesize-machine-audio-frames
+                 (chip8-audio-output-machine output)
+                 +audio-frames-per-write+
+                 phase)
               (let ((written
                       (funcall (chip8-audio-output-writer output)
                                (chip8-audio-output-stream output)
@@ -54,7 +58,8 @@
                          written +audio-frames-per-write+))
                 (setf phase next-phase)
                 (sb-thread:with-mutex ((chip8-audio-output-lock output))
-                  (incf (chip8-audio-output-frames-written output) written))))))
+                  (incf (chip8-audio-output-frames-written output)
+                        written))))))
       (error (condition)
         (%record-audio-output-failure! output condition)))))
 
@@ -83,22 +88,15 @@
     (:bell (values :bell nil))
     (:off (values :off nil))))
 
-(defun start-chip8-audio-output (stream &key
-                                                (sound-timer 0)
-                                                (pattern +default-audio-pattern+)
-                                                (pitch 64)
+(defun start-chip8-audio-output (stream machine &key
                                                 (writer
                                                   (function cl-audio-kit:write-frames)))
-  (declare (type integer sound-timer)
-           (type (simple-array (unsigned-byte 8) (16)) pattern)
-           (type (unsigned-byte 8) pitch)
+  (declare (type chip8-machine machine)
            (type function writer))
   (let* ((output (%make-chip8-audio-output
                   :stream stream
-                  :writer writer
-                  :sound-timer sound-timer
-                  :pattern (copy-seq pattern)
-                  :pitch pitch))
+                  :machine machine
+                  :writer writer))
          (thread nil))
     (handler-case
         (setf thread (sb-thread:make-thread
@@ -110,24 +108,11 @@
     (setf (chip8-audio-output-thread output) thread)
     output))
 
-(defun publish-chip8-audio-state! (output sound-timer pattern pitch)
-  (declare (type chip8-audio-output output)
-           (type integer sound-timer)
-           (type (simple-array (unsigned-byte 8) (16)) pattern)
-           (type (unsigned-byte 8) pitch))
-  (sb-thread:with-mutex ((chip8-audio-output-lock output))
-    (setf (chip8-audio-output-sound-timer output) sound-timer
-          (chip8-audio-output-pattern output) (copy-seq pattern)
-          (chip8-audio-output-pitch output) pitch))
-  output)
 (defun %synchronize-chip8-audio-state! (app)
   (let* ((machine (chip8-app-machine app))
          (sound-timer (chip8-machine-sound-timer machine))
          (previous-timer (chip8-app-last-audio-sound-timer app))
          (output (chip8-app-audio-output app)))
-    (when output
-      (publish-chip8-audio-state! output sound-timer
-                                  +default-audio-pattern+ 64))
     (when (and (eq (chip8-app-audio-mode app) :bell)
                (zerop previous-timer)
                (plusp sound-timer)
