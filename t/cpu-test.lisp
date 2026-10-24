@@ -194,6 +194,53 @@
      :results ((0 0) (1 17) (2 34) (3 51) (4 68) (5 85) (6 102) (7 119)
                (8 136) (9 153) (10 170) (11 187) (12 204) (13 221)
                (14 238) (15 255)))))
+(defparameter *xo-opcode-semantic-cases*
+  '((:store-register-range-ascending :save-register-range :modern #x5132
+     :platform :modern :registers ((1 #x11) (2 #x22) (3 #x33))
+     :vf 0 :pc #x202 :i #x300 :i-result #x300
+     :memory-results ((#x300 #x11) (#x301 #x22) (#x302 #x33)))
+    (:store-register-range-descending :save-register-range :modern #x5322
+     :platform :modern :registers ((2 #x22) (3 #x33))
+     :vf 0 :pc #x202 :i #x300 :i-result #x300
+     :memory-results ((#x300 #x33) (#x301 #x22)))
+    (:load-register-range-ascending :load-register-range :modern #x5133
+     :platform :modern :vf 0 :pc #x202 :i #x300 :i-result #x300
+     :memory ((#x300 #x11) (#x301 #x22) (#x302 #x33))
+     :results ((1 #x11) (2 #x22) (3 #x33)))
+    (:load-register-range-descending :load-register-range :modern #x5323
+     :platform :modern :vf 0 :pc #x202 :i #x300 :i-result #x300
+     :memory ((#x300 #x33) (#x301 #x22))
+     :results ((2 #x22) (3 #x33)))
+    (:load-long-i :ld-i-long :modern #xf000
+     :platform :modern :next-word #x1234
+     :memory ((#x202 #x12) (#x203 #x34))
+     :vf 0 :pc #x204 :i-result #x1234)
+    (:select-plane-two :plane :modern #xf201
+     :platform :modern :vf 0 :pc #x202 :plane-mask-result 2)
+    (:load-audio-pattern :audio :modern #xf002
+     :platform :modern :vf 0 :pc #x202 :i #x300
+     :memory ((#x300 1) (#x301 2) (#x302 3) (#x303 4)
+              (#x304 5) (#x305 6) (#x306 7) (#x307 8)
+              (#x308 9) (#x309 10) (#x30a 11) (#x30b 12)
+              (#x30c 13) (#x30d 14) (#x30e 15) (#x30f 16))
+     :audio-result #(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16))
+    (:set-pitch :pitch :modern #xf33a
+     :platform :modern :registers ((3 #x7b)) :vf 0 :pc #x202
+     :pitch-result #x7b)
+    (:scroll-up-one-plane :scroll-up :modern #x00d2
+     :platform :modern :resolution :lores :plane-mask 1 :vf 0 :pc #x202
+     :initial-pixels ((5 5 1) (3 5 2))
+     :pixels ((3 5 1 1) (3 5 2 2)))
+    (:scroll-up-both-planes :scroll-up :modern #x00d2
+     :platform :modern :resolution :lores :plane-mask 3 :vf 0 :pc #x202
+     :initial-pixels ((4 1 1) (4 6 2))
+     :pixels ((2 1 1) (2 6 2)))
+    (:draw-two-planes-collides :draw :modern #xd011
+     :platform :modern :resolution :lores :plane-mask 3
+     :registers ((0 0) (1 0)) :vf 0 :pc #x202 :i #x300
+     :memory ((#x300 #x40) (#x301 #x80))
+     :initial-pixels ((0 0 2)) :pixels ((0 1 1) (0 0 0))
+     :results ((15 1)))))
 (defun semantic-case-machine (case)
   (let* ((arguments (cddddr case))
          (machine
@@ -234,7 +281,18 @@
         (test-opcode seed-machine #xff75)))
     (if (functionp executor)
         (funcall executor machine (fourth case))
-        (test-opcode machine (fourth case)))
+        (if (member :next-word arguments)
+            (let* ((opcode (fourth case))
+                   (word (getf arguments :next-word))
+                   (pc (chip8-machine-pc machine)))
+              (load-rom machine
+                        (vector (ldb (byte 8 8) opcode)
+                                (ldb (byte 8 0) opcode)
+                                (ldb (byte 8 8) word)
+                                (ldb (byte 8 0) word))
+                        :address pc)
+              (execute-instruction! machine))
+            (test-opcode machine (fourth case))))
     (when (getf arguments :follow-up-opcode)
       (test-opcode machine (getf arguments :follow-up-opcode)))
     (when (member :pc arguments)
@@ -248,7 +306,11 @@
               :to-be
               (second result)))
     (dolist (pixel (getf arguments :pixels))
-      (expect (display-pixel-value machine (second pixel) (first pixel))
+      (expect (display-pixel-value machine
+                            (second pixel)
+                            (first pixel)
+                            (or (fourth pixel)
+                                (chip8-machine-plane-mask machine)))
               :to-be
               (third pixel)))
     (when (or (getf arguments :i-result)
@@ -265,6 +327,14 @@
       (expect (chip8-machine-plane-mask machine)
               :to-be
               (getf arguments :plane-mask-result)))
+    (when (member :audio-result arguments)
+      (expect (equalp (chip8-machine-audio-pattern machine)
+                      (getf arguments :audio-result))
+              :to-be-truthy))
+    (when (member :pitch-result arguments)
+      (expect (chip8-machine-pitch machine)
+              :to-be
+              (getf arguments :pitch-result)))
     (dolist (entry (getf arguments :memory-results))
       (expect (aref (chip8-machine-memory machine) (first entry))
               :to-be
@@ -646,6 +716,153 @@
       (test-opcode machine #x00fe)
       (expect (chip8-machine-resolution machine) :to-be :lores)
       (expect (aref (chip8-machine-framebuffer machine) 12 10) :to-be 1))))
+(describe "XO-CHIP opcode behavior"
+  (it-each
+      ((:store-register-range-ascending)
+       (:store-register-range-descending)
+       (:load-register-range-ascending)
+       (:load-register-range-descending)
+       (:load-long-i)
+       (:select-plane-two)
+       (:load-audio-pattern)
+       (:set-pitch)
+       (:scroll-up-one-plane)
+       (:scroll-up-both-planes)
+       (:draw-two-planes-collides))
+    "checks XO opcode semantic case ~A" (name)
+    (assert-semantic-case
+     (find name *xo-opcode-semantic-cases* :key #'first)
+     nil))
+  (it "sets FN01 to each valid plane mask and rejects N above three"
+    (let ((machine (make-chip8-machine :platform :modern)))
+      (dotimes (plane 4)
+        (test-opcode machine (+ #xf001 (ash plane 8)))
+        (expect (chip8-machine-plane-mask machine) :to-be plane))
+      (signals chip8-invalid-opcode (test-opcode machine #xf401))))
+  (it "clears only the selected plane in lores mode"
+    (let ((machine (make-chip8-machine :platform :modern)))
+      (set-chip8-machine-plane-mask! machine 1)
+      (display-xor-pixel! machine 2 3 1)
+      (display-xor-pixel! machine 2 3 2)
+      (test-opcode machine #x00e0)
+      (expect (display-pixel-value machine 2 3 1) :to-be 0)
+      (expect (display-pixel-value machine 2 3 2) :to-be 2)))
+  (it "copies sixteen audio bytes into machine state"
+    (let* ((machine (make-chip8-machine :platform :modern))
+           (memory (chip8-machine-memory machine))
+           (expected #(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)))
+      (setf (chip8-machine-i machine) #x300)
+      (loop for value across expected
+            for address from #x300
+            do (setf (aref memory address) value))
+      (test-opcode machine #xf002)
+      (expect (length (chip8-machine-audio-pattern machine)) :to-be 16)
+      (expect (equalp (chip8-machine-audio-pattern machine) expected)
+              :to-be-truthy)
+      (setf (aref memory #x300) #xff)
+      (expect (aref (chip8-machine-audio-pattern machine) 0) :to-be 1)))
+  (it-each
+      ((:skip-equal #x3001 ((0 1)))
+       (:skip-not-equal #x4001 ((0 2)))
+       (:skip-register-equal #x5010 ((0 1) (1 1)))
+       (:skip-register-not-equal #x9010 ((0 1) (1 2)))
+       (:skip-key-pressed #xe09e ((0 3)))
+       (:skip-key-not-pressed #xe0a1 ((0 3))))
+    "skips the long or ordinary next instruction for ~A" (name opcode registers)
+    (let ((machine (make-chip8-machine :platform :modern)))
+      (dolist (entry registers)
+        (setf (chip8-machine-register machine (first entry)) (second entry)))
+      (when (eq name :skip-key-pressed)
+        (chip8-key-down! machine (chip8-machine-register machine 0)))
+      (dolist (long-next '(nil t))
+        (setf (chip8-machine-pc machine) #x200)
+        (load-rom machine
+                  (if long-next
+                      (vector #xf0 #x00 #x12 #x34)
+                      (vector #x60 #x00))
+                  :address #x202)
+        (test-opcode machine opcode)
+        (expect (chip8-machine-pc machine)
+                :to-be
+                (if long-next #x206 #x204)))))
+  (it "resumes a two-byte key wait after its instruction"
+    (let ((machine
+            (make-chip8-machine
+             :platform :modern
+             :quirks (make-chip8-quirks :profile :modern
+                                        :fx0a-completion :press))))
+      (test-opcode machine #xf00a)
+      (expect (chip8-wait-state-pc (chip8-machine-waiting machine))
+              :to-be #x200)
+      (chip8-resume! machine '(:key-down 5))
+      (expect (chip8-machine-pc machine) :to-be #x202)
+      (expect (chip8-machine-register machine 0) :to-be 5)))
+  (it "resumes a key wait after skipping a four-byte instruction"
+    (let ((machine
+            (make-chip8-machine
+             :platform :modern
+             :quirks (make-chip8-quirks :profile :modern
+                                        :fx0a-completion :press))))
+      (setf (chip8-machine-register machine 0) 1)
+      (load-rom machine
+                (vector #x30 #x01 #xf0 #x00 #x12 #x34 #xf0 #x0a))
+      (execute-instruction! machine)
+      (expect (chip8-machine-pc machine) :to-be #x206)
+      (test-opcode machine #xf00a)
+      (expect (chip8-wait-state-pc (chip8-machine-waiting machine))
+              :to-be #x206)
+      (chip8-resume! machine '(:key-down 7))
+      (expect (chip8-machine-pc machine) :to-be #x208)))
+  (it "resumes a display wait after a long-op skip lands at the draw"
+    (let ((machine
+            (make-chip8-machine
+             :platform :modern
+             :quirks (make-chip8-quirks :profile :modern
+                                        :display-wait :wait))))
+      (setf (chip8-machine-register machine 0) 1)
+      (load-rom machine
+                (vector #x30 #x01 #xf0 #x00 #x12 #x34 #xd0 #x11))
+      (execute-instruction! machine)
+      (expect (chip8-machine-pc machine) :to-be #x206)
+      (test-opcode machine #xd011)
+      (expect (chip8-wait-state-pc (chip8-machine-waiting machine))
+              :to-be #x206)
+      (chip8-resume! machine :tick)
+      (expect (chip8-machine-pc machine) :to-be #x208))))
+(describe "XO-CHIP long-op boundaries and reset"
+  (it "loads an F000 immediate ending at 0xffff and wraps PC to zero"
+    (let ((machine (make-chip8-machine :platform :xo-chip)))
+      (setf (chip8-machine-pc machine) #xfffc)
+      (load-rom machine (vector #xf0 #x00 #x12 #x34) :address #xfffc)
+      (execute-instruction! machine)
+      (expect (chip8-machine-i machine) :to-be #x1234)
+      (expect (chip8-machine-pc machine) :to-be 0)))
+  (it "rejects an F000 immediate that would cross 0xffff"
+    (let ((machine (make-chip8-machine :platform :xo-chip)))
+      (setf (chip8-machine-pc machine) #xfffe)
+      (load-rom machine (vector #xf0 #x00) :address #xfffe)
+      (signals chip8-memory-access-out-of-bounds
+        (execute-instruction! machine))))
+  (it "resets F002 audio pattern and FX3A pitch to their initial values"
+    (let* ((machine (make-chip8-machine :platform :modern))
+           (memory (chip8-machine-memory machine))
+           (pattern #(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)))
+      (setf (chip8-machine-i machine) #x300
+            (chip8-machine-register machine 3) #x7b)
+      (loop for value across pattern
+            for address from #x300
+            do (setf (aref memory address) value))
+      (test-opcode machine #xf002)
+      (test-opcode machine #xf33a)
+      (expect (equalp (chip8-machine-audio-pattern machine) pattern)
+              :to-be-truthy)
+      (expect (chip8-machine-pitch machine) :to-be #x7b)
+      (chip8-reset! machine)
+      (expect (equalp (chip8-machine-audio-pattern machine)
+                      (make-array 16 :initial-element 0))
+              :to-be-truthy)
+      (expect (chip8-machine-pitch machine) :to-be 64))))
+
 (cl-weave:it-property
  "register writes remain octets"
  ((value (cl-weave:gen-integer :min 0 :max 65535)))

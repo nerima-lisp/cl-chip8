@@ -1,10 +1,9 @@
 (in-package #:cl-chip8)
 
-(defun fetch-opcode (machine)
-  (let ((pc (chip8-machine-pc machine)))
-    (check-memory-access machine pc 2)
-    (logior (ash (memory-read machine pc) 8)
-            (memory-read machine (1+ pc)))))
+(defun fetch-opcode (machine &optional (pc (chip8-machine-pc machine)))
+  (check-memory-access machine pc 2)
+  (logior (ash (memory-read machine pc) 8)
+          (memory-read machine (1+ pc))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun %opcode-body (definition)

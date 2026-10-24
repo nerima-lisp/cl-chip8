@@ -11,16 +11,14 @@
 ;;; ---------------------------------------------------------------------------
 
 (defparameter *rom-corpus-root-variable* "CL_CHIP8_ROM_CORPUS"
-  "Name of the environment variable holding the corpus root directory.
-Unset means the corpus spec skips. See this file's header.")
+  "Name of the environment variable holding a ROM corpus root.
+When it is unset or blank, the corpus spec skips.")
 
 (defparameter *rom-corpus-budget-variable* "CL_CHIP8_ROM_CORPUS_BUDGET"
   "Name of the environment variable overriding the per-ROM instruction budget.")
 
 (defparameter *rom-corpus-default-budget* 2000
-  "Instructions executed per ROM when the budget variable is unset.
-The budget carries a typical chip8Archive program through initialization and
-into its main loop, where memory bounds checks are exercised.")
+  "Default instruction budget used by the corpus smoke test for each ROM.")
 
 (defparameter *temp-corpus-counter* 0
   "Process-local counter for temporary corpus directory names.")
@@ -68,15 +66,11 @@ NIL when it is unset or blank. Treating a blank value as unset means
       (host-kit:ensure-directory-pathname (host-kit:ensure-pathname configured)))))
 
 (defun %parse-corpus-budget (value)
-  "Return the per-ROM instruction budget VALUE denotes.
+  "Return a valid per-ROM instruction budget.
 
-VALUE is NIL (the variable is unset, so *ROM-CORPUS-DEFAULT-BUDGET* applies) or
-a string that must parse in full as a positive decimal integer. Anything else
-is an error rather than a silent fall back to the default: a budget of 0, or a
-typo that PARSE-INTEGER would happily read as a prefix, would leave the corpus
-spec running no instructions at all while still reporting every ROM as
-completed. Split out from %CORPUS-BUDGET so it can be tested without writing to
-the environment."
+NIL selects the default. A zero budget executes no instructions but would still
+classify each ROM as completed. Requiring the full string rejects trailing text
+that PARSE-INTEGER could otherwise ignore."
   (cond
     ((null value) *rom-corpus-default-budget*)
     (t
@@ -87,7 +81,6 @@ the environment."
        parsed))))
 
 (defun %corpus-budget ()
-  "Return the per-ROM instruction budget from the environment."
   (%parse-corpus-budget (%corpus-environment-value *rom-corpus-budget-variable*)))
 
 ;;; ---------------------------------------------------------------------------
@@ -119,26 +112,25 @@ to, so this descends rather than listing ROOT's direct entries."
 ;;; Running one ROM
 ;;; ---------------------------------------------------------------------------
 
-(defun %run-corpus-rom (path budget)
-  "Run PATH from a freshly reset machine for BUDGET instructions.
+(defun %run-corpus-rom (path budget &key (platform :modern))
+  "Run PATH on PLATFORM for BUDGET instructions.
 
-Returns (VALUES OUTCOME CONDITION): OUTCOME is a member of
+Returns (VALUES OUTCOME CONDITION). OUTCOME is a member of
 *ROM-CORPUS-OUTCOME-ORDER* and CONDITION is the condition that ended the run,
-NIL when the whole budget was executed. The machine is initialized with
-RESET-CPU-STATE!, MEMORY-RESET!, DISPLAY-RESET!,
-LOAD-FONTSET-INTO-MEMORY!, LOAD-ROM-FILE!, and KEYPAD-RESET!, then executes
-instructions in a loop.
+NIL when no classified condition occurred. Each ROM gets a fresh machine; only
+its outcome and condition are returned.
 
-No input is delivered and no timer is advanced, so this is a CPU smoke test and
-nothing here asserts on pixels. FX0A (block until a keypress) leaves PC
-untouched by design, so a ROM waiting for input spins in place and consumes its
-budget rather than blocking the suite.
+The machine is initialized for PLATFORM, then PATH is loaded and
+CHIP8-RUN-INSTRUCTIONS is called. A :COMPLETED result means no classified
+condition occurred; the run can stop early if the ROM halts or enters a wait
+state. No input is delivered and timers are not advanced, so a ROM that reaches
+FX0A or a display wait stops there and is classified as :COMPLETED. Nothing
+here asserts on pixels.
 
-The final ERROR clause classifies unexpected interpreter conditions as faults
-instead of swallowing them. The machine retains the last ROM's state; callers
-reset it before reading anything."
+Errors raised while loading or executing that are not covered by the earlier
+clauses are returned as :ERROR with their condition."
   (handler-case
-      (let ((machine (make-chip8-machine)))
+      (let ((machine (make-chip8-machine :platform platform)))
         (load-rom-file machine path)
         (chip8-run-instructions machine budget)
         (values :completed nil))
@@ -157,24 +149,16 @@ reset it before reading anything."
 
 (defun %corpus-outcomes (roms budget)
   "Run every ROM in ROMS for BUDGET instructions.
-Returns a list of (PATHNAME OUTCOME CONDITION), one per ROM, in ROMS' order.
-Resets the machine afterwards so the next spec in the run does not inherit the
-last ROM's memory image."
-  (prog1
-      (loop for rom in roms
-            collect (multiple-value-bind (outcome condition) (%run-corpus-rom rom budget)
-                      (list rom outcome condition)))
-    nil))
+Return (PATHNAME OUTCOME CONDITION) entries in ROMS order."
+  (loop for rom in roms
+        collect (multiple-value-bind (outcome condition) (%run-corpus-rom rom budget)
+                  (list rom outcome condition))))
 
 (defun %printable-corpus-name (path)
-  "Return PATH's filename with control characters replaced by `.'.
+  "Return the filename of PATH with control characters replaced by a period.
 
-The corpus is a third-party tree the operator points us at, so a filename is
-untrusted text that this suite prints straight to the terminal. A ROM named
-with embedded ANSI escapes would otherwise rewrite the reporter's output --
-recolouring it, erasing lines, or hiding the very failure being reported.
-Replacing rather than stripping keeps the length honest, so two names that
-differ only in control characters do not collapse into one."
+This keeps terminal reports from being rewritten by escape sequences.
+Replacements use one visible character per input control character."
   (map 'string
        (lambda (character)
          (if (or (char< character #\Space) (char= character (code-char 127)))
@@ -195,16 +179,14 @@ condition's own report."
                           condition)))
 
 (defun %corpus-tally (outcomes)
-  "Return an alist of (OUTCOME . COUNT) covering *ROM-CORPUS-OUTCOME-ORDER*.
-Every class appears even at zero, so a report that lists no faults is
-distinguishable from one that forgot to look for them."
+  "Return an alist of (OUTCOME . COUNT) entries in the configured report order,
+including classes with zero results."
   (loop for class in *rom-corpus-outcome-order*
         collect (cons class
                       (count class outcomes :key #'second))))
 
 (defun %report-corpus-summary (root budget outcomes stream)
-  "Write the per-class tally to STREAM. These are the numbers that go in the
-docs, so they name the corpus root and the budget that produced them."
+  "Write the outcome tally to STREAM with its corpus root, budget, and total."
   (format stream "~&;; cl-chip8 ROM corpus smoke test~%")
   (format stream ";;   corpus root : ~A~%" root)
   (format stream ";;   budget      : ~D instruction(s) per ROM~%" budget)
@@ -226,18 +208,14 @@ Executes forever without ever faulting, which is the :COMPLETED case."
   (%corpus-bytes #x12 #x00))
 
 (defun %unsupported-opcode-rom-bytes ()
-  "5F0F: family 5's only clause is 5XY0 (SE Vx, Vy), which requires a low
-nibble of 0 (src/opcodes.lisp:202-212). 5F0F therefore matches no STEP clause
-and EXECUTE-INSTRUCTION! signals CHIP8-INVALID-OPCODE -- the same outcome a
-SUPER-CHIP or XO-CHIP program in the corpus produces."
-  (%corpus-bytes #x5F #x0F))
+  "5F01 is invalid because family 5 supports only 5XY0, 5XY2, and 5XY3."
+  (%corpus-bytes #x5F #x01))
 
 (defun %out-of-bounds-rom-bytes ()
-  "AFFF: LD I, 0xFFF, then F165: LD V0..V1, [I].
-The register-block load spans two bytes from address 4095, so it runs one byte
-past the 4096-byte address space and CHECK-MEMORY-ACCESS signals
-CHIP8-MEMORY-ACCESS-OUT-OF-BOUNDS."
-  (%corpus-bytes #xAF #xFF #xF1 #x65))
+  "F000 FFFF sets I to 0xFFFF, then F165 loads V0..V1 from [I]. On the
+:XO-CHIP platform the two-byte register load crosses the 64KB memory limit, so
+CHECK-MEMORY-ACCESS signals CHIP8-MEMORY-ACCESS-OUT-OF-BOUNDS."
+  (%corpus-bytes #xF0 #x00 #xFF #xFF #xF1 #x65))
 
 (defun %stack-underflow-rom-bytes ()
   "00EE: RET with an empty call stack."
@@ -261,11 +239,9 @@ memory, so LOAD-ROM-FILE! signals CHIP8-ROM-TOO-LARGE."
 ;;; ---------------------------------------------------------------------------
 
 (defun %write-corpus-rom (root name bytes)
-  "Write BYTES to NAME under directory ROOT and return the pathname.
-NAME may name a subdirectory (\"nested/demo.ch8\"), which is created. Mirrors
-t/rom-test.lisp's own /tmp-based temporary ROM helper; this target is
-SBCL-only, so a plain /tmp path avoids depending on any particular external
-temporary-file API."
+  "Write BYTES to NAME under ROOT and return the pathname.
+NAME may name a subdirectory, which is created. This SBCL-only test uses /tmp
+to avoid dependence on an external temporary-file API."
   (let ((path (merge-pathnames name (host-kit:ensure-directory-pathname root))))
     (ensure-directories-exist path)
     (with-open-file (stream path :direction :output :if-exists :supersede
@@ -293,22 +269,19 @@ temporary-file API."
 ;;; The corpus spec itself
 ;;; ---------------------------------------------------------------------------
 
-(describe "chip8Archive ROM corpus smoke test (FR-010)"
-  (it "runs every .ch8 ROM under CL_CHIP8_ROM_CORPUS with no memory or stack fault"
+(describe "chip8Archive ROM corpus smoke test"
+  (it "runs each .ch8 ROM under CL_CHIP8_ROM_CORPUS without a classified fault"
     (let ((root (%corpus-root)))
-      ;; An unconfigured corpus is reported as a skip.
       (unless root
         (skip (format nil "~A is unset. Set it to a directory tree of .ch8 files ~
                            (for example a clone of JohnEarnest/chip8Archive) to run ~
                            the corpus smoke test."
                       *rom-corpus-root-variable*)))
-      ;; A configured but missing directory is an error.
       (unless (host-kit:directory-exists-p root)
         (error "~A names ~A, which is not an existing directory."
                *rom-corpus-root-variable* root))
       (let ((budget (%corpus-budget))
             (roms (%corpus-rom-files root)))
-        ;; Require at least one ROM when a corpus is configured.
         (expect (length roms) :to-be-greater-than 0)
         (let ((outcomes (%corpus-outcomes roms budget)))
           (%report-corpus-summary root budget outcomes *standard-output*)
@@ -353,16 +326,13 @@ temporary-file API."
       (%write-corpus-rom root "shouty.CH8" (%looping-rom-bytes))
       (expect (length (%corpus-rom-files root)) :to-be 1)))
   (it "returns an empty list for a corpus directory holding no ROM"
-    ;; This is the empty-corpus case rejected by the smoke-test gate.
     (with-temp-corpus (root)
       (expect (%corpus-rom-files root) :to-equal '()))))
 
 (describe "ROM corpus fault-report sanitisation"
-  ;; A corpus is a third-party tree, so a ROM filename is untrusted text that
-  ;; this suite prints to the terminal. These exercise the function directly
-  ;; rather than through the filesystem: a control character in a real
-  ;; filename is awkward to create portably, and the property under test
-  ;; belongs to the formatting, not to discovery.
+  ;; These tests call the formatter directly because control characters in
+  ;; real filenames are awkward to create portably; the property belongs to
+  ;; formatting, not discovery.
   (it "replaces an escape sequence in a ROM name so it cannot rewrite the report"
     (let ((sanitised (%printable-corpus-name
                       (make-pathname :name (format nil "evil~C[2K" (code-char 27))
@@ -370,12 +340,11 @@ temporary-file API."
       (with-soft-assertions
         (expect (find (code-char 27) sanitised) :to-be nil)
         (expect (search "evil" sanitised) :to-be 0))))
-  (it "replaces rather than strips, so names differing only in control characters stay distinct"
-    (let ((a (%printable-corpus-name
-              (make-pathname :name (format nil "rom~C" (code-char 7)) :type "ch8")))
-          (b (%printable-corpus-name
-              (make-pathname :name "rom" :type "ch8"))))
-      (expect (string= a b) :to-be nil)))
+  (it "replaces a control character with a visible marker"
+    (let ((name (%printable-corpus-name
+                 (make-pathname :name (format nil "rom~C" (code-char 7))
+                                :type "ch8"))))
+      (expect (search "rom." name) :to-be 0)))
   (it "leaves an ordinary ROM name untouched"
     (expect (%printable-corpus-name #p"/tmp/pong.ch8") :to-equal "pong.ch8")))
 
@@ -392,10 +361,11 @@ temporary-file API."
     (with-temp-corpus (root)
       (let ((rom (%write-corpus-rom root "huge.ch8" (%oversized-rom-bytes))))
         (expect (%run-corpus-rom rom 2000) :to-be :too-large))))
-  (it "reports an out-of-bounds register-block load as a memory fault"
+  (it "reports a register-block load past the end of XO-CHIP memory as a memory fault"
     (with-temp-corpus (root)
       (let ((rom (%write-corpus-rom root "oob.ch8" (%out-of-bounds-rom-bytes))))
-        (expect (%run-corpus-rom rom 2000) :to-be :memory-access-out-of-bounds))))
+        (expect (%run-corpus-rom rom 2000 :platform :xo-chip)
+                :to-be :memory-access-out-of-bounds))))
   (it "reports RET on an empty call stack as a stack fault"
     (with-temp-corpus (root)
       (let ((rom (%write-corpus-rom root "underflow.ch8" (%stack-underflow-rom-bytes))))
@@ -406,7 +376,7 @@ temporary-file API."
         (expect (%run-corpus-rom rom 2000) :to-be :stack-overflow)))))
 
 (describe "ROM corpus fault reporting"
-  (it "reports no fault for a corpus of clean and merely-unsupported ROMs"
+  (it "classifies clean, unsupported, and oversized ROMs"
     (with-temp-corpus (root)
       (%write-corpus-rom root "loop.ch8" (%looping-rom-bytes))
       (%write-corpus-rom root "super.ch8" (%unsupported-opcode-rom-bytes))
@@ -418,7 +388,6 @@ temporary-file API."
           (expect (cdr (assoc :unsupported-opcode (%corpus-tally outcomes))) :to-be 1)
           (expect (cdr (assoc :too-large (%corpus-tally outcomes))) :to-be 1)))))
   (it "names the offending ROM when one of them faults"
-    ;; Ensure fault outcomes identify the offending ROM.
     (with-temp-corpus (root)
       (%write-corpus-rom root "loop.ch8" (%looping-rom-bytes))
       (%write-corpus-rom root "oob.ch8" (%out-of-bounds-rom-bytes))

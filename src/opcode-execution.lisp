@@ -8,7 +8,13 @@
              (chip8-machine-memory-size machine))))
 
 (defun %skip-if (machine condition)
-  (advance-pc! machine (if condition 4 2)))
+  (advance-pc! machine
+               (if condition
+                   (let ((next-pc
+                           (mod (+ (chip8-machine-pc machine) 2)
+                                (chip8-machine-memory-size machine))))
+                     (if (= (fetch-opcode machine next-pc) #xf000) 6 4))
+                   2)))
 
 (defun %vf-reset-if-needed (machine)
   (when (eq (chip8-quirks-vf-behavior (chip8-machine-quirks machine)) :reset)

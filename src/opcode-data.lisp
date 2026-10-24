@@ -12,7 +12,7 @@
                 :test #'eq))))
 
 (define-chip8-opcode cls #x00e0 #xffff ()
-  (chip8-clear-display! machine)
+  (chip8-clear-display! machine (chip8-machine-plane-mask machine))
   (advance-pc! machine))
 
 (define-chip8-opcode ret #x00ee #xffff ()
@@ -50,6 +50,26 @@
     ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
   (%skip-if machine (= (chip8-machine-register machine x)
                        (chip8-machine-register machine y))))
+(define-chip8-opcode save-register-range #x5002 #xf00f
+    ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
+  (let* ((i (chip8-machine-i machine))
+         (count (1+ (abs (- y x))))
+         (direction (if (<= x y) 1 -1)))
+    (check-memory-access machine i count)
+    (dotimes (offset count)
+      (setf (memory-read machine (+ i offset))
+            (chip8-machine-register machine (+ x (* direction offset))))))
+  (advance-pc! machine))
+(define-chip8-opcode load-register-range #x5003 #xf00f
+    ((x (ldb (byte 4 8) opcode)) (y (ldb (byte 4 4) opcode)))
+  (let* ((i (chip8-machine-i machine))
+         (count (1+ (abs (- y x))))
+         (direction (if (<= x y) 1 -1)))
+    (check-memory-access machine i count)
+    (dotimes (offset count)
+      (setf (chip8-machine-register machine (+ x (* direction offset)))
+            (memory-read machine (+ i offset)))))
+  (advance-pc! machine))
 
 (define-chip8-opcode ld-byte #x6000 #xf000
     ((x (ldb (byte 4 8) opcode)) (kk (ldb (byte 8 0) opcode)))
@@ -282,4 +302,34 @@
 (define-chip8-opcode load-rpl #xf085 #xf0ff
     ((x (ldb (byte 4 8) opcode)))
   (%load-rpl-flags! machine x)
+  (advance-pc! machine))
+(define-chip8-opcode scroll-up #x00d0 #xfff0
+    ((n (ldb (byte 4 0) opcode)))
+  (%scroll-display! machine 0
+                    (- (%schip-lores-scroll-distance machine n)))
+  (advance-pc! machine))
+(define-chip8-opcode ld-i-long #xf000 #xffff ()
+  (let ((address (+ (chip8-machine-pc machine) 2)))
+    (check-memory-access machine address 2)
+    (setf (chip8-machine-i machine)
+          (logior (ash (memory-read machine address) 8)
+                  (memory-read machine (1+ address)))))
+  (advance-pc! machine 4))
+(define-chip8-opcode plane #xf001 #xf00f
+    ((n (ldb (byte 4 8) opcode)))
+  (unless (<= n 3)
+    (error 'chip8-invalid-opcode :opcode opcode))
+  (set-chip8-machine-plane-mask! machine n)
+  (advance-pc! machine))
+(define-chip8-opcode audio #xf002 #xffff ()
+  (let ((address (chip8-machine-i machine))
+        (pattern (chip8-machine-audio-pattern machine)))
+    (check-memory-access machine address 16)
+    (replace pattern (chip8-machine-memory machine)
+             :start2 address :end2 (+ address 16)))
+  (advance-pc! machine))
+(define-chip8-opcode pitch #xf03a #xf0ff
+    ((x (ldb (byte 4 8) opcode)))
+  (setf (chip8-machine-pitch machine)
+        (chip8-machine-register machine x))
   (advance-pc! machine))

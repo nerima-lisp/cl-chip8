@@ -35,11 +35,13 @@
 
 (defun opcode-mutation-results (name)
   (let* ((form (opcode-definition-lambda name))
+         (all-cases (append *opcode-semantic-cases*
+                            *xo-opcode-semantic-cases*))
          (cases (remove-if-not
                  (lambda (case)
                    (string= (symbol-name (second case))
                             (symbol-name name)))
-                 *opcode-semantic-cases*)))
+                 all-cases)))
     (unless cases
       (cl-weave:fail "No semantic cases for opcode ~S." name))
     (values
@@ -52,7 +54,9 @@
               (dolist (case cases)
                 (assert-semantic-case case (eval mutated-form)))
               t)
-          (cl-weave:assertion-failure () nil)))
+          (cl-weave:assertion-failure () nil)
+          (type-error () nil)
+          (division-by-zero () nil)))
       :operators '(:arithmetic-operator :comparison-operator
                    :boolean-literal :conditional-branch
                    :chip8-quirk-branch))
@@ -78,6 +82,7 @@
   (it-each
       ((:add-register) (:sub-register) (:subn-register) (:shr) (:or)
        (:se-byte) (:jp-v0) (:draw) (:store-registers) (:load-registers)
-       (:scroll-left) (:halt))
+       (:save-register-range) (:load-register-range)
+       (:scroll-left) (:scroll-up) (:halt))
     "kills mutations in the real ~A opcode body" (name)
     (assert-opcode-mutation-score name)))
