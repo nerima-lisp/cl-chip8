@@ -215,11 +215,7 @@
            (%changed-terminal-rows
             state framebuffer mode palette-generation))
          (pixels-per-terminal-row
-           (ecase mode
-             (:lores 2)
-             (:half-block 2)
-             (:quarter-block 2)
-             (:braille 4))))
+           (%pixels-per-terminal-row mode)))
     (with-screen-batch (screen)
       (dotimes (terminal-row (length changed))
         (when (plusp (sbit changed terminal-row))

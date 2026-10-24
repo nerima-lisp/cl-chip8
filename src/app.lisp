@@ -111,19 +111,9 @@
        columns rows)
     (let* ((too-small-p (eq mode :too-small))
            (screen-columns
-             (case mode
-               (:lores 66)
-               (:half-block 130)
-               (:quarter-block 66)
-               (:braille 66)
-               (:too-small (max 1 columns))))
+             (if too-small-p (max 1 columns) required-columns))
            (screen-rows
-             (case mode
-               (:lores 18)
-               (:half-block 34)
-               (:quarter-block 34)
-               (:braille 18)
-               (:too-small (max 1 rows))))
+             (if too-small-p (max 1 rows) required-rows))
            (changed-p
              (or (not (eq mode (chip8-app-display-mode app)))
                  (/= screen-columns (chip8-app-display-columns app))

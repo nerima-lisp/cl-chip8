@@ -51,6 +51,10 @@ terminal row, plus a 1-cell border on each side.")
     (dotimes (y height copy)
       (dotimes (x width)
         (setf (aref copy y x) (aref framebuffer y x))))))
+(defun %pixels-per-terminal-row (mode)
+  (ecase mode
+    ((:lores :half-block :quarter-block) 2)
+    (:braille 4)))
 
 (defun %changed-terminal-rows
     (state framebuffer
@@ -62,11 +66,7 @@ terminal row, plus a 1-cell border on each side.")
   (let* ((height (array-dimension framebuffer 0))
          (width (array-dimension framebuffer 1))
          (pixels-per-terminal-row
-           (ecase mode
-             (:lores 2)
-             (:half-block 2)
-             (:quarter-block 2)
-             (:braille 4)))
+           (%pixels-per-terminal-row mode))
          (terminal-row-count (ceiling height pixels-per-terminal-row))
          (previous (chip8-render-state-framebuffer state))
          (same-dimensions-p

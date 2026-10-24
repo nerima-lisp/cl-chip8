@@ -191,21 +191,25 @@
            (chip8-render-palette-snapshot-generation palette-snapshot))
          (palette (chip8-render-palette-snapshot-colors palette-snapshot))
          (height (array-dimension framebuffer 0))
+         (source-rows-per-terminal-row (%pixels-per-terminal-row mode))
          (width (array-dimension framebuffer 1)))
     (unless (and (plusp height) (plusp width))
       (error "Framebuffer dimensions must be positive."))
     (multiple-value-bind (output-width row-count source-rows-per-cell)
         (case mode
           ((:lores :half-block)
-           (values width (ceiling height 2) 2))
+           (values width (ceiling height source-rows-per-terminal-row)
+                   source-rows-per-terminal-row))
           (:quarter-block
            (unless (and (evenp height) (evenp width))
              (error "Quarter-block mode requires even framebuffer dimensions."))
-           (values (ash width -1) (ash height -1) 2))
+           (values (ash width -1) (ceiling height source-rows-per-terminal-row)
+                   source-rows-per-terminal-row))
           (:braille
            (unless (and (evenp width) (zerop (mod height 4)))
              (error "Braille mode requires even width and height divisible by four."))
-           (values (ash width -1) (ash height -2) 4)))
+           (values (ash width -1) (ceiling height source-rows-per-terminal-row)
+                   source-rows-per-terminal-row)))
       (let* ((default-threshold
                (ceiling (* row-count
                            +concurrent-render-default-parallel-threshold+)
