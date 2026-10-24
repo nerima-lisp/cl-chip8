@@ -253,3 +253,110 @@ signals none instead."
                         :defaults '(:quirks "modern"))))
           (expect (list key (funcall accessor (cl-chip8:chip8-config-quirks config)))
                   :to-equal (list key expected))))))
+
+(it "defaults every CHIP-8 quirk profile from the compatibility matrix"
+  ;; Timendus labels SCHIP_MODERN and SCHIP_LEGACY; these map to :schip and
+  ;; :schip-legacy. Both expect I unchanged in 5-quirks. The pinned database
+  ;; maps chip48 and superchip1 to increment-X. :schip-legacy follows
+  ;; Timendus; P4b must apply :increment-x as a per-ROM override for records
+  ;; on those database platforms.
+  ;; https://github.com/Timendus/chip8-test-suite/blob/cb24d5595384a80b49ddedae13bec4042b16d41d/src/tests/5-quirks.8o#L402-L431
+  ;; https://github.com/chip-8/chip-8-database/blob/4b2a2a33f3392d813e8be4c7b955838d0797b425/database/platforms.json#L73-L123
+  ;; https://github.com/chip-8/chip-8-database/blob/4b2a2a33f3392d813e8be4c7b955838d0797b425/database/quirks.json#L11-L24
+  ;; Timendus expects display wait ON for CHIP-8, NONE for modern SCHIP/XO,
+  ;; and LRES for legacy. README says NONE disables it in both modes and LRES
+  ;; enables it only in lores; these results map to :wait, :none, :lores-only.
+  ;; https://github.com/Timendus/chip8-test-suite/blob/cb24d5595384a80b49ddedae13bec4042b16d41d/src/tests/5-quirks.8o#L437-L454
+  ;; https://github.com/Timendus/chip8-test-suite/blob/cb24d5595384a80b49ddedae13bec4042b16d41d/README.md#L361-L371
+  ;; Timendus CHIP-8/SCHIP reports ON or BOTH; database wrap:false maps to
+  ;; :clip. XO NONE and database wrap:true map to :wrap.
+  ;; https://github.com/Timendus/chip8-test-suite/blob/cb24d5595384a80b49ddedae13bec4042b16d41d/src/tests/5-quirks.8o#L469-L486
+  ;; https://github.com/chip-8/chip-8-database/blob/4b2a2a33f3392d813e8be4c7b955838d0797b425/database/platforms.json#L1-L167
+  ;; https://github.com/chip-8/chip-8-database/blob/4b2a2a33f3392d813e8be4c7b955838d0797b425/database/quirks.json#L26-L31
+  ;; Gulrak Quirk 10 (opcode-table JSON ID 9) counts colliding rows plus
+  ;; clipped rows for original SCHIP 1.1 hires draws. :schip-legacy models
+  ;; that hardware and uses :row-count; :flag elsewhere is a baseline assumption.
+  ;; https://chip8.gulrak.net/
+  ;; https://chip8.gulrak.net/data/opcode-table.json
+  ;; Timendus maps SUPER-CHIP MODERN (:schip) to full-pixel and LEGACY
+  ;; (:schip-legacy) to half-pixel; XO routines also use full-pixel scrolling.
+  ;; CHIP-8 is outside the test, so :modern and :cosmac-vip use an assumed
+  ;; :full baseline.
+  ;; https://github.com/Timendus/chip8-test-suite/blob/cb24d5595384a80b49ddedae13bec4042b16d41d/src/tests/8-scrolling.8o#L96-L161
+  ;; https://github.com/Timendus/chip8-test-suite/blob/cb24d5595384a80b49ddedae13bec4042b16d41d/src/tests/8-scrolling.8o#L280-L405
+  ;; https://github.com/Timendus/chip8-test-suite/blob/cb24d5595384a80b49ddedae13bec4042b16d41d/src/tests/8-scrolling.8o#L412-L443
+  ;; https://github.com/Timendus/chip8-test-suite/blob/cb24d5595384a80b49ddedae13bec4042b16d41d/README.md#L483-L494
+  ;; Gulrak public generated opcode table (not pinned) lists DXY0 as 16x16
+  ;; for SCHIP-MODERN and XO; Quirk 11 (opcode JSON ID 10) narrows original
+  ;; SCHIP 1.x lores draws to 8x16. :schip and :xo-chip use the listed rows;
+  ;; :schip-legacy uses :8x16. :modern uses a baseline-derived :16x16
+  ;; default without a CHIP-8 row; :cosmac-vip :16x16 is unused because
+  ;; COSMAC does not use DXY0.
+  ;; https://chip8.gulrak.net/
+  ;; https://chip8.gulrak.net/data/opcode-table.json
+  ;; Gulrak Quirk 3 (opcode-table JSON ID 2) says original SCHIP-1.x does
+  ;; not clear on mode change, so :schip-legacy uses false. True for :modern,
+  ;; :cosmac-vip, :schip, and :xo-chip are baseline assumptions.
+  (dolist (expected
+           (list
+            (list :profile :modern
+                  :vf-behavior :preserve :memory-i :preserve
+                  :display-wait :none :clipping :clip :shift-source :vx
+                  :bnnn-register :v0 :fx0a-completion :press
+                  :lores-sprite :16x16 :collision :flag
+                  :lores-scroll :full :mode-switch-clear t)
+            (list :profile :cosmac-vip
+                  :vf-behavior :reset :memory-i :increment
+                  :display-wait :wait :clipping :clip :shift-source :vy
+                  :bnnn-register :v0 :fx0a-completion :release
+                  :lores-sprite :16x16 :collision :flag
+                  :lores-scroll :full :mode-switch-clear t)
+            (list :profile :schip
+                  :vf-behavior :preserve :memory-i :preserve
+                  :display-wait :none :clipping :clip :shift-source :vy
+                  :bnnn-register :vx :fx0a-completion :press
+                  :lores-sprite :16x16 :collision :flag
+                  :lores-scroll :full :mode-switch-clear t)
+            (list :profile :schip-legacy
+                  :vf-behavior :preserve :memory-i :preserve
+                  :display-wait :lores-only :clipping :clip :shift-source :vy
+                  :bnnn-register :vx :fx0a-completion :press
+                  :lores-sprite :8x16 :collision :row-count
+                  :lores-scroll :half :mode-switch-clear nil)
+            (list :profile :xo-chip
+                  :vf-behavior :preserve :memory-i :increment
+                  :display-wait :none :clipping :wrap :shift-source :vx
+                  :bnnn-register :v0 :fx0a-completion :press
+                  :lores-sprite :16x16 :collision :flag
+                  :lores-scroll :full :mode-switch-clear t)))
+    (let* ((profile (getf expected :profile))
+           (quirks (cl-chip8:make-chip8-quirks :profile profile)))
+      (expect
+       (list :profile (cl-chip8:chip8-quirks-profile quirks)
+             :vf-behavior (cl-chip8:chip8-quirks-vf-behavior quirks)
+             :memory-i (cl-chip8:chip8-quirks-memory-i quirks)
+             :display-wait (cl-chip8:chip8-quirks-display-wait quirks)
+             :clipping (cl-chip8:chip8-quirks-clipping quirks)
+             :shift-source (cl-chip8:chip8-quirks-shift-source quirks)
+             :bnnn-register (cl-chip8:chip8-quirks-bnnn-register quirks)
+             :fx0a-completion (cl-chip8:chip8-quirks-fx0a-completion quirks)
+             :lores-sprite (cl-chip8:chip8-quirks-lores-sprite quirks)
+             :collision (cl-chip8:chip8-quirks-collision quirks)
+             :lores-scroll (cl-chip8:chip8-quirks-lores-scroll quirks)
+             :mode-switch-clear (cl-chip8:chip8-quirks-mode-switch-clear quirks))
+       :to-equal expected))))
+
+(it "preserves explicit false mode-switch-clear values through construction and merge"
+  (let* ((modern (cl-chip8:make-chip8-quirks :profile :modern))
+         (explicit-false
+           (cl-chip8:make-chip8-quirks :profile :modern :mode-switch-clear nil))
+         (merged-false
+           (cl-chip8:merge-chip8-quirks modern :mode-switch-clear nil))
+         (legacy-merged
+           (cl-chip8:merge-chip8-quirks
+            (cl-chip8:make-chip8-quirks :profile :schip-legacy))))
+    (expect (list (cl-chip8:chip8-quirks-mode-switch-clear modern)
+                  (cl-chip8:chip8-quirks-mode-switch-clear explicit-false)
+                  (cl-chip8:chip8-quirks-mode-switch-clear merged-false)
+                  (cl-chip8:chip8-quirks-mode-switch-clear legacy-merged))
+            :to-equal (list t nil nil nil))))
