@@ -21,24 +21,29 @@
 
   (defun bench-audio-mode ()
     (let ((value (host-kit:getenv "CL_CHIP8_BENCH_AUDIO_MODE")))
-      (cond ((null value) :auto)
+      (cond ((null value) :off)
+            ((string-equal value "off") :off)
+            ((string-equal value "recording") :recording)
             ((string-equal value "auto") :auto)
             ((string-equal value "pcm") :pcm)
             ((string-equal value "bell") :bell)
-            ((string-equal value "off") :off)
             (t (error "Unsupported audio mode: ~A" value)))))
 
   (defun make-bench-rom ()
-    (make-array 35 :element-type '(unsigned-byte 8)
-      :initial-contents
-      '(#x60 #x00 #x62 #x3d #xa2 #x14 #x61 #x00
-        #xd0 #x1f #x61 #x10 #xd0 #x1f #xf2 #x18
-        #x61 #x00 #x12 #x08
-        #xff #xaa #x55 #xff #xaa #x55 #xff #xaa #x55
-        #xff #xaa #x55 #xff #xaa #x55)))
+    (make-array
+     55
+     :element-type '(unsigned-byte 8)
+     :initial-contents
+     (append
+      '(#x60 #x00 #x62 #x3d #xa2 #x18 #xf0 #x02 #xa2 #x28 #x61 #x00
+        #xd0 #x1f #x61 #x10 #xd0 #x1f #xf2 #x18 #x61 #x00 #x12 #x0c)
+      '(#xaa #x55 #xaa #x55 #xaa #x55 #xaa #x55
+        #xaa #x55 #xaa #x55 #xaa #x55 #xaa #x55)
+      '(#xff #xaa #x55 #xff #xaa #x55 #xff #xaa #x55
+        #xff #xaa #x55 #xff #xaa #x55))))
 
   (defun make-bench-app (pipeline)
-    (let* ((machine (cl-chip8:make-chip8-machine :platform :schip))
+    (let* ((machine (cl-chip8:make-chip8-machine :platform :xo-chip))
            (app (cl-chip8::make-chip8-app
                  :machine machine
                  :state-machine (cl-chip8::make-chip8-control-state-machine)
@@ -64,25 +69,49 @@
            (ticks 0) (renders 0) (frames 0) (characters 0)
            (sound-active-ticks 0)
            (callback-start nil) (first-start nil) (last-start nil)
-           (periods '()) (work-times '()))
+           (last-work nil) (last-work-end nil)
+           (periods '()) (advance-times '()) (render-times '())
+           (work-times '()) (post-callback-residuals '())
+           (post-work-delays '()))
       (flet ((advance (state)
                (let ((now (monotonic-seconds)))
-                 (when last-start (push (- now last-start) periods))
+                 (when last-start
+                   (let ((period (- now last-start)))
+                     (push period periods)
+                     (when last-work
+                       ;; Residual = period - work; it includes output/flush,
+                       ;; interval sleep, and loop/scheduler wake-up overhead.
+                       (push (max 0d0 (- period last-work))
+                             post-callback-residuals)
+                       ;; Delay = max(0, next-start - max(work-end, start+interval)).
+                       ;; It can include flush past the deadline, not just OS wake-up.
+                       (push (max 0d0
+                                  (- now
+                                     (max last-work-end
+                                          (+ last-start +bench-interval+))))
+                             post-work-delays))))
                  (setf first-start (or first-start now)
                        last-start now
                        callback-start now)
-                 (incf ticks)
-                 (cl-chip8::%advance-chip8! state)
+                 (let ((started now))
+                   (incf ticks)
+                   (cl-chip8::%advance-chip8! state)
+                   (push (- (monotonic-seconds) started) advance-times))
                  (when (plusp (cl-chip8:chip8-machine-sound-timer machine))
                    (incf sound-active-ticks))
                  state))
              (render (state)
-               (let ((frame (cl-chip8::%render-chip8-app! state)))
+               (let* ((started (monotonic-seconds))
+                      (frame (cl-chip8::%render-chip8-app! state))
+                      (rendered (monotonic-seconds)))
                  (incf renders)
                  (when (and (stringp frame) (plusp (length frame)))
                    (incf frames)
                    (incf characters (length frame)))
-                 (push (- (monotonic-seconds) callback-start) work-times)
+                 (push (- rendered started) render-times)
+                 (setf last-work-end (monotonic-seconds)
+                       last-work (- last-work-end callback-start))
+                 (push last-work work-times)
                  frame))
              (stop (state)
                (declare (ignore state))
@@ -125,6 +154,10 @@
                               (> seconds +bench-interval+))
                             work-times)
                   :max-work (maximum work-times)
+                  :max-advance (maximum advance-times)
+                  :max-render (maximum render-times)
+                  :max-post-callback-residual (maximum post-callback-residuals)
+                  :max-post-work-delay (maximum post-work-delays)
                   :sound-active-ticks sound-active-ticks
                   :sound-timer
                   (cl-chip8:chip8-machine-sound-timer machine)))))))
@@ -149,26 +182,48 @@
   (defun run-trial (label requested-audio)
     (cl-chip8:with-chip8-render-pipeline (pipeline)
       (let* ((app (make-bench-app pipeline))
-             (audio-stream nil) (audio-output nil)
+             (audio-stream nil) (recording-device nil) (audio-output nil)
              (audio-mode nil) (fallback nil)
              (pcm-frames 0) (nonzero-pcm-samples 0)
+             (recorded-chunks nil) (recorded-blocks 0) (recorded-frames 0)
              (audio-worker-failure nil) (result nil)
              (sink nil) (captured nil)
              (audio-writer
-               (lambda (stream samples)
-                 (let ((written (cl-audio-kit:write-frames stream samples)))
-                   (when (= written (length samples))
-                     (incf nonzero-pcm-samples
-                           (count-if (lambda (sample) (not (zerop sample)))
-                                     samples)))
-                   written))))
-        (multiple-value-setq (audio-mode audio-stream)
-          (cl-chip8::%resolve-chip8-audio-mode
-           requested-audio
-           :on-fallback
-           (lambda (condition) (setf fallback (princ-to-string condition)))))
-        (setf (cl-chip8::chip8-app-audio-mode app) audio-mode)
-        (when (eq audio-mode :pcm)
+               (let ((deadline nil))
+                 (lambda (stream samples)
+                   (let ((written (cl-audio-kit:write-frames stream samples)))
+                     (when (= written (length samples))
+                       (incf nonzero-pcm-samples
+                             (count-if (lambda (sample) (not (zerop sample)))
+                                       samples)))
+                     (when (eq requested-audio :recording)
+                       (setf deadline
+                             (+ (or deadline (monotonic-seconds))
+                                (/ written cl-chip8::+audio-sample-rate+)))
+                       (loop for remaining = (- deadline (monotonic-seconds))
+                             while (plusp remaining)
+                             do (sleep remaining)))
+                     written)))))
+        (if (eq requested-audio :recording)
+            (progn
+              (setf audio-mode :recording
+                    recording-device (cl-audio-kit:make-recording-device)
+                    audio-stream
+                    (cl-audio-kit:open-output-stream
+                     :sample-rate cl-chip8::+audio-sample-rate+
+                     :channels 1
+                     :sample-format :float32
+                     :device recording-device)
+                    (cl-chip8::chip8-app-audio-mode app) :pcm))
+            (progn
+              (multiple-value-setq (audio-mode audio-stream)
+                (cl-chip8::%resolve-chip8-audio-mode
+                 requested-audio
+                 :on-fallback
+                 (lambda (condition)
+                   (setf fallback (princ-to-string condition)))))
+              (setf (cl-chip8::chip8-app-audio-mode app) audio-mode)))
+        (when (member audio-mode '(:pcm :recording))
           (setf audio-output
                 (cl-chip8::start-chip8-audio-output
                  audio-stream
@@ -188,6 +243,17 @@
                      audio-output)))
             (setf audio-worker-failure
                   (cl-chip8::chip8-audio-output-failure audio-output)))
+          (when recording-device
+            (setf recorded-chunks
+                  (cl-audio-kit:recorded-samples recording-device)
+                  recorded-blocks (length recorded-chunks)
+                  recorded-frames
+                  (reduce #'+ recorded-chunks :key #'length :initial-value 0)
+                  nonzero-pcm-samples
+                  (loop for samples in recorded-chunks
+                        sum (count-if
+                             (lambda (sample) (not (zerop sample)))
+                             samples))))
           (when audio-stream
             (cl-audio-kit:close-output-stream audio-stream)))
         (when fallback
@@ -200,9 +266,22 @@
                      (getf result :scheduled-window))))
           (append result
                   (list :label label :audio-mode audio-mode
+                        :audio-device
+                        (case audio-mode
+                          (:recording "RECORDING")
+                          (:pcm "PORTAUDIO")
+                          (otherwise "NONE"))
+                        :audio-model
+                        (case audio-mode
+                          (:recording "PACED-480-FRAMES/10MS;NO-HARDWARE-CONSUMPTION")
+                          (:pcm "PORTAUDIO-BLOCKING-WRITES")
+                          (otherwise "NONE"))
+                        :portaudio (if (eq audio-mode :pcm) "YES" "NO")
                         :fallback (not (null fallback))
                         :pcm-frames pcm-frames
                         :nonzero-pcm-samples nonzero-pcm-samples
+                        :recorded-blocks recorded-blocks
+                        :recorded-frames recorded-frames
                         :audio-worker-failure
                         (and audio-worker-failure
                              (princ-to-string audio-worker-failure))
@@ -212,8 +291,12 @@
                         :within-frame-window within-frame-window
                         :target-met
                         (and (eq sink :tty)
-                             (eq audio-mode :pcm)
+                             (member audio-mode '(:pcm :recording))
                              (plusp pcm-frames)
+                             (if (eq audio-mode :recording)
+                                 (and (plusp recorded-blocks)
+                                      (plusp recorded-frames))
+                                 t)
                              (plusp nonzero-pcm-samples)
                              (null audio-worker-failure)
                              (= (getf result :sound-active-ticks)
@@ -225,10 +308,13 @@
   (defun print-trial (result)
     (format
      t
-     "~&~A target=~A audio=~A sink=~A instructions=~D ticks=~D renders=~D changed-frames=~D output-chars=~D wall-elapsed=~,6Fs wall-rate=~D/s scheduled-window=~,6Fs frame-window=~,6Fs measured-frame-rate=~D/s target-frame-rate=~D/s periods=~D misses=~D max-period=~,6Fs lateness=~,6Fs work-overruns=~D max-work=~,6Fs pcm-frames=~D nonzero-pcm-samples=~D sound-active-ticks=~D audio-worker-failure=~A within-schedule=~A within-frame-window=~A sound-timer=~D~%"
+     "~&~A target=~A audio=~A audio-device=~A audio-model=~A portaudio=~A sink=~A instructions=~D ticks=~D renders=~D changed-frames=~D output-chars=~D wall-elapsed=~,6Fs wall-rate=~D/s scheduled-window=~,6Fs frame-window=~,6Fs measured-frame-rate=~D/s target-frame-rate=~D/s periods=~D misses=~D max-period=~,6Fs lateness=~,6Fs work-overruns=~D max-work=~,6Fs max-advance=~,6Fs max-render=~,6Fs post-callback-residual=~,6Fs post-work-delay=~,6Fs pcm-frames=~D nonzero-pcm-samples=~D recorded-blocks=~D recorded-frames=~D sound-active-ticks=~D audio-worker-failure=~A within-schedule=~A within-frame-window=~A sound-timer=~D~%"
      (getf result :label)
      (if (getf result :target-met) "MET" "NOT-MET")
      (string-upcase (symbol-name (getf result :audio-mode)))
+     (getf result :audio-device)
+     (getf result :audio-model)
+     (getf result :portaudio)
      (string-upcase (symbol-name (getf result :sink)))
      (getf result :instructions) (getf result :ticks)
      (getf result :renders) (getf result :frames) (getf result :characters)
@@ -239,7 +325,11 @@
      (getf result :period-count) (getf result :period-misses)
      (getf result :max-period) (getf result :max-lateness)
      (getf result :work-overruns) (getf result :max-work)
+     (getf result :max-advance) (getf result :max-render)
+     (getf result :max-post-callback-residual)
+     (getf result :max-post-work-delay)
      (getf result :pcm-frames) (getf result :nonzero-pcm-samples)
+     (getf result :recorded-blocks) (getf result :recorded-frames)
      (getf result :sound-active-ticks)
      (getf result :audio-worker-failure)
      (if (getf result :within-schedule) "YES" "NO")
@@ -257,7 +347,7 @@
     (let* ((warmups (positive-integer-env "CL_CHIP8_BENCH_WARMUP" 1))
            (runs (positive-integer-env "CL_CHIP8_BENCH_RUNS" 3))
            (audio (bench-audio-mode)) (results '()))
-      (format t "~&P5 realtime: clock_hz=60000 tickrate=1000, 60 ticks, target=TTY+PCM+NONZERO-SAMPLE+WORKER-OK+SOUND-ACTIVE=60+NO-MISSES+WINDOWS-FIT, warmup=~D runs=~D audio-request=~A~%"
+      (format t "~&P5 realtime: clock_hz=60000 tickrate=1000, 60 ticks, target=TTY+PCM-OR-RECORDING+NONZERO-SAMPLE+WORKER-OK+SOUND-ACTIVE=60+NO-MISSES+WINDOWS-FIT, warmup=~D runs=~D audio-request=~A recording-model=PACED-480-FRAMES/10MS;NO-HARDWARE-CONSUMPTION~%"
               warmups runs (string-upcase (symbol-name audio)))
       (dotimes (index warmups)
         (run-trial (format nil "WARMUP-~D" (1+ index)) audio))
