@@ -153,8 +153,17 @@
       (let* ((app (make-bench-app pipeline))
              (audio-stream nil) (audio-output nil)
              (audio-mode nil) (fallback nil)
-             (pcm-frames 0) (result nil)
-             (sink nil) (captured nil))
+             (pcm-frames 0) (nonzero-pcm-samples 0)
+             (audio-worker-failure nil) (result nil)
+             (sink nil) (captured nil)
+             (audio-writer
+               (lambda (stream samples)
+                 (let ((written (cl-audio-kit:write-frames stream samples)))
+                   (when (= written (length samples))
+                     (incf nonzero-pcm-samples
+                           (count-if (lambda (sample) (not (zerop sample)))
+                                     samples)))
+                   written))))
         (multiple-value-setq (audio-mode audio-stream)
           (cl-chip8::%resolve-chip8-audio-mode
            requested-audio
@@ -167,16 +176,22 @@
                  audio-stream
                  :sound-timer
                  (cl-chip8:chip8-machine-sound-timer
-                  (cl-chip8::chip8-app-machine app)))
+                  (cl-chip8::chip8-app-machine app))
+                 :writer audio-writer)
                 audio-stream nil
                 (cl-chip8::chip8-app-audio-output app) audio-output))
         (unwind-protect
              (multiple-value-setq (result sink captured)
                (run-output app))
           (when audio-output
+            (cl-chip8::stop-chip8-audio-output! audio-output)
             (setf pcm-frames
-                  (cl-chip8::chip8-audio-output-frames-written audio-output))
-            (cl-chip8::stop-chip8-audio-output! audio-output))
+                  (sb-thread:with-mutex
+                      ((cl-chip8::chip8-audio-output-lock audio-output))
+                    (cl-chip8::chip8-audio-output-frames-written
+                     audio-output)))
+            (setf audio-worker-failure
+                  (cl-chip8::chip8-audio-output-failure audio-output)))
           (when audio-stream
             (cl-audio-kit:close-output-stream audio-stream)))
         (when fallback
@@ -190,7 +205,12 @@
           (append result
                   (list :label label :audio-mode audio-mode
                         :fallback (not (null fallback))
-                        :pcm-frames pcm-frames :sink sink
+                        :pcm-frames pcm-frames
+                        :nonzero-pcm-samples nonzero-pcm-samples
+                        :audio-worker-failure
+                        (and audio-worker-failure
+                             (princ-to-string audio-worker-failure))
+                        :sink sink
                         :captured-characters captured
                         :within-schedule within-schedule
                         :within-frame-window within-frame-window
@@ -198,6 +218,8 @@
                         (and (eq sink :tty)
                              (eq audio-mode :pcm)
                              (plusp pcm-frames)
+                             (plusp nonzero-pcm-samples)
+                             (null audio-worker-failure)
                              (= (getf result :sound-active-ticks)
                                 +bench-ticks+)
                              (zerop (getf result :period-misses))
@@ -207,7 +229,7 @@
   (defun print-trial (result)
     (format
      t
-     "~&~A target=~A audio=~A sink=~A instructions=~D ticks=~D renders=~D changed-frames=~D output-chars=~D wall-elapsed=~,6Fs wall-rate=~D/s scheduled-window=~,6Fs frame-window=~,6Fs measured-frame-rate=~D/s target-frame-rate=~D/s periods=~D misses=~D max-period=~,6Fs lateness=~,6Fs work-overruns=~D max-work=~,6Fs pcm-frames=~D sound-active-ticks=~D within-schedule=~A within-frame-window=~A sound-timer=~D~%"
+     "~&~A target=~A audio=~A sink=~A instructions=~D ticks=~D renders=~D changed-frames=~D output-chars=~D wall-elapsed=~,6Fs wall-rate=~D/s scheduled-window=~,6Fs frame-window=~,6Fs measured-frame-rate=~D/s target-frame-rate=~D/s periods=~D misses=~D max-period=~,6Fs lateness=~,6Fs work-overruns=~D max-work=~,6Fs pcm-frames=~D nonzero-pcm-samples=~D sound-active-ticks=~D audio-worker-failure=~A within-schedule=~A within-frame-window=~A sound-timer=~D~%"
      (getf result :label)
      (if (getf result :target-met) "MET" "NOT-MET")
      (string-upcase (symbol-name (getf result :audio-mode)))
@@ -221,7 +243,9 @@
      (getf result :period-count) (getf result :period-misses)
      (getf result :max-period) (getf result :max-lateness)
      (getf result :work-overruns) (getf result :max-work)
-     (getf result :pcm-frames) (getf result :sound-active-ticks)
+     (getf result :pcm-frames) (getf result :nonzero-pcm-samples)
+     (getf result :sound-active-ticks)
+     (getf result :audio-worker-failure)
      (if (getf result :within-schedule) "YES" "NO")
      (if (getf result :within-frame-window) "YES" "NO")
      (getf result :sound-timer)))
@@ -237,7 +261,7 @@
     (let* ((warmups (positive-integer-env "CL_CHIP8_BENCH_WARMUP" 1))
            (runs (positive-integer-env "CL_CHIP8_BENCH_RUNS" 3))
            (audio (bench-audio-mode)) (results '()))
-      (format t "~&P5 realtime: clock_hz=60000 tickrate=1000, 60 ticks, target=TTY+PCM+60-SOUND-TICKS+NO-MISSES+WITHIN-SCHEDULE, warmup=~D runs=~D audio-request=~A~%"
+      (format t "~&P5 realtime: clock_hz=60000 tickrate=1000, 60 ticks, target=TTY+PCM+NONZERO-SAMPLE+WORKER-OK+SOUND-ACTIVE=60+NO-MISSES+WINDOWS-FIT, warmup=~D runs=~D audio-request=~A~%"
               warmups runs (string-upcase (symbol-name audio)))
       (dotimes (index warmups)
         (run-trial (format nil "WARMUP-~D" (1+ index)) audio))
@@ -246,7 +270,7 @@
           (push result results)
           (print-trial result)))
       (setf results (nreverse results))
-      (format t "~&SUMMARY runs=~D median-wall-elapsed=~,6Fs median-wall-rate=~D/s median-measured-frame-rate=~D/s median-target-frame-rate=~D/s max-period-misses=~D/~D sound-active-ticks-min=~D max=~D within-schedule-runs=~D/~D within-frame-window-runs=~D/~D target-runs=~D/~D~%"
+      (format t "~&SUMMARY runs=~D median-wall-elapsed=~,6Fs median-wall-rate=~D/s median-measured-frame-rate=~D/s median-target-frame-rate=~D/s max-period-misses=~D/~D sound-active-ticks-min=~D max=~D nonzero-pcm-runs=~D/~D audio-worker-failures=~D within-schedule-runs=~D/~D within-frame-window-runs=~D/~D target-runs=~D/~D~%"
               runs
               (median-value (mapcar (lambda (r) (getf r :wall-elapsed)) results))
               (truncate (median-value
@@ -254,7 +278,7 @@
               (truncate (median-value
                          (mapcar (lambda (r) (getf r :measured-frame-rate)) results)))
               (truncate (median-value
-                          (mapcar (lambda (r) (getf r :target-frame-rate)) results)))
+                         (mapcar (lambda (r) (getf r :target-frame-rate)) results)))
               (reduce #'max results :key (lambda (r) (getf r :period-misses))
                       :initial-value 0)
               (getf (first results) :period-count)
@@ -264,12 +288,19 @@
               (reduce #'max results
                       :key (lambda (r) (getf r :sound-active-ticks))
                       :initial-value 0)
+              (count-if (lambda (r) (plusp (getf r :nonzero-pcm-samples)))
+                        results)
+              runs
+              (count-if (lambda (r) (getf r :audio-worker-failure)) results)
               (count-if (lambda (r) (getf r :within-schedule)) results)
               runs
               (count-if (lambda (r) (getf r :within-frame-window)) results)
               runs
               (count-if (lambda (r) (getf r :target-met)) results)
               runs)
-      (host-kit:quit 0)))
+      (finish-output)
+      (host-kit:quit (if (every (lambda (r) (getf r :target-met)) results)
+                         0
+                         1))))
 
   (main))
