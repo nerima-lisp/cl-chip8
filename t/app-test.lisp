@@ -421,7 +421,7 @@
       (setf (aref (chip8-machine-memory machine) #x300) #x80)
       (cl-tty-kit:tick-loop-run-realtime
        app
-       #'cl-chip8::%advance-chip8!
+       (lambda (state) (cl-chip8::%advance-chip8! state 130 34))
        (lambda (state)
          (incf render-count)
          (let ((frame (cl-chip8::%render-chip8-app! state)))
