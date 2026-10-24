@@ -289,6 +289,47 @@
     (expect (cl-tty-kit:screen-height (cl-tty-kit:renderer-screen renderer))
             :to-be 18)))
   (it
+    "renders XO-CHIP lores with palette-aware half-block cells"
+    (let* ((machine (make-chip8-machine :platform :xo-chip))
+           (render-state (cl-chip8::make-chip8-render-state))
+           (output (make-string-output-stream))
+           (*standard-output* output)
+           (renderer (cl-tty-kit:make-renderer 50 12))
+           (app (make-chip8-app
+                 :machine machine
+                 :renderer renderer
+                 :render-state render-state
+                 :display-columns 50
+                 :display-rows 12)))
+      (cl-chip8::%refresh-chip8-display! app 66 18)
+      (setf (aref (chip8-machine-framebuffer machine) 0 0) 2
+            (aref (chip8-machine-framebuffer machine) 2 0) 3)
+      (cl-chip8::%render-chip8-app! app)
+      (let ((cell (cl-tty-kit:screen-cell
+                   (cl-tty-kit:renderer-screen renderer) 1 1)))
+        (expect (cl-chip8::chip8-app-display-mode app) :to-be :lores)
+        (expect (cl-chip8::chip8-render-state-display-mode render-state)
+                :to-be :half-block)
+        (expect (cl-tty-kit:cell-char cell) :to-be (code-char #x2580))
+        (expect (cl-tty-kit:cell-style cell)
+                :to-equal
+                (cl-tty-kit:make-style
+                 (cl-tty-kit:style-fg
+                  (aref cl-chip8::*chip8-render-palette* 2))
+                 (cl-tty-kit:style-bg
+                  (aref cl-chip8::*chip8-render-palette* 3))))
+        (expect
+         (cl-chip8::%chip8-app-render-mode
+          (make-chip8-app :machine (make-chip8-machine :platform :modern))
+          :lores)
+         :to-be :lores)
+        (expect
+         (cl-tty-kit:screen-width (cl-tty-kit:renderer-screen renderer))
+         :to-be 66)
+        (expect
+         (cl-tty-kit:screen-height (cl-tty-kit:renderer-screen renderer))
+         :to-be 18))))
+  (it
     "starts a ready app and executes one instruction without a terminal"
     (let* ((machine (make-chip8-machine))
            (app (make-chip8-app

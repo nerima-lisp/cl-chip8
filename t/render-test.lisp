@@ -177,6 +177,35 @@
                 (aref cl-chip8::*chip8-render-palette* 3))))
       (expect (cl-chip8::chip8-render-state-display-mode state)
               :to-be :half-block)))
+  (it
+    "renders four palette levels for a 64x32 two-plane lores framebuffer"
+    (let* ((framebuffer
+             (make-array '(32 64)
+                         :element-type '(unsigned-byte 2)
+                         :initial-element 0))
+           (state (cl-chip8::make-chip8-render-state))
+           (screen (cl-tty-kit:make-screen +screen-width+ +screen-height+)))
+      (dotimes (y 32)
+        (dotimes (x 64)
+          (setf (aref framebuffer y x) (mod (+ x y) 4))))
+      (render-chip8! screen framebuffer state :mode :half-block)
+      (loop for (column top bottom) in
+              (list (list 0 0 1) (list 1 1 2) (list 2 2 3))
+            for cell =
+              (cl-tty-kit:screen-cell
+               screen (+ cl-chip8::+playfield-origin-x+ column)
+               cl-chip8::+playfield-origin-y+)
+            do (expect (cl-tty-kit:cell-char cell) :to-be (code-char #x2580))
+               (expect
+                (cl-tty-kit:cell-style cell)
+                :to-equal
+                (cl-tty-kit:make-style
+                 (cl-tty-kit:style-fg
+                  (aref cl-chip8::*chip8-render-palette* top))
+                 (cl-tty-kit:style-bg
+                  (aref cl-chip8::*chip8-render-palette* bottom)))))
+      (expect (cl-chip8::chip8-render-state-display-mode state)
+              :to-be :half-block)))
   (it "maps every binary quadrant pattern"
     (let ((expected
             (vector (code-char 32)

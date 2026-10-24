@@ -25,6 +25,13 @@
 (defun %mapped-key (event)
   (and (eq (key-event-type event) :character)
        (cdr (assoc (char-downcase (key-event-code event)) +keypad-mapping+))))
+(defun %chip8-app-render-mode (app mode)
+  (if (and (eq mode :lores)
+           (eq (chip8-platform-name
+                (chip8-machine-platform (chip8-app-machine app)))
+               :xo-chip))
+      :half-block
+      mode))
 
 (defun %apply-control-key! (app event)
   (let ((character (and (eq (key-event-type event) :character)
@@ -121,7 +128,7 @@
              (or (not (eq mode (chip8-app-display-mode app)))
                  (/= screen-columns (chip8-app-display-columns app))
                  (/= screen-rows (chip8-app-display-rows app))))
-           (render-mode (if too-small-p :lores mode)))
+           (render-mode (if too-small-p :lores (%chip8-app-render-mode app mode))))
       (setf (chip8-app-display-too-small-p app) too-small-p)
       (when changed-p
         (setf (chip8-app-display-mode app) mode
@@ -199,7 +206,7 @@
 (defun %render-chip8-app! (app)
   (let ((screen (renderer-screen (chip8-app-renderer app)))
         (framebuffer (chip8-framebuffer-snapshot (chip8-app-machine app)))
-        (mode (chip8-app-display-mode app))
+        (mode (%chip8-app-render-mode app (chip8-app-display-mode app)))
         (sound-active-p
           (plusp (chip8-machine-sound-timer (chip8-app-machine app)))))
     (unless (chip8-app-display-too-small-p app)
