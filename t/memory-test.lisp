@@ -1,15 +1,23 @@
 (in-package #:cl-chip8/test)
 (describe "machine memory"
-  (it-each ((:cosmac-vip 4096 (:lores) (:chip8) 15)
-            (:modern 4096 (:lores) (:chip8) 12)
-            (:schip 4096 (:lores :hires) (:chip8 :schip-large) 30)
-            (:schip-legacy 4096 (:lores :hires) (:chip8 :schip-large) 30)
-            (:xo-chip 65536 (:lores :hires) (:chip8 :schip-large) 100))
+  (it-each ((:cosmac-vip 4096 (:lores) (:chip8) 15
+                         :cosmac-vip :increment :wait :16x16 :flag :full t)
+            (:modern 4096 (:lores) (:chip8) 12
+                     :modern :preserve :none :16x16 :flag :full t)
+            (:schip 4096 (:lores :hires) (:chip8 :schip-large) 30
+                    :schip :preserve :none :16x16 :flag :full t)
+            (:schip-legacy 4096 (:lores :hires) (:chip8 :schip-large) 30
+                           :schip-legacy :preserve :lores-only :8x16
+                           :row-count :half nil)
+            (:xo-chip 65536 (:lores :hires) (:chip8 :schip-large) 100
+                      :xo-chip :increment :none :16x16 :flag :full t))
     "resolves the ~A platform profile"
-    (name capacity resolutions font-sets tickrate)
-    (let ((profile (find-chip8-platform name))
-          (string-profile
-            (find-chip8-platform (string-downcase (symbol-name name)))))
+    (name capacity resolutions font-sets tickrate quirk-profile memory-i
+     display-wait lores-sprite collision lores-scroll mode-switch-clear)
+    (let* ((profile (find-chip8-platform name))
+           (string-profile
+             (find-chip8-platform (string-downcase (symbol-name name))))
+           (quirks (chip8-platform-default-quirks profile)))
       (expect (chip8-platform-name profile) :to-be name)
       (expect (chip8-platform-name string-profile) :to-be name)
       (expect (chip8-platform-memory-size profile) :to-be capacity)
@@ -17,7 +25,18 @@
       (expect (equal (chip8-platform-resolutions profile) resolutions)
               :to-be-truthy)
       (expect (equal (chip8-platform-font-sets profile) font-sets)
-              :to-be-truthy)))
+              :to-be-truthy)
+      (expect
+       (list (chip8-quirks-profile quirks)
+             (chip8-quirks-memory-i quirks)
+             (chip8-quirks-display-wait quirks)
+             (chip8-quirks-lores-sprite quirks)
+             (chip8-quirks-collision quirks)
+             (chip8-quirks-lores-scroll quirks)
+             (chip8-quirks-mode-switch-clear quirks))
+       :to-equal
+       (list quirk-profile memory-i display-wait lores-sprite collision
+             lores-scroll mode-switch-clear))))
   (it "allocates the selected machine capacity"
     (let ((modern (make-chip8-machine))
           (xo-chip (make-chip8-machine :platform :xo-chip))

@@ -50,21 +50,21 @@
     :resolutions '(:lores :hires)
     :font-sets '(:chip8 :schip-large)
     :default-tickrate 30
-    :default-quirks (make-chip8-quirks :profile :modern))
+    :default-quirks (make-chip8-quirks :profile :schip))
    (%make-chip8-platform
     :name :schip-legacy
     :memory-size 4096
     :resolutions '(:lores :hires)
     :font-sets '(:chip8 :schip-large)
     :default-tickrate 30
-    :default-quirks (make-chip8-quirks :profile :modern))
+    :default-quirks (make-chip8-quirks :profile :schip-legacy))
    (%make-chip8-platform
     :name :xo-chip
     :memory-size 65536
     :resolutions '(:lores :hires)
     :font-sets '(:chip8 :schip-large)
     :default-tickrate 100
-    :default-quirks (make-chip8-quirks :profile :modern))))
+    :default-quirks (make-chip8-quirks :profile :xo-chip))))
 
 (defun find-chip8-platform (name)
   (etypecase name
