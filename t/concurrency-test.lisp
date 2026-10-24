@@ -55,12 +55,17 @@
       (render-chip8! serial framebuffer serial-state :sound-active-p t)
       (cl-chip8::with-chip8-render-pipeline (pipeline :parallelism 2 :parallel-threshold 9)
         (render-chip8-concurrently! parallel blank pipeline)
-        (render-chip8-concurrently! parallel framebuffer pipeline
-                                      :sound-active-p t)
         (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
-                :to-be 15)
-        (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
-                :to-be 16))
+                :to-be 16)
+        (let ((submitted-before
+                (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)))
+          (render-chip8-concurrently! parallel framebuffer pipeline
+                                      :sound-active-p t)
+          (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                     submitted-before)
+                  :to-be 15)
+          (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
+                  :to-be 0)))
       (%expect-screens-equal serial parallel))))
 
   (it "updates only changed rows on a second render"
@@ -146,7 +151,7 @@
 
 (it
     "scales the default threshold and row buffers with framebuffer geometry"
-  (dolist (geometry (quote ((16 64 12 13) (32 128 25 26))))
+  (dolist (geometry '((16 64 12 13) (32 128 25 26)))
     (destructuring-bind (terminal-row-count width below-count threshold)
         geometry
       (let* ((blank
@@ -166,13 +171,21 @@
         (setf (aref at-threshold 0 (1- width)) 1)
         (cl-chip8::with-chip8-render-pipeline (pipeline :parallelism 2)
           (render-chip8-concurrently! screen blank pipeline)
-          (render-chip8-concurrently! screen below-threshold pipeline)
           (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
-                  :to-be 0)
+                  :to-be terminal-row-count)
+          (let ((submitted-before
+                  (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)))
+            (render-chip8-concurrently! screen below-threshold pipeline)
+            (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                       submitted-before)
+                    :to-be 0))
           (render-chip8-concurrently! screen blank pipeline)
-          (render-chip8-concurrently! screen at-threshold pipeline)
-          (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
-                  :to-be threshold)
+          (let ((submitted-before
+                  (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)))
+            (render-chip8-concurrently! screen at-threshold pipeline)
+            (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                       submitted-before)
+                    :to-be threshold))
           (let ((right-edge
                   (cl-tty-kit:screen-cell
                    screen
@@ -201,13 +214,21 @@
     (cl-chip8::with-chip8-render-pipeline
         (pipeline :parallelism 2 :parallel-threshold 1)
       (render-chip8-concurrently! screen blank pipeline)
-      (render-chip8-concurrently! screen below-minimum pipeline)
       (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
-              :to-be 0)
+              :to-be terminal-row-count)
+      (let ((submitted-before
+              (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)))
+        (render-chip8-concurrently! screen below-minimum pipeline)
+        (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                   submitted-before)
+                :to-be 0))
       (render-chip8-concurrently! screen blank pipeline)
-      (render-chip8-concurrently! screen at-minimum pipeline)
-      (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
-              :to-be 18))))
+      (let ((submitted-before
+              (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)))
+        (render-chip8-concurrently! screen at-minimum pipeline)
+        (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                   submitted-before)
+                :to-be 18)))))
 
 (it
     "matches serial output in every rendering mode"
@@ -236,10 +257,15 @@
         (cl-chip8::with-chip8-render-pipeline (pipeline :parallelism 2)
           (render-chip8! serial blank serial-state :mode mode)
           (render-chip8-concurrently! parallel blank pipeline :mode mode)
-          (render-chip8! serial framebuffer serial-state :mode mode)
-          (render-chip8-concurrently! parallel framebuffer pipeline :mode mode)
           (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
-                  :to-be (1- row-count)))
+                  :to-be row-count)
+          (render-chip8! serial framebuffer serial-state :mode mode)
+          (let ((submitted-before
+                  (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)))
+            (render-chip8-concurrently! parallel framebuffer pipeline :mode mode)
+            (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                       submitted-before)
+                    :to-be (1- row-count))))
         (%expect-screens-equal
          serial parallel :width screen-width :height screen-height)))))
 
@@ -257,10 +283,15 @@
         (pipeline :parallelism 2 :parallel-threshold 1)
       (render-chip8! serial blank serial-state :mode :half-block)
       (render-chip8-concurrently! parallel blank pipeline :mode :half-block)
-      (render-chip8! serial framebuffer serial-state :mode :half-block)
-      (render-chip8-concurrently! parallel framebuffer pipeline :mode :half-block)
       (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
-              :to-be 9))
+              :to-be 16)
+      (render-chip8! serial framebuffer serial-state :mode :half-block)
+      (let ((submitted-before
+              (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)))
+        (render-chip8-concurrently! parallel framebuffer pipeline :mode :half-block)
+        (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                   submitted-before)
+                :to-be 9)))
     (%expect-screens-equal serial parallel :width 66 :height 18)))
 
 (it
@@ -300,14 +331,19 @@
       (render-chip8! serial first-framebuffer serial-state :mode :half-block)
       (render-chip8-concurrently!
        parallel first-framebuffer pipeline :mode :half-block)
-      (let ((serial-rows-before
+      (let ((submitted-before
+              (cl-chip8::chip8-render-pipeline-submitted-rows pipeline))
+            (serial-before
               (cl-chip8::chip8-render-pipeline-serial-rows pipeline)))
         (render-chip8! serial second-framebuffer serial-state :mode :half-block)
         (render-chip8-concurrently!
          parallel second-framebuffer pipeline :mode :half-block)
+        (expect (- (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                   submitted-before)
+                :to-be 17)
         (expect (- (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
-                   serial-rows-before)
-                :to-be 17))
+                   serial-before)
+                :to-be 0))
       (%expect-screens-equal serial parallel :width 66 :height 19))))
 (it
     "invalidates every row when the palette changes"

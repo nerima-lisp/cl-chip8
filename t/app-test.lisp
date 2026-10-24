@@ -149,8 +149,10 @@
                   :renderer (cl-tty-kit:make-renderer +screen-width+ +screen-height+)
                   :render-pipeline pipeline)))
         (cl-chip8::%render-chip8-app! app)
+        (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline)
+                :to-be 16)
         (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline)
-                :to-be 16))))
+                :to-be 0))))
   (it
   "renders 128x64 hires values directly with half-block palette colors"
   (let* ((machine (make-chip8-machine :platform :schip))

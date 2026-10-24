@@ -112,8 +112,7 @@
            (let* ((screen (cl-tty-kit:make-screen +screen-width+ +screen-height+))
                   (fields nil))
              (with-chip8-render-pipeline (pipeline :parallelism 2 :parallel-threshold 1)
-               ;; The first render has no previous framebuffer, so all sixteen
-               ;; terminal rows count as changed and take the serial fallback.
+               ;; The first render redraws all sixteen terminal rows through workers.
                (render-chip8-concurrently! screen
                                            (%metrics-test-framebuffer '())
                                            pipeline)
@@ -127,8 +126,8 @@
                (render-chip8-concurrently! screen
                                            (%metrics-test-framebuffer '(3 4 5 6 7 8 9 10))
                                            pipeline)
-               (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline) :to-be 11)
-               (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline) :to-be 19)
+               (expect (cl-chip8::chip8-render-pipeline-submitted-rows pipeline) :to-be 27)
+               (expect (cl-chip8::chip8-render-pipeline-serial-rows pipeline) :to-be 3)
                (setf fields (%finalized-fields (cl-chip8::make-chip8-metrics)
                                                :instructions 4242
                                                :effective-hz 1234.5
@@ -141,8 +140,8 @@
                (expect (gethash "message" record) :to-equal "metrics")
                (expect (%log-field record "chip8_instructions_total") :to-be 4242)
                (expect (%log-field record "chip8_effective_hz") :to-equal 1234.5d0)
-               (expect (%log-field record "chip8_render_rows_worker_total") :to-be 11)
-               (expect (%log-field record "chip8_render_rows_serial_total") :to-be 19)))
+               (expect (%log-field record "chip8_render_rows_worker_total") :to-be 27)
+               (expect (%log-field record "chip8_render_rows_serial_total") :to-be 3)))
 
         (when (probe-file path)
           (delete-file path)))))
