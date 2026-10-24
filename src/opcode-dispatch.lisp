@@ -32,28 +32,48 @@
       (otherwise '(ldb (byte 8 0) opcode))))
 
   (defun %opcode-family-form (family definitions)
-    (let ((members (remove-if-not
-                    (lambda (entry)
-                      (= (%opcode-family entry) family))
-                    definitions)))
+    (let* ((members (remove-if-not
+                     (lambda (entry)
+                       (= (%opcode-family entry) family))
+                     definitions))
+           (sys (find 'sys members :key (lambda (entry) (getf entry :name)))))
       `(,family
-        ,(if (member family '(0 5 8 9 14 15))
-             `(case ,(%opcode-case-key family)
+        ,(if (= family 0)
+             `(case opcode
                 ,@(mapcar
                    (lambda (entry)
-                     `(,(%opcode-subkey entry family)
+                     `(,(getf entry :pattern)
                        ,(%opcode-body entry)))
-                   (remove-if
+                   (remove-if-not
                     (lambda (entry)
-                      (eq (%opcode-subkey entry family) :otherwise))
+                      (= (getf entry :mask) #xffff))
                     members))
                 (otherwise
-                 ,(if (= family 0)
-                      (%opcode-body (find 'sys members
-                                         :key (lambda (entry)
-                                                (getf entry :name))))
-                      `(error 'chip8-invalid-opcode :opcode opcode))))
-             (%opcode-body (first members)))))))
+                 (cond
+                  ,@(mapcar
+                     (lambda (entry)
+                       `((= (logand opcode ,(getf entry :mask))
+                            ,(getf entry :pattern))
+                         ,(%opcode-body entry)))
+                     (remove-if
+                      (lambda (entry)
+                        (or (eq (getf entry :name) 'sys)
+                            (= (getf entry :mask) #xffff)))
+                      members))
+                  (t ,(%opcode-body sys)))))
+           (if (member family '(5 8 9 14 15))
+               `(case ,(%opcode-case-key family)
+                  ,@(mapcar
+                     (lambda (entry)
+                       `(,(%opcode-subkey entry family)
+                         ,(%opcode-body entry)))
+                     (remove-if
+                      (lambda (entry)
+                        (eq (%opcode-subkey entry family) :otherwise))
+                      members))
+                  (otherwise (error 'chip8-invalid-opcode :opcode opcode)))
+             (%opcode-body (first members))))))
+    ))
 
 (defmacro define-chip8-dispatch ()
   (let* ((definitions (reverse *chip8-opcode-definitions*))
@@ -62,7 +82,8 @@
                                  (%opcode-family-form family definitions))
                                families)))
     `(defun execute-instruction! (machine)
-       (when (chip8-wait-state-kind (chip8-machine-waiting machine))
+       (when (or (chip8-machine-halted-p machine)
+                 (chip8-wait-state-kind (chip8-machine-waiting machine)))
          (return-from execute-instruction! machine))
        (let* ((opcode (fetch-opcode machine))
               (family (ldb (byte 4 12) opcode)))

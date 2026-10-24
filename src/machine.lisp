@@ -79,6 +79,7 @@
         (chip8-machine-sp machine) 0
         (chip8-machine-delay-timer machine) 0
         (chip8-machine-sound-timer machine) 0
+        (chip8-machine-halted-p machine) nil
         (chip8-machine-waiting machine) (make-chip8-wait-state)
         (chip8-machine-instructions machine) 0)
   (load-fontset-into-memory! machine)

@@ -31,5 +31,30 @@
      #xF0 #x80 #xF0 #x80 #x80)) ; F
   "The 16 standard CHIP-8 hex-digit glyphs (0-F), 5 bytes each, in order.")
 
+(defconstant +big-fontset-address+ #xa0)
+
+(defparameter +chip8-big-fontset+
+  (make-array
+   160 :element-type 'chip8-octet
+   :initial-contents
+   '(#xff #xff #xc3 #xc3 #xc3 #xc3 #xc3 #xc3 #xff #xff
+     #x18 #x78 #x78 #x18 #x18 #x18 #x18 #x18 #xff #xff
+     #xff #xff #x03 #x03 #xff #xff #xc0 #xc0 #xff #xff
+     #xff #xff #x03 #x03 #xff #xff #x03 #x03 #xff #xff
+     #xc3 #xc3 #xc3 #xc3 #xff #xff #x03 #x03 #x03 #x03
+     #xff #xff #xc0 #xc0 #xff #xff #x03 #x03 #xff #xff
+     #xff #xff #xc0 #xc0 #xff #xff #xc3 #xc3 #xff #xff
+     #xff #xff #x03 #x03 #x06 #x0c #x18 #x18 #x18 #x18
+     #xff #xff #xc3 #xc3 #xff #xff #xc3 #xc3 #xff #xff
+     #xff #xff #xc3 #xc3 #xff #xff #x03 #x03 #xff #xff
+     #x7e #xff #xc3 #xc3 #xc3 #xff #xff #xc3 #xc3 #xc3
+     #xfc #xfc #xc3 #xc3 #xfc #xfc #xc3 #xc3 #xfc #xfc
+     #x3c #xff #xc3 #xc0 #xc0 #xc0 #xc0 #xc3 #xff #x3c
+     #xfc #xfe #xc3 #xc3 #xc3 #xc3 #xc3 #xc3 #xfe #xfc
+     #xff #xff #xc0 #xc0 #xff #xff #xc0 #xc0 #xff #xff
+     #xff #xff #xc0 #xc0 #xff #xff #xc0 #xc0 #xc0 #xc0)))
+
 (defun load-fontset-into-memory! (machine)
-  (load-bytes-into-memory machine +chip8-fontset+ +fontset-address+))
+  (load-bytes-into-memory machine +chip8-fontset+ +fontset-address+)
+  (load-bytes-into-memory machine +chip8-big-fontset+
+                          +big-fontset-address+))

@@ -237,3 +237,45 @@
 (defun opcode-n (opcode) (ldb (byte 4 0) opcode))
 (defun opcode-kk (opcode) (ldb (byte 8 0) opcode))
 (defun opcode-nnn (opcode) (ldb (byte 12 0) opcode))
+
+(define-chip8-opcode scroll-down #x00c0 #xfff0
+    ((n (ldb (byte 4 0) opcode)))
+  (%scroll-display! machine 0 (%schip-lores-scroll-distance machine n))
+  (advance-pc! machine))
+
+(define-chip8-opcode scroll-right #x00fb #xffff ()
+  (%scroll-display! machine (%schip-lores-scroll-distance machine 4) 0)
+  (advance-pc! machine))
+
+(define-chip8-opcode scroll-left #x00fc #xffff ()
+  (%scroll-display! machine (- (%schip-lores-scroll-distance machine 4)) 0)
+  (advance-pc! machine))
+
+(define-chip8-opcode halt #x00fd #xffff ()
+  (advance-pc! machine)
+  (setf (chip8-machine-halted-p machine) t))
+
+(define-chip8-opcode lores #x00fe #xffff ()
+  (%set-chip8-resolution-from-opcode! machine :lores)
+  (advance-pc! machine))
+
+(define-chip8-opcode hires #x00ff #xffff ()
+  (%set-chip8-resolution-from-opcode! machine :hires)
+  (advance-pc! machine))
+
+(define-chip8-opcode ld-big-font #xf030 #xf0ff
+    ((x (ldb (byte 4 8) opcode)))
+  (setf (chip8-machine-i machine)
+        (+ +big-fontset-address+
+           (* 10 (mod (chip8-machine-register machine x) 16))))
+  (advance-pc! machine))
+
+(define-chip8-opcode store-rpl #xf075 #xf0ff
+    ((x (ldb (byte 4 8) opcode)))
+  (%store-rpl-flags! machine x)
+  (advance-pc! machine))
+
+(define-chip8-opcode load-rpl #xf085 #xf0ff
+    ((x (ldb (byte 4 8) opcode)))
+  (%load-rpl-flags! machine x)
+  (advance-pc! machine))

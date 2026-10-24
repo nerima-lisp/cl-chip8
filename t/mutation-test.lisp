@@ -34,37 +34,50 @@
  #'chip8-quirk-mutations)
 
 (defun opcode-mutation-results (name)
-  (let ((form (opcode-definition-lambda name)))
-    (cl-weave:run-mutations
-     form
-     (lambda (mutated-form mutation)
-       (declare (ignore mutation))
-       (handler-case
-           (progn
-             (dolist (case *opcode-semantic-cases*)
-             (when (string= (symbol-name (second case))
-                              (symbol-name name))
-                 (assert-semantic-case case (eval mutated-form))))
-             t)
-         (cl-weave:assertion-failure () nil)))
-     :operators '(:arithmetic-operator :comparison-operator
-                  :boolean-literal :conditional-branch
-                  :chip8-quirk-branch))))
+  (let* ((form (opcode-definition-lambda name))
+         (cases (remove-if-not
+                 (lambda (case)
+                   (string= (symbol-name (second case))
+                            (symbol-name name)))
+                 *opcode-semantic-cases*)))
+    (unless cases
+      (cl-weave:fail "No semantic cases for opcode ~S." name))
+    (values
+     (cl-weave:run-mutations
+      form
+      (lambda (mutated-form mutation)
+        (declare (ignore mutation))
+        (handler-case
+            (progn
+              (dolist (case cases)
+                (assert-semantic-case case (eval mutated-form)))
+              t)
+          (cl-weave:assertion-failure () nil)))
+      :operators '(:arithmetic-operator :comparison-operator
+                   :boolean-literal :conditional-branch
+                   :chip8-quirk-branch))
+     cases)))
 
 (defun assert-opcode-mutation-score (name)
-  (let* ((results (opcode-mutation-results name))
-         (summary (cl-weave:mutation-summary results)))
-    (format t "Mutation ~A: ~S~%" name summary)
+  (multiple-value-bind (results cases)
+      (opcode-mutation-results name)
+    (unless results
+      (cl-weave:fail "No mutants generated for opcode ~S." name))
+    (format t "Mutation ~A using ~S: ~S~%"
+            name (mapcar #'first cases)
+            (cl-weave:mutation-summary results))
     (dolist (result results)
       (when (eq (cl-weave:mutation-result-status result) :errored)
         (format t "  errored ~S: ~A~%"
-                (cl-weave:mutation-form (cl-weave:mutation-result-mutation result))
+                (cl-weave:mutation-form
+                 (cl-weave:mutation-result-mutation result))
                 (cl-weave:mutation-result-condition result))))
     (cl-weave:assert-mutation-score results 1.0)))
 
 (describe "mutation quality gates"
   (it-each
       ((:add-register) (:sub-register) (:subn-register) (:shr) (:or)
-       (:se-byte) (:jp-v0) (:draw) (:store-registers) (:load-registers))
+       (:se-byte) (:jp-v0) (:draw) (:store-registers) (:load-registers)
+       (:scroll-left) (:halt))
     "kills mutations in the real ~A opcode body" (name)
     (assert-opcode-mutation-score name)))

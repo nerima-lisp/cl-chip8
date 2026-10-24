@@ -12,6 +12,7 @@
          :type (simple-array (unsigned-byte 16) (16)))
   (delay-timer 0 :type chip8-octet)
   (sound-timer 0 :type chip8-octet)
+  (halted-p nil :type boolean)
   (keypad (make-array 16 :element-type 'bit :initial-element 0)
           :type (simple-array bit (16)))
   (framebuffer

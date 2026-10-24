@@ -26,14 +26,17 @@
 
 (defun step-chip8-app! (app &key (advance-timers-p t))
   (let ((machine (chip8-app-machine app)))
-    (when advance-timers-p
+    (when (and advance-timers-p
+               (not (chip8-machine-halted-p machine)))
       (step-timers! machine))
-    (unless (chip8-app-paused-p app)
+    (unless (or (chip8-machine-halted-p machine)
+                (chip8-app-paused-p app))
       (handler-case
           (unless (chip8-wait-state-kind (chip8-machine-waiting machine))
             (loop repeat (%instructions-per-tick app)
                   do (execute-instruction! machine)
-                  when (chip8-wait-state-kind (chip8-machine-waiting machine))
+                  when (or (chip8-machine-halted-p machine)
+                           (chip8-wait-state-kind (chip8-machine-waiting machine)))
                     do (return)))
         (error (condition)
           (setf (chip8-app-error app) condition
@@ -41,6 +44,17 @@
           (setf (chip8-app-state-machine app)
                 (step-chip8-control-state
                  (chip8-app-state-machine app) :error)))))
+    ; Do not send :quit after the control machine reaches a terminal state.
+    (when (and (chip8-machine-halted-p machine)
+               (not (chip8-app-quit-p app))
+               (not (member (chip8-control-state
+                             (chip8-app-state-machine app))
+                            '("finished" "error")
+                            :test #'string=)))
+      (setf (chip8-app-quit-p app) t
+            (chip8-app-state-machine app)
+            (step-chip8-control-state
+             (chip8-app-state-machine app) :quit)))
     (let ((wait-kind (chip8-wait-state-kind (chip8-machine-waiting machine)))
           (state-machine (chip8-app-state-machine app)))
       (when (and (eq (cl-dataflow-kit:state-machine-state state-machine)

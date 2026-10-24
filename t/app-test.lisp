@@ -199,6 +199,28 @@
       (expect (cl-chip8::chip8-control-state
                (chip8-app-state-machine app))
               :to-equal "running")))
+  (it
+    "halts the app cleanly on SCHIP 00FD"
+    (let* ((machine (make-chip8-machine :platform :schip))
+           (app (make-chip8-app
+                 :machine machine
+                 :state-machine (cl-chip8::make-chip8-control-state-machine)
+                 :clock-hz 60)))
+      (setf (cl-dataflow-kit:state-machine-state
+             (chip8-app-state-machine app))
+            "running"
+            (aref (chip8-machine-memory machine) #x200) #x00
+            (aref (chip8-machine-memory machine) #x201) #xfd
+            (aref (chip8-machine-memory machine) #x202) #x60
+            (aref (chip8-machine-memory machine) #x203) #x01)
+      (cl-chip8::step-chip8-app! app)
+      (expect (cl-chip8::chip8-machine-halted-p machine) :to-be t)
+      (expect (chip8-machine-pc machine) :to-be #x202)
+      (expect (chip8-machine-register machine 0) :to-be 0)
+      (expect (chip8-app-quit-p app) :to-be t)
+      (expect (chip8-app-error app) :to-be nil)
+      (expect (chip8-control-state (chip8-app-state-machine app))
+              :to-equal "finished")))
   (it-each ((nil "running" nil)
             (t "running" t)
             (nil "finished" t)
