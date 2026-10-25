@@ -10,7 +10,15 @@ All notable changes to this project are documented here. The format follows
 
 - Added platform profiles for `:cosmac-vip`, `:modern`, `:schip`,
   `:schip-legacy`, and `:xo-chip`, including SUPER-CHIP and XO-CHIP
-  instructions, resolution support, platform font sets, and profile defaults.
+  instructions. `:cosmac-vip` and `:modern` default to 4 KiB, support only
+  `:lores`, and report the `:chip8` font set. `:schip` and `:schip-legacy` also
+  default to 4 KiB, while `:xo-chip` defaults to 64 KiB; these three platforms
+  support both `:lores` and `:hires` and report the `:chip8` and `:schip-large`
+  font sets. Default tickrates, in instructions per frame, are 15 for
+  `:cosmac-vip`, 12 for `:modern`, 30 for `:schip` and `:schip-legacy`, and
+  100 for `:xo-chip`. Multiply by 60 to get instructions per second; 700
+  instructions per second is the final fallback when no higher-priority clock
+  source applies.
 - Added SHA-1 ROM database lookup and supported-platform mappings for
   `originalChip8`, `modernChip8`, `chip48`, `superchip1`, `superchip`, and
   `xochip`. Matched records can provide platform-specific quirks, tickrate,
@@ -43,19 +51,9 @@ All notable changes to this project are documented here. The format follows
   `+maximum-memory-size+`, `+physical-display-width+`, and
   `+physical-display-height+` constants.
 
-- The `:cosmac-vip` and `:modern` platforms default to 4 KiB, support only
-  `:lores`, and report the `:chip8` font set. `:schip` and `:schip-legacy`
-  also default to 4 KiB; `:xo-chip` defaults to 64 KiB. These three platforms
-  support both `:lores` and `:hires` and report the `:chip8` and `:schip-large`
-  font sets. Platform profiles expose default tickrates, measured in instructions
-  per frame: 15 for `:cosmac-vip`, 12 for `:modern`, 30 for `:schip` and
-  `:schip-legacy`, and 100 for `:xo-chip`. The tickrates are converted to
-  instructions per second by multiplying by 60; the 700 instructions-per-second
-  value is the final fallback when no higher-priority clock source applies.
+### Changed
 
-### Breaking changes and migration
-
-- `make-chip8-machine` accepts `:platform` (`:cosmac-vip`, `:modern`, `:schip`,
+- **Breaking:** `make-chip8-machine` accepts `:platform` (`:cosmac-vip`, `:modern`, `:schip`,
   `:schip-legacy`, or `:xo-chip`) and optional `:memory-size` of 4096 or 65536;
   either size can override any platform's default. `:quirks` still overrides
   the platform default. Use
@@ -64,7 +62,7 @@ All notable changes to this project are documented here. The format follows
   `chip8-machine-memory-size` return the selected platform and actual capacity.
   `chip8-machine-quirks` now reflects the selected platform's default when
   `:quirks` is omitted. Machines start in `:lores` resolution.
-- `chip8-machine-memory`, `load-bytes-into-memory`, `memory-read`, `load-rom`,
+- **Breaking:** `chip8-machine-memory`, `load-bytes-into-memory`, `memory-read`, `load-rom`,
   and `load-rom-file` use the machine's 4 KiB or 64 KiB capacity.
   `chip8-machine-pc` and entries in `chip8-machine-stack` now store 16-bit
   addresses, and `chip8-wait-state-pc` is exported with the same range.
@@ -73,7 +71,7 @@ All notable changes to this project are documented here. The format follows
   `chip8-machine-memory-size`; ROMs loaded at `+rom-load-address+` can use at
   most the machine capacity minus `#x200`. `check-memory-access`'s `span` is
   the access length in bytes. `+memory-size+` remains 4096.
-- The `chip8-framebuffer` type now describes a two-dimensional
+- **Breaking:** The `chip8-framebuffer` type now describes a two-dimensional
   `(unsigned-byte 2)` array. `chip8-framebuffer` and
   `chip8-framebuffer-snapshot` return a two-dimensional snapshot sized for the
   current logical resolution, with plane 1 in bit 0 and plane 2 in bit 1.
