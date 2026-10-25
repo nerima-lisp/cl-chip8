@@ -26,17 +26,110 @@
             (truename #p"./")))
   path)
 
+(defun %cli-test-process-output-path (script type)
+  (make-pathname :type type :defaults script))
+
+(defun %wait-cli-process-exit (process timeout-seconds)
+  (sb-sys:with-deadline (:seconds timeout-seconds)
+    (loop while (sb-ext:process-alive-p process)
+          do (sleep 0.05))
+    (sb-ext:process-wait process)))
+
+(defun %terminate-cli-process (process argv)
+  (unless (member (sb-ext:process-status process) (list :exited :signaled))
+    (sb-ext:process-kill process 9 :pid))
+  (handler-case
+      (%wait-cli-process-exit process 5)
+    (sb-sys:deadline-timeout ()
+      (error "Timed out waiting for CLI child process ~S to terminate after SIGKILL."
+             argv)))
+  (unless (member (sb-ext:process-status process) (list :exited :signaled))
+    (error "CLI child process ~S did not terminate after SIGKILL." argv))
+  (values (sb-ext:process-status process)
+          (sb-ext:process-exit-code process)))
+
+(defun %wait-cli-process (process argv &optional (timeout-seconds 30))
+  (handler-case
+      (%wait-cli-process-exit process timeout-seconds)
+    (sb-sys:deadline-timeout ()
+      (error "Timed out waiting for CLI child process ~S to exit after ~A seconds."
+             argv timeout-seconds)))
+  (case (sb-ext:process-status process)
+    (:exited (sb-ext:process-exit-code process))
+    (:signaled (+ 128 (sb-ext:process-exit-code process)))
+    (status
+     (error "CLI child process ~S stopped unexpectedly with status ~S."
+            argv status))))
+
+(defun %cleanup-cli-process (process argv)
+  (multiple-value-prog1
+      (%terminate-cli-process process argv)
+    (sb-ext:process-close process)))
+
 (defun %cli-process-result (&rest argv)
-  (let ((script (%write-cli-test-script (%cli-test-script "cli"))))
+  (let* ((script (%write-cli-test-script (%cli-test-script "cli")))
+         (output-path (%cli-test-process-output-path script "stdout"))
+         (error-path (%cli-test-process-output-path script "stderr"))
+         (process nil)
+         (failure-condition nil))
     (unwind-protect
-         (multiple-value-bind (output error-output exit-code)
-             (uiop:run-program
-              (append (list (%cli-sbcl-program) "--script" (namestring script))
-                      argv)
-              :output :string :error-output :string :ignore-error-status t)
-           (values output error-output exit-code))
-      (when (probe-file script)
-        (delete-file script)))))
+         (handler-case
+             (progn
+               (setf process
+                     (sb-ext:run-program
+                      (%cli-sbcl-program)
+                      (append (list "--script" (namestring script)) argv)
+                      :wait nil
+                      :output output-path
+                      :if-output-exists :supersede
+                      :error error-path
+                      :if-error-exists :supersede))
+               (let ((exit-code (%wait-cli-process process argv)))
+                 (values (uiop:read-file-string output-path)
+                         (uiop:read-file-string error-path)
+                         exit-code)))
+           (error (condition)
+             (setf failure-condition condition)
+             (error condition)))
+      (if process
+          (handler-case
+              (progn
+                (%cleanup-cli-process process argv)
+                (dolist (path (list script output-path error-path))
+                  (when (probe-file path)
+                    (delete-file path))))
+            (error (cleanup-condition)
+              (error "CLI child ~S failed with ~A; cleanup failed with ~A. Preserved artifacts: script=~A, stdout=~A, stderr=~A."
+                     argv failure-condition cleanup-condition
+                     (namestring script) (namestring output-path)
+                     (namestring error-path))))
+          (dolist (path (list script output-path error-path))
+            (when (probe-file path)
+              (delete-file path)))))))
+
+(describe "bounded CLI child process waits"
+  (it "reports when a child exceeds its exit deadline"
+    (let* ((argv (list "/bin/sleep" "10"))
+           (process (sb-ext:run-program (first argv) (rest argv) :wait nil))
+           (failure nil)
+           (status nil)
+           (exit-code nil))
+      (unwind-protect
+           (handler-case
+               (%wait-cli-process process argv 0.01)
+             (error (caught)
+               (setf failure caught)))
+        (multiple-value-setq (status exit-code)
+          (%cleanup-cli-process process argv)))
+      (expect failure :to-be-truthy)
+      (expect (search "Timed out waiting for CLI child process"
+                      (princ-to-string failure))
+              :to-be-truthy)
+      (expect (search "to exit after 0.01 seconds."
+                      (princ-to-string failure))
+              :to-be-truthy)
+      (expect status :to-be :signaled)
+      (expect exit-code :to-be 9))))
 
 (describe "the cl-chip8 app spec"
   (it-each (("quirks modern" "--quirks" "modern" :quirks)

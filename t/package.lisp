@@ -13,10 +13,13 @@
   (:export #:run-tests))
 (in-package #:cl-chip8/test)
 (defvar *run-example-cursor* nil)
+(defvar *run-example-index* 0)
 (before-each
   (when *run-example-cursor*
     (let ((entry (pop *run-example-cursor*)))
-      (format *standard-output* "~&Starting example: ~S~%"
+      (format *standard-output*
+              "~&Plan estimate #~D (may not be the example currently running; order/retries can differ): ~S~%"
+              (incf *run-example-index*)
               (test-plan-entry-path entry))
       (finish-output *standard-output*))))
 (defun run-tests (&rest args)
@@ -30,11 +33,12 @@
                 (eq (test-plan-entry-status entry) :run))
               (collect-test-plan
                (root-suite)
-               :name-filter cl-weave:*test-name-filter*)))))
+               :name-filter cl-weave:*test-name-filter*))))
+         (*run-example-index* 0))
     (unwind-protect
          (let ((cl-weave:*snapshot-directory* (truename #p"t/"))
                (cl-weave:*snapshot-file-name* "timendus.snapshots"))
-           (unless (apply #'run-all
+           (unless (apply (function run-all)
                           :reporter :spec
                           :pass-with-no-tests nil
                           args)

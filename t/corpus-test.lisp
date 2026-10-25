@@ -333,8 +333,11 @@ to avoid dependence on an external temporary-file API."
   "Create a fresh temporary corpus directory, call THUNK with it, delete it."
   (let ((root (merge-pathnames
                (format nil "cl-chip8-corpus-test-~D/"
-                       (sb-thread:with-mutex (*temp-corpus-counter-lock*)
-                         (incf *temp-corpus-counter*)))
+                       (or
+                        (sb-thread:with-mutex
+                            (*temp-corpus-counter-lock* :timeout 5)
+                          (incf *temp-corpus-counter*))
+                        (error "Timed out waiting for temporary corpus counter lock.")))
                #p"/tmp/")))
     (unwind-protect
          (progn

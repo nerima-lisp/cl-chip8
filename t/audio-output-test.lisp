@@ -29,19 +29,80 @@
                       (or (cl-chip8::chip8-audio-output-failure output)
                           "No worker failure was recorded."))))
     (error "Timed out waiting for event ~S." event)))
-(defun %stop-audio-output-test-output! (output)
-  (let ((thread (cl-chip8::chip8-audio-output-thread output))
-        (join-timeout-marker (list :worker-termination-timeout)))
-    (sb-thread:with-mutex ((cl-chip8::chip8-audio-output-lock output))
-      (setf (cl-chip8::chip8-audio-output-stopped-p output) t))
-    (when (eq (sb-thread:join-thread thread
-                                     :timeout 5
-                                     :default join-timeout-marker)
-              join-timeout-marker)
-      (error "Timed out waiting for event ~S." :worker-termination))
-    (cl-audio-kit:close-output-stream
-     (cl-chip8::chip8-audio-output-stream output))
-    output))
+(defun %stop-audio-output-test-output! (output stop-state &optional release-semaphore)
+  (let ((thread (first stop-state))
+        (join-timeout-marker (list :audio-output-stop-timeout)))
+    (flet ((release-write-gate ()
+             (when (and release-semaphore
+                        (not (fourth stop-state)))
+               (setf (fourth stop-state) t)
+               (sb-thread:signal-semaphore release-semaphore))))
+      (unwind-protect
+           (progn
+             (when (eq (third stop-state) :join-timeout)
+               (error "Timed out waiting for event ~S." :audio-output-stop))
+             (unless thread
+               (setf thread
+                     (sb-thread:make-thread
+                      (lambda ()
+                        (handler-case
+                            (cl-chip8::stop-chip8-audio-output! output)
+                          (error (condition)
+                            (setf (second stop-state) condition))))))
+               (setf (first stop-state) thread))
+             (unless (or (eq (third stop-state) :request-timeout)
+                         (eq (third stop-state) :joined))
+               (let ((stop-requested-p nil))
+                 (unwind-protect
+                      (progn
+                        (loop repeat 100
+                              do (when
+                                     (sb-thread:with-mutex
+                                         ((cl-chip8::chip8-audio-output-lock
+                                           output)
+                                          :wait-p nil)
+                                       (cl-chip8::chip8-audio-output-stopped-p
+                                        output))
+                                   (setf (third stop-state) :stop-requested
+                                         stop-requested-p t)
+                                   (return))
+                                 (unless (sb-thread:thread-alive-p thread)
+                                   (when (eq
+                                          (sb-thread:join-thread
+                                           thread
+                                           :timeout 5
+                                           :default join-timeout-marker)
+                                          join-timeout-marker)
+                                     (setf (third stop-state) :join-timeout)
+                                     (error "Timed out waiting for event ~S."
+                                            :audio-output-stop))
+                                   (setf (third stop-state) :joined)
+                                   (when (second stop-state)
+                                     (error (second stop-state)))
+                                   (error
+                                    "Audio output stop worker terminated while waiting for event ~S."
+                                    :audio-output-stop-request))
+                                 (sleep 0.05))
+                        (unless stop-requested-p
+                          (setf (third stop-state) :request-timeout)
+                          (error "Timed out waiting for event ~S."
+                                 :audio-output-stop-request)))
+                   (release-write-gate))))
+             (release-write-gate)
+             (unless (eq (third stop-state) :joined)
+               (setf (third stop-state) :joining)
+               (when (eq (sb-thread:join-thread
+                          thread
+                          :timeout 5
+                          :default join-timeout-marker)
+                         join-timeout-marker)
+                 (setf (third stop-state) :join-timeout)
+                 (error "Timed out waiting for event ~S." :audio-output-stop))
+               (setf (third stop-state) :joined))
+             (when (second stop-state)
+               (error (second stop-state)))
+             output)
+        (release-write-gate)))))
 
 (describe "audio mode resolution"
   (it "falls back from auto to bell once when opening the device fails"
@@ -102,6 +163,7 @@
            (write-finished (sb-thread:make-semaphore))
            (write-outcome nil)
            (output nil)
+           (stop-state (list nil nil nil nil))
            (stopped-p nil))
       (setf (chip8-machine-sound-timer machine) 1)
       (fill (chip8-machine-audio-pattern machine) #xff)
@@ -128,12 +190,9 @@
       (unwind-protect
            (progn
              (%wait-for-audio-output-event output write-started :write-started)
-             (sb-thread:with-mutex ((cl-chip8::chip8-audio-output-lock output))
-               (setf (cl-chip8::chip8-audio-output-stopped-p output) t))
-             (sb-thread:signal-semaphore allow-write)
+             (%stop-audio-output-test-output! output stop-state allow-write)
              (%wait-for-audio-output-event output write-finished :write-finished)
              (expect write-outcome :to-be :success)
-             (%stop-audio-output-test-output! output)
              (setf stopped-p t)
              (multiple-value-bind (frames latency)
                  (cl-chip8::chip8-audio-output-stats output)
@@ -150,14 +209,14 @@
                     (cl-audio-kit:write-frames stream samples))
                   :to-be-truthy))))
         (unless stopped-p
-          (sb-thread:signal-semaphore allow-write)
-          (%stop-audio-output-test-output! output)))))
+          (%stop-audio-output-test-output! output stop-state allow-write)))))
 
   (it "records a worker write failure for the application"
     (let* ((machine (make-chip8-machine))
            (device (cl-audio-kit:make-recording-device))
            (stream (cl-audio-kit:open-output-stream :device device))
            (join-timeout (list :worker-termination-timeout))
+           (stop-state (list nil nil nil nil))
            (output nil))
       (setf (chip8-machine-sound-timer machine) 1
             output
@@ -179,7 +238,7 @@
              (expect (typep (cl-chip8::chip8-audio-output-failure output)
                             'cl-audio-kit:audio-error)
                      :to-be-truthy))
-        (%stop-audio-output-test-output! output))))
+        (%stop-audio-output-test-output! output stop-state))))
   (it "synthesizes XO audio from F002 pattern and FX3A pitch"
     (let* ((machine (make-chip8-machine :platform :xo-chip))
            (pattern (%audio-output-test-pattern 0)))
