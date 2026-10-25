@@ -23,7 +23,7 @@
                :element-type '(unsigned-byte 2)
                :initial-element 0)
    :type chip8-framebuffer)
-  (framebuffer-lock nil)
+  (display-audio-lock nil)
   (resolution-state :lores :type (member :lores :hires))
   (plane-mask-state 1 :type (unsigned-byte 2))
   (quirks (make-chip8-quirks) :type chip8-quirks)

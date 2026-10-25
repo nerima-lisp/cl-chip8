@@ -33,7 +33,7 @@
       (* pixels (if (eq (chip8-machine-resolution machine) :lores) 2 1))))
 
 (defun %scroll-display! (machine horizontal vertical)
-  (with-lock-held ((chip8-machine-framebuffer-lock machine))
+  (with-lock-held ((chip8-machine-display-audio-lock machine))
     (let* ((framebuffer (chip8-machine-framebuffer machine))
            (height +physical-display-height+)
            (width +physical-display-width+)
@@ -82,7 +82,7 @@
       (if (plusp collision-rows) 1 0)))
 
 (defun %draw-sprite! (machine x y n)
-  (with-lock-held ((chip8-machine-framebuffer-lock machine))
+  (with-lock-held ((chip8-machine-display-audio-lock machine))
     (let* ((quirks (chip8-machine-quirks machine))
            (lores-sprite (chip8-quirks-lores-sprite quirks))
            (logical-width (chip8-machine-logical-width machine))
@@ -143,16 +143,19 @@
                 (%draw-vf-value machine quirks collision-rows clipped-rows))))))
 
 
+(defun %update-i-after-register-transfer! (machine i x)
+  (let ((memory-i (chip8-quirks-memory-i (chip8-machine-quirks machine))))
+    (when (member memory-i '(:increment :increment-x) :test #'eq)
+      (setf (chip8-machine-i machine)
+            (ldb (byte 16 0) (+ i x (if (eq memory-i :increment) 1 0)))))))
+
 (defun %store-registers! (machine x)
   (let ((i (chip8-machine-i machine)))
     (check-memory-access machine i (1+ x))
     (dotimes (register (1+ x))
       (setf (memory-read machine (+ i register))
             (chip8-machine-register machine register)))
-    (let ((memory-i (chip8-quirks-memory-i (chip8-machine-quirks machine))))
-      (when (member memory-i '(:increment :increment-x) :test #'eq)
-        (setf (chip8-machine-i machine)
-              (ldb (byte 16 0) (+ i x (if (eq memory-i :increment) 1 0))))))))
+    (%update-i-after-register-transfer! machine i x)))
 
 (defun %load-registers! (machine x)
   (let ((i (chip8-machine-i machine)))
@@ -160,10 +163,7 @@
     (dotimes (register (1+ x))
       (setf (chip8-machine-register machine register)
             (memory-read machine (+ i register))))
-    (let ((memory-i (chip8-quirks-memory-i (chip8-machine-quirks machine))))
-      (when (member memory-i '(:increment :increment-x) :test #'eq)
-        (setf (chip8-machine-i machine)
-              (ldb (byte 16 0) (+ i x (if (eq memory-i :increment) 1 0))))))))
+    (%update-i-after-register-transfer! machine i x)))
 
 (defun %install-key-wait! (machine x)
   (let ((pc (chip8-machine-pc machine)))
