@@ -18,6 +18,30 @@
   (dotimes (index 3)
     (execute-instruction! machine))
   machine)
+(defun %wait-for-audio-output-event (output semaphore event)
+  (let ((thread (cl-chip8::chip8-audio-output-thread output)))
+    (loop repeat 100
+          do (when (sb-thread:wait-on-semaphore semaphore :timeout 0.05)
+               (return-from %wait-for-audio-output-event t))
+             (unless (sb-thread:thread-alive-p thread)
+               (error "Audio output worker terminated while waiting for event ~S: ~A"
+                      event
+                      (or (cl-chip8::chip8-audio-output-failure output)
+                          "No worker failure was recorded."))))
+    (error "Timed out waiting for event ~S." event)))
+(defun %stop-audio-output-test-output! (output)
+  (let ((thread (cl-chip8::chip8-audio-output-thread output))
+        (join-timeout-marker (list :worker-termination-timeout)))
+    (sb-thread:with-mutex ((cl-chip8::chip8-audio-output-lock output))
+      (setf (cl-chip8::chip8-audio-output-stopped-p output) t))
+    (when (eq (sb-thread:join-thread thread
+                                     :timeout 5
+                                     :default join-timeout-marker)
+              join-timeout-marker)
+      (error "Timed out waiting for event ~S." :worker-termination))
+    (cl-audio-kit:close-output-stream
+     (cl-chip8::chip8-audio-output-stream output))
+    output))
 
 (describe "audio mode resolution"
   (it "falls back from auto to bell once when opening the device fails"
@@ -75,6 +99,8 @@
            (machine (make-chip8-machine :platform :xo-chip))
            (write-started (sb-thread:make-semaphore))
            (allow-write (sb-thread:make-semaphore))
+           (write-finished (sb-thread:make-semaphore))
+           (write-outcome nil)
            (output nil)
            (stopped-p nil))
       (setf (chip8-machine-sound-timer machine) 1)
@@ -85,15 +111,29 @@
              :writer
              (lambda (stream samples)
                (sb-thread:signal-semaphore write-started)
-               (sb-thread:wait-on-semaphore allow-write)
-               (cl-audio-kit:write-frames stream samples))))
+               (unwind-protect
+                    (handler-case
+                        (progn
+                          (unless (sb-thread:wait-on-semaphore
+                                   allow-write
+                                   :timeout 5)
+                            (error "Timed out waiting for event ~S."
+                                   :allow-write))
+                          (prog1 (cl-audio-kit:write-frames stream samples)
+                            (setf write-outcome :success)))
+                      (error (condition)
+                        (setf write-outcome condition)
+                        (error condition)))
+                 (sb-thread:signal-semaphore write-finished)))))
       (unwind-protect
            (progn
-             (sb-thread:wait-on-semaphore write-started)
+             (%wait-for-audio-output-event output write-started :write-started)
              (sb-thread:with-mutex ((cl-chip8::chip8-audio-output-lock output))
                (setf (cl-chip8::chip8-audio-output-stopped-p output) t))
              (sb-thread:signal-semaphore allow-write)
-             (cl-chip8::stop-chip8-audio-output! output)
+             (%wait-for-audio-output-event output write-finished :write-finished)
+             (expect write-outcome :to-be :success)
+             (%stop-audio-output-test-output! output)
              (setf stopped-p t)
              (multiple-value-bind (frames latency)
                  (cl-chip8::chip8-audio-output-stats output)
@@ -111,12 +151,13 @@
                   :to-be-truthy))))
         (unless stopped-p
           (sb-thread:signal-semaphore allow-write)
-          (cl-chip8::stop-chip8-audio-output! output)))))
+          (%stop-audio-output-test-output! output)))))
 
   (it "records a worker write failure for the application"
     (let* ((machine (make-chip8-machine))
            (device (cl-audio-kit:make-recording-device))
            (stream (cl-audio-kit:open-output-stream :device device))
+           (join-timeout (list :worker-termination-timeout))
            (output nil))
       (setf (chip8-machine-sound-timer machine) 1
             output
@@ -126,11 +167,19 @@
              (lambda (stream samples)
                (declare (ignore stream samples))
                (error 'cl-audio-kit:audio-error :operation "write"))))
-      (sb-thread:join-thread (cl-chip8::chip8-audio-output-thread output))
-      (expect (typep (cl-chip8::chip8-audio-output-failure output)
-                     'cl-audio-kit:audio-error)
-              :to-be-truthy)
-      (cl-chip8::stop-chip8-audio-output! output)))
+      (unwind-protect
+           (progn
+             (when (eq (sb-thread:join-thread
+                        (cl-chip8::chip8-audio-output-thread output)
+                        :timeout 5
+                        :default join-timeout)
+                       join-timeout)
+               (error "Timed out waiting for event ~S."
+                      :worker-termination))
+             (expect (typep (cl-chip8::chip8-audio-output-failure output)
+                            'cl-audio-kit:audio-error)
+                     :to-be-truthy))
+        (%stop-audio-output-test-output! output))))
   (it "synthesizes XO audio from F002 pattern and FX3A pitch"
     (let* ((machine (make-chip8-machine :platform :xo-chip))
            (pattern (%audio-output-test-pattern 0)))
