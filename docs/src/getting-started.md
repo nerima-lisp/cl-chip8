@@ -91,7 +91,10 @@ The direct runtime dependencies include `cl-tty-kit`, `cl-dataflow-kit`,
 `cl-concurrent-kit`, `cl-date-kit`, `cl-host-kit`, `cl-crypto-kit`, and
 `cl-audio-kit`. Nix pins and supplies these dependencies. Outside Nix, make
 their source trees available through the registry before loading the system;
-the flake lists the pinned source repositories.
+the flake lists the pinned source repositories. PCM audio outside Nix also
+requires the PortAudio shared library: install it on the system or set
+`CL_AUDIO_KIT_PORTAUDIO_LIBRARY` to its full path. The Nix launcher sets this
+variable automatically.
 
 ## Run a ROM from Lisp
 
