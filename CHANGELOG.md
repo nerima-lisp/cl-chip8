@@ -8,6 +8,30 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Added platform profiles for `:cosmac-vip`, `:modern`, `:schip`,
+  `:schip-legacy`, and `:xo-chip`, including SUPER-CHIP and XO-CHIP
+  instructions, resolution support, platform font sets, and profile defaults.
+- Added SHA-1 ROM database lookup and supported-platform mappings for
+  `originalChip8`, `modernChip8`, `chip48`, `superchip1`, `superchip`, and
+  `xochip`. Matched records can provide platform-specific quirks, tickrate,
+  and pixel colors. Unsupported upstream platforms signal
+  `chip8-unsupported-platform` before the terminal session starts unless the
+  CLI explicitly supplies `--platform` or `--quirks`.
+- Added CLI `--platform`, `--quirks`, `--config`, `--clock-hz`, `--audio`, and
+  `--colors-pixels` behavior for platform profiles, TOML configuration, audio
+  output, and palette selection. TOML adds `platform`, `lores_sprite`,
+  `collision`, `lores_scroll`, and `mode_switch_clear` settings alongside the
+  existing quirk controls.
+- Added PCM audio through `cl-audio-kit`, with CLI modes `auto`, `pcm`,
+  `bell`, and `off`. CLI `auto` falls back to the terminal bell if the output
+  device cannot be opened. Direct Common Lisp calls default to audio off.
+- Added adaptive terminal rendering for low and high resolutions. High
+  resolution selects half-block, quarter-block, or braille output from the
+  available terminal size; the application pauses instruction stepping while
+  the terminal is below the minimum size for the selected resolution.
+- Added Timendus conformance coverage and optional chip8Archive corpus
+  compatibility checks. The Nix check supplies both ROM sets and verifies
+  generated ROM database data against the checked-in file.
 - Added the `chip8-platform` type, `chip8-platform-p`, `find-chip8-platform`, and
   the `chip8-platform-name`, `chip8-platform-memory-size`,
   `chip8-platform-resolutions`, `chip8-platform-font-sets`,
@@ -25,11 +49,11 @@ All notable changes to this project are documented here. The format follows
   support both `:lores` and `:hires` and report the `:chip8` and `:schip-large`
   font sets. Platform profiles expose default tickrates, measured in instructions
   per frame: 15 for `:cosmac-vip`, 12 for `:modern`, 30 for `:schip` and
-  `:schip-legacy`, and 100 for `:xo-chip`. These metadata values are separate
-  from the configuration's `clock_hz`, whose default remains 700 instructions
-  per second.
+  `:schip-legacy`, and 100 for `:xo-chip`. The tickrates are converted to
+  instructions per second by multiplying by 60; the 700 instructions-per-second
+  value is the final fallback when no higher-priority clock source applies.
 
-### Changed
+### Breaking changes and migration
 
 - `make-chip8-machine` accepts `:platform` (`:cosmac-vip`, `:modern`, `:schip`,
   `:schip-legacy`, or `:xo-chip`) and optional `:memory-size` of 4096 or 65536;
