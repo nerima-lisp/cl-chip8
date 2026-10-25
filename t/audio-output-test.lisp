@@ -210,6 +210,76 @@
                   :to-be-truthy))))
         (unless stopped-p
           (%stop-audio-output-test-output! output stop-state allow-write)))))
+  (it "continues app shutdown when a stalled audio write survives abort"
+      (let* ((device (cl-audio-kit:make-recording-device))
+             (stream (cl-audio-kit:open-output-stream :device device))
+             (machine (make-chip8-machine :platform :xo-chip))
+             (write-started (sb-thread:make-semaphore))
+             (allow-write (sb-thread:make-semaphore))
+             (write-finished (sb-thread:make-semaphore))
+             (warning-count 0)
+             (abort-count 0)
+             (output nil)
+             (app nil)
+             (stop-state (list nil nil nil nil))
+             (stop-elapsed nil)
+             (write-released-p nil)
+             (test-complete-p nil))
+        (setf (chip8-machine-sound-timer machine) 1
+              output
+              (cl-chip8::start-chip8-audio-output
+               stream machine
+               :writer
+               (lambda (stream samples)
+                 (declare (ignore stream samples))
+                 (sb-thread:signal-semaphore write-started)
+                 (unwind-protect
+                     (progn
+                       (sb-thread:wait-on-semaphore allow-write)
+                       cl-chip8::+audio-frames-per-write+)
+                   (sb-thread:signal-semaphore write-finished)))
+               :abort-stream-function
+               (lambda (stream)
+                 (declare (ignore stream))
+                 (incf abort-count))
+               :on-stop-timeout
+               (lambda () (incf warning-count)))
+              app
+              (make-chip8-app :machine machine
+                              :audio-mode :pcm
+                              :audio-output output))
+        (setf (chip8-app-quit-p app) t)
+        (unwind-protect
+            (progn
+              (%wait-for-audio-output-event output write-started :write-started)
+              (let ((started-at (get-internal-real-time)))
+                (%stop-audio-output-test-output! output stop-state)
+                (setf stop-elapsed
+                      (/ (- (get-internal-real-time) started-at)
+                         internal-time-units-per-second)))
+              (expect (< stop-elapsed 4) :to-be-truthy)
+              (expect warning-count :to-be 1)
+              (expect abort-count :to-be 1)
+              (expect (sb-thread:thread-alive-p
+                       (cl-chip8::chip8-audio-output-thread output))
+                      :to-be-truthy)
+              (expect (cl-chip8::chip8-audio-output-stop-condition output)
+                      :to-be-truthy)
+              (expect (chip8-app-quit-p app) :to-be-truthy)
+              (expect (chip8-app-error app) :to-be nil)
+              (expect (signals cl-audio-kit:audio-error
+                               (cl-audio-kit:write-frames
+                                stream
+                                (make-array 0 :element-type 'single-float)))
+                      :to-be-truthy)
+              (setf test-complete-p t))
+          (unless write-released-p
+            (setf write-released-p t)
+            (sb-thread:signal-semaphore allow-write))
+          (%wait-for-audio-output-event output write-finished :write-finished)
+          (let* ((thread (cl-chip8::chip8-audio-output-thread output)) (timeout-marker (list :timed-out))) (expect (eq (sb-thread:join-thread thread :timeout 5 :default timeout-marker) timeout-marker) :to-be nil) (expect (sb-thread:thread-alive-p thread) :to-be nil))
+          (unless test-complete-p
+            (%stop-audio-output-test-output! output stop-state allow-write)))))
 
   (it "records a worker write failure for the application"
     (let* ((machine (make-chip8-machine))
@@ -256,28 +326,69 @@
                        (subseq samples 6 12))
                 :to-be-truthy)
         (expect next-phase :to-be 2d0))))
-  (it "uses the default waveform for non-XO machines after F002 and FX3A"
+  (it-each ((:modern) (:schip))
+    "keeps the default square wave on ~A without XO audio instructions"
+    (platform)
+  (let ((machine (make-chip8-machine :platform platform)))
+    (setf (chip8-machine-sound-timer machine) 1)
+    (multiple-value-bind (expected expected-phase)
+        (cl-chip8::synthesize-audio-frames
+         192 1 cl-chip8::+default-audio-pattern+ 64 0d0)
+      (multiple-value-bind (samples phase)
+          (cl-chip8::%synthesize-machine-audio-frames machine 192 0d0)
+        (expect (equalp samples expected) :to-be-truthy)
+        (expect phase :to-be expected-phase)
+        (expect (cl-chip8::chip8-machine-xo-audio-instructions-used-p machine)
+                :to-be nil)))))
+  (it "uses FX3A pitch to select machine audio on a default modern machine"
     (let* ((machine (make-chip8-machine :platform :modern))
-           (pattern (%audio-output-test-pattern #xff)))
-      (%load-machine-audio-state machine pattern 112)
-      (expect (equalp (chip8-machine-audio-pattern machine) pattern)
+           (pattern (%audio-output-test-pattern 0)))
+      (setf (aref pattern 0) #x80)
+      (replace (chip8-machine-audio-pattern machine) pattern)
+      (setf (chip8-machine-register machine 3) 112)
+      (load-rom machine
+                (make-array 2
+                            :element-type '(unsigned-byte 8)
+                            :initial-contents '(#xf3 #x3a)))
+      (execute-instruction! machine)
+      (setf (chip8-machine-sound-timer machine) 1)
+      (expect (cl-chip8::chip8-machine-xo-audio-instructions-used-p machine)
               :to-be-truthy)
       (expect (chip8-machine-pitch machine) :to-be 112)
       (multiple-value-bind (samples next-phase)
-          (cl-chip8::%synthesize-machine-audio-frames machine 192 0d0)
-        (expect (every (lambda (sample) (= sample -0.25f0))
-                       (subseq samples 0 48))
-                :to-be-truthy)
+          (cl-chip8::%synthesize-machine-audio-frames machine 12 0d0)
         (expect (every (lambda (sample) (= sample 0.25f0))
-                       (subseq samples 48 96))
+                       (subseq samples 0 6))
                 :to-be-truthy)
         (expect (every (lambda (sample) (= sample -0.25f0))
-                       (subseq samples 96 144))
+                       (subseq samples 6 12))
                 :to-be-truthy)
+        (expect next-phase :to-be 2d0))))
+  (it "uses the F002 audio pattern on a default modern machine"
+    (let* ((machine (make-chip8-machine :platform :modern))
+           (pattern (%audio-output-test-pattern 0)))
+      (setf (aref pattern 0) #x80)
+      (loop for byte across pattern
+            for address from #x300
+            do (setf (aref (chip8-machine-memory machine) address) byte))
+      (setf (chip8-machine-i machine) #x300)
+      (load-rom machine
+                (make-array 2
+                            :element-type '(unsigned-byte 8)
+                            :initial-contents '(#xf0 #x02)))
+      (execute-instruction! machine)
+      (setf (chip8-machine-sound-timer machine) 1)
+      (expect (equalp (chip8-machine-audio-pattern machine) pattern)
+              :to-be-truthy)
+      (expect (cl-chip8::chip8-machine-xo-audio-instructions-used-p machine)
+              :to-be-truthy)
+      (multiple-value-bind (samples next-phase)
+          (cl-chip8::%synthesize-machine-audio-frames machine 13 0d0)
         (expect (every (lambda (sample) (= sample 0.25f0))
-                       (subseq samples 144 192))
+                       (subseq samples 0 12))
                 :to-be-truthy)
-        (expect next-phase :to-be 16d0)))))
+        (expect (aref samples 12) :to-be -0.25f0)
+        (expect next-phase :to-be (+ 1d0 (/ 1d0 12d0)))))))
 
 (describe "application audio integration"
   (it "rings once when the sound timer activates in bell mode"

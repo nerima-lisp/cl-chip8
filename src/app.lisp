@@ -280,8 +280,5 @@
                                            #'%chip8-app-finished-p
                                            :stream session-stream
                                            :interval 1/60))))
-          (when audio-output
-            (stop-chip8-audio-output! audio-output))
-          (when audio-stream
-            (cl-audio-kit:close-output-stream audio-stream)))
+          (%cleanup-chip8-audio-resources! audio-output audio-stream))
         app))))

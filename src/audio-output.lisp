@@ -2,14 +2,24 @@
 
 (defconstant +audio-frames-per-write+
   480)
+(defconstant +audio-output-stop-timeout-seconds+ 1d0)
 
 (defstruct (chip8-audio-output (:constructor %make-chip8-audio-output))
   stream thread machine
   (writer (function cl-audio-kit:write-frames) :type function)
+  (abort-stream-function (function cl-audio-kit:abort-output-stream) :type function)
+  (on-stop-timeout
+   (lambda ()
+     (format *error-output*
+             "~&cl-chip8: WARN audio output worker stop timed out after ~,3F seconds; attempting stream abort.~%"
+             +audio-output-stop-timeout-seconds+))
+   :type function)
   (lock (sb-thread:make-mutex))
   (phase-reset-generation 0 :type integer)
   (frames-written 0 :type integer)
   (stopped-p nil :type boolean)
+  (stop-warning-emitted-p nil :type boolean)
+  (stop-condition nil :type (or null condition))
   (worker-condition nil :type (or null condition)))
 
 (defun %audio-output-snapshot (output)
@@ -18,9 +28,11 @@
             (chip8-audio-output-phase-reset-generation output))))
 
 (defun %synthesize-machine-audio-frames (machine frame-count bit-phase)
-  (multiple-value-bind (platform sound-timer pattern pitch)
+  (multiple-value-bind (platform sound-timer pattern pitch
+                        xo-audio-instructions-used-p)
       (%chip8-machine-audio-snapshot machine)
-    (if (eq platform :xo-chip)
+    (if (or (eq platform :xo-chip)
+            xo-audio-instructions-used-p)
         (synthesize-audio-frames frame-count sound-timer pattern pitch bit-phase)
         (synthesize-audio-frames frame-count
                                   sound-timer
@@ -89,16 +101,24 @@
     (:bell (values :bell nil))
     (:off (values :off nil))))
 
-(defun start-chip8-audio-output (stream machine &key
-                                                (writer
-                                                  (function cl-audio-kit:write-frames)))
+(defun start-chip8-audio-output (stream machine
+                                      &key
+                                        (writer
+                                         (function cl-audio-kit:write-frames))
+                                        (abort-stream-function
+                                         (function
+                                          cl-audio-kit:abort-output-stream))
+                                        on-stop-timeout)
   (declare (type chip8-machine machine)
-           (type function writer))
+           (type function writer abort-stream-function))
   (let* ((output (%make-chip8-audio-output
                   :stream stream
                   :machine machine
-                  :writer writer))
+                  :writer writer
+                  :abort-stream-function abort-stream-function))
          (thread nil))
+    (when on-stop-timeout
+      (setf (chip8-audio-output-on-stop-timeout output) on-stop-timeout))
     (handler-case
         (setf thread (sb-thread:make-thread
                       (lambda () (%audio-output-worker output))
@@ -152,7 +172,77 @@
 
 (defun stop-chip8-audio-output! (output)
   (sb-thread:with-mutex ((chip8-audio-output-lock output))
-                        (setf (chip8-audio-output-stopped-p output) t))
-  (sb-thread:join-thread (chip8-audio-output-thread output))
-  (cl-audio-kit:close-output-stream (chip8-audio-output-stream output))
-  output)
+    (setf (chip8-audio-output-stopped-p output) t))
+  (let* ((thread (chip8-audio-output-thread output))
+         (stream (chip8-audio-output-stream output))
+         (timeout-marker (list :audio-output-stop-timeout)))
+    (labels ((record-stop-condition (condition action)
+               (sb-thread:with-mutex ((chip8-audio-output-lock output))
+                 (unless (chip8-audio-output-stop-condition output)
+                   (setf (chip8-audio-output-stop-condition output)
+                         (or condition
+                             (make-condition
+                              (find-symbol "SIMPLE-ERROR" "COMMON-LISP")
+                              :format-control
+                              "Audio output ~A did not finish within ~,3F seconds."
+                              :format-arguments
+                              (list action
+                                    +audio-output-stop-timeout-seconds+)))))))
+             (mark-stop-warning ()
+               (sb-thread:with-mutex ((chip8-audio-output-lock output))
+                 (unless (chip8-audio-output-stop-warning-emitted-p output)
+                   (setf (chip8-audio-output-stop-warning-emitted-p output) t)
+                   t)))
+             (join-thread-with-timeout (thread)
+               (eq (sb-thread:join-thread
+                    thread
+                    :timeout +audio-output-stop-timeout-seconds+
+                    :default timeout-marker)
+                   timeout-marker))
+             (run-bounded (function)
+               (let ((failure nil)
+                     (cleanup-thread
+                       (sb-thread:make-thread
+                        (lambda ()
+                          (handler-case
+                              (funcall function)
+                            (error (condition)
+                              (setf failure condition)))))))
+                 (join-thread-with-timeout cleanup-thread)
+                 (values
+                  (sb-thread:thread-alive-p cleanup-thread)
+                  failure)))
+             (close-stream-bounded ()
+               (multiple-value-bind (timed-out-p failure)
+                   (run-bounded
+                    (lambda () (cl-audio-kit:close-output-stream stream)))
+                 (when (or timed-out-p failure)
+                   (record-stop-condition failure "closing the stream")))))
+      (if (join-thread-with-timeout thread)
+          (progn
+            (when (mark-stop-warning)
+              (funcall (chip8-audio-output-on-stop-timeout output)))
+            (multiple-value-bind (abort-timed-out-p abort-failure)
+                (run-bounded
+                 (lambda ()
+                   (funcall
+                    (chip8-audio-output-abort-stream-function output)
+                    stream)))
+              (if abort-timed-out-p
+                  (record-stop-condition nil "aborting the stream")
+                  (progn
+                    (when abort-failure
+                      (record-stop-condition abort-failure "aborting the stream"))
+                    (if (join-thread-with-timeout thread)
+                        (record-stop-condition
+                         nil
+                         "stopping the audio worker after abort")
+                        (close-stream-bounded))))))
+          (close-stream-bounded)))
+  output))
+(defun %cleanup-chip8-audio-resources! (audio-output audio-stream)
+  (when audio-output
+    (stop-chip8-audio-output! audio-output))
+  (when audio-stream
+    (cl-audio-kit:close-output-stream audio-stream))
+  nil)
