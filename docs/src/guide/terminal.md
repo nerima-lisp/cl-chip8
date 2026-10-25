@@ -48,6 +48,12 @@ comma-separated `#RRGGBB` colors. The TOML form uses two or four strings.
 `--audio` selects audio output and defaults to `auto`. PCM output is provided
 through `cl-audio-kit`; the TOML configuration has no audio setting.
 
+Audio synthesis uses the selected platform's default sound. Platforms other
+than XO-CHIP use the built-in 500 Hz square wave until the ROM executes `F002`
+or `FX3A`; then the machine's XO-CHIP pattern and pitch control its sound, even
+if ROM database lookup selected another platform. Pass `--platform xo-chip`
+when an unrecognized ROM also needs XO-CHIP memory and platform defaults.
+
 | `--audio` value | Behavior |
 |---|---|
 | `auto` | Try PCM on the system's default output device. If opening the device reports an audio error, fall back to the terminal bell and write a WARN message to standard error. With a log path, also write one structured `audio-fallback` entry. |

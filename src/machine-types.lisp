@@ -14,6 +14,7 @@
   (sound-timer 0 :type chip8-octet)
   (audio-pattern (make-array 16 :element-type 'chip8-octet :initial-element 0)
                  :type (simple-array chip8-octet (16)))
+  (xo-audio-instructions-used-p nil :type boolean)
   (pitch 64 :type chip8-octet)
   (halted-p nil :type boolean)
   (keypad (make-array 16 :element-type 'bit :initial-element 0)

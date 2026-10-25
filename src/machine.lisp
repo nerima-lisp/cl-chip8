@@ -38,7 +38,8 @@
     (values (chip8-platform-name (chip8-machine-platform machine))
             (chip8-machine-sound-timer machine)
             (copy-seq (chip8-machine-audio-pattern machine))
-            (chip8-machine-pitch machine))))
+            (chip8-machine-pitch machine)
+            (chip8-machine-xo-audio-instructions-used-p machine))))
 
 (defun chip8-machine-logical-width (machine)
   (if (eq (chip8-machine-resolution machine) :hires)
@@ -80,7 +81,8 @@
   (with-lock-held ((chip8-machine-display-audio-lock machine))
     (fill (chip8-machine-audio-pattern machine) 0)
     (setf (chip8-machine-sound-timer machine) 0
-          (chip8-machine-pitch machine) 64))
+          (chip8-machine-pitch machine) 64
+          (chip8-machine-xo-audio-instructions-used-p machine) nil))
   (display-reset! machine)
   (set-chip8-machine-resolution! machine :lores)
   (set-chip8-machine-plane-mask! machine 1)
