@@ -30,7 +30,7 @@
     };
 
     cl-audio-kit = {
-      url = "github:nerima-lisp/cl-audio-kit/v0.1.0";
+      url = "github:nerima-lisp/cl-audio-kit/v0.1.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

@@ -44,16 +44,16 @@
         "treefmt-nix": "treefmt-nix_5"
       },
       "locked": {
-        "lastModified": 1792827281,
-        "narHash": "sha256-pYjopkdCOUhX9H1xDWOCOdcR54zpKH7P96TjoVWT6W0=",
+        "lastModified": 1792932730,
+        "narHash": "sha256-KO/ngxqcszodNh0g5HfpYd/e62a7xwkecysMsWsfndA=",
         "owner": "nerima-lisp",
         "repo": "cl-audio-kit",
-        "rev": "cd00ff46bf9ee4669685411a8c23b4ba6a9b138c",
+        "rev": "2dc051aca54670b699f794e5a5cd2704e5a2232b",
         "type": "github"
       },
       "original": {
         "owner": "nerima-lisp",
-        "ref": "v0.1.0",
+        "ref": "v0.1.1",
         "repo": "cl-audio-kit",
         "type": "github"
       }
