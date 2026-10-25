@@ -57,9 +57,10 @@
   (case (sb-ext:process-status process)
     (:exited (sb-ext:process-exit-code process))
     (:signaled (+ 128 (sb-ext:process-exit-code process)))
-    (status
+    (otherwise
      (error "CLI child process ~S stopped unexpectedly with status ~S."
-            argv status))))
+            argv
+            (sb-ext:process-status process)))))
 
 (defun %cleanup-cli-process (process argv)
   (multiple-value-prog1
