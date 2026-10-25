@@ -228,7 +228,7 @@
                  (let ((before (cl-chip8:chip8-machine-instructions machine)))
                    (incf ticks)
                    (push (monotonic-seconds) tick-starts)
-                   (cl-chip8::%advance-chip8! state)
+                   (cl-chip8::%advance-chip8! state cl-chip8:+screen-width+ cl-chip8:+screen-height+)
                    (push (- (cl-chip8:chip8-machine-instructions machine)
                             before)
                          instruction-deltas))
