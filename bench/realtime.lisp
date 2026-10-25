@@ -255,7 +255,7 @@
            event
            (mapcar (lambda (value) (cons 0 value))
                    (event-values events event))))
-        (format t "~&WAIT-REPORT sleep-request-count=~D requested-sleep-total=~,6Fs actual-sleep-total=~,6Fs actual/requested=~A spin-wall=~,6Fs spin-process-cpu=~,6Fs process-cpu-of-run=~A%/one-core~%"
+        (format t "~&WAIT-REPORT sleep-request-count=~D requested-sleep-total=~,6Fs actual-sleep-total=~,6Fs actual/requested=~A spin-wall=~,6Fs spin-process-cpu=~,6Fs spin-cpu-share-of-run=~A%/one-core~%"
                 (length requested)
                 requested-total
                 actual-total
@@ -703,7 +703,20 @@
       trial))
   (defun print-trial (trial)
     (let ((result (getf trial :result)))
-      (print-event-report (getf trial :events) (getf result :wall-elapsed))
+      (progn
+        (let* ((events (getf trial :events))
+               (misses (length (gethash :deadline-miss events)))
+               (dropped-slots
+                 (reduce (function +) (event-values events :frame-drop)
+                         :initial-value 0)))
+          (format t "~&TRIAL-SUMMARY label=~A ticks=~D tick/s=~,3F wall-elapsed=~,6Fs misses=~D dropped-slots=~D target=~A~%"
+                  (getf trial :label)
+                  (getf result :ticks)
+                  (getf result :tick-rate)
+                  (getf result :wall-elapsed)
+                  misses dropped-slots
+                  (if (getf trial :target-met) "MET" "NOT-MET")))
+        (print-event-report (getf trial :events) (getf result :wall-elapsed)))
       (progn
         (format t "~&PCM gaps p50=~A p95=~A p99=~A max=~A~%"
                 (if (getf trial :pcm-gaps)
