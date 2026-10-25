@@ -33,6 +33,7 @@
 
 (progn
   (defvar *display-audio-lock-timing-hook* nil)
+  (defvar *display-audio-lock-acquisition-count* 0)
 
   (defmacro with-display-audio-lock (lock-form &body body)
     (let ((hook (gensym "HOOK"))
@@ -42,22 +43,26 @@
           (results (gensym "RESULTS")))
       `(let ((,hook *display-audio-lock-timing-hook*))
          (if ,hook
-             (let ((,wait-start (get-internal-real-time))
-                   (,hold-start nil)
-                   (,hold-end nil)
-                   (,results nil))
-               (setf ,results
-                     (multiple-value-list
-                      (with-lock-held ,lock-form
-                        (setf ,hold-start (get-internal-real-time))
-                        (multiple-value-prog1 (progn ,@body)
-                          (setf ,hold-end (get-internal-real-time))))))
-               (funcall ,hook :wait
-                        (/ (- ,hold-start ,wait-start)
-                           internal-time-units-per-second))
-               (funcall ,hook :hold
-                        (/ (- ,hold-end ,hold-start)
-                           internal-time-units-per-second))
-               (values-list ,results))
+             (if (eq ,hook :count-only)
+                 (with-lock-held ,lock-form
+                   (incf *display-audio-lock-acquisition-count*)
+                   ,@body)
+                 (let ((,wait-start (get-internal-real-time))
+                       (,hold-start nil)
+                       (,hold-end nil)
+                       (,results nil))
+                   (setf ,results
+                         (multiple-value-list
+                          (with-lock-held ,lock-form
+                            (setf ,hold-start (get-internal-real-time))
+                            (multiple-value-prog1 (progn ,@body)
+                              (setf ,hold-end (get-internal-real-time))))))
+                   (funcall ,hook :wait
+                            (/ (- ,hold-start ,wait-start)
+                               internal-time-units-per-second))
+                   (funcall ,hook :hold
+                            (/ (- ,hold-end ,hold-start)
+                               internal-time-units-per-second))
+                   (values-list ,results)))
              (with-lock-held ,lock-form
                ,@body))))))

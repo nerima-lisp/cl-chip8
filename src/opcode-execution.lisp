@@ -33,7 +33,7 @@
       (* pixels (if (eq (chip8-machine-resolution machine) :lores) 2 1))))
 
 (defun %scroll-display! (machine horizontal vertical)
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (let* ((framebuffer (chip8-machine-framebuffer machine))
            (height +physical-display-height+)
            (width +physical-display-width+)
@@ -82,7 +82,7 @@
       (if (plusp collision-rows) 1 0)))
 
 (defun %draw-sprite! (machine x y n)
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (let* ((quirks (chip8-machine-quirks machine))
            (lores-sprite (chip8-quirks-lores-sprite quirks))
            (logical-width (chip8-machine-logical-width machine))

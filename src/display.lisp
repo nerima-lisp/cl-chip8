@@ -1,7 +1,7 @@
 (in-package #:cl-chip8)
 
 (defun display-reset! (machine)
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (let ((framebuffer (chip8-machine-framebuffer machine)))
       (dotimes (index (* +physical-display-width+ +physical-display-height+))
         (setf (row-major-aref framebuffer index) 0))))
@@ -33,11 +33,11 @@
                             &optional (plane-mask (chip8-machine-plane-mask machine)))
   (check-type plane-mask (unsigned-byte 2))
   (%check-display-coordinate machine x y)
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (logand plane-mask (%logical-pixel-value-unlocked machine x y))))
 
 (defun chip8-framebuffer-snapshot (machine)
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (let* ((width (chip8-machine-logical-width machine))
            (height (chip8-machine-logical-height machine))
            (copy (make-array (list height width)
@@ -54,7 +54,7 @@
                            &optional (plane-mask (chip8-machine-plane-mask machine)))
   (check-type plane-mask (unsigned-byte 2))
   (%check-display-coordinate machine x y)
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (%display-xor-pixel-unlocked! machine x y plane-mask)))
 
 (defun %display-xor-pixel-unlocked! (machine x y plane-mask)
@@ -75,7 +75,7 @@
 
 (defun chip8-clear-display! (machine &optional (plane-mask #b11))
   (check-type plane-mask (unsigned-byte 2))
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (let ((framebuffer (chip8-machine-framebuffer machine)))
       (dotimes (index (* +physical-display-width+ +physical-display-height+))
         (setf (row-major-aref framebuffer index)

@@ -34,7 +34,7 @@
 (defun chip8-machine-memory-size (machine)
   (length (chip8-machine-memory machine)))
 (defun %chip8-machine-audio-snapshot (machine)
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (values (chip8-platform-name (chip8-machine-platform machine))
             (chip8-machine-sound-timer machine)
             (copy-seq (chip8-machine-audio-pattern machine))
@@ -78,7 +78,7 @@
   (fill (chip8-machine-v machine) 0)
   (fill (chip8-machine-stack machine) 0)
   (fill (chip8-machine-keypad machine) 0)
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (fill (chip8-machine-audio-pattern machine) 0)
     (setf (chip8-machine-sound-timer machine) 0
           (chip8-machine-pitch machine) 64

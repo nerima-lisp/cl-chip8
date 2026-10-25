@@ -2,7 +2,7 @@
 (defun step-timers! (machine)
   (when (plusp (chip8-machine-delay-timer machine))
     (decf (chip8-machine-delay-timer machine)))
-  (with-lock-held ((chip8-machine-display-audio-lock machine))
+  (with-display-audio-lock ((chip8-machine-display-audio-lock machine))
     (when (plusp (chip8-machine-sound-timer machine))
       (decf (chip8-machine-sound-timer machine))))
   machine)
