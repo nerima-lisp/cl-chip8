@@ -38,6 +38,37 @@ jobs:
       - name: Check flake
         run: nix flake check --print-build-logs
 
+      - name: Check realtime benchmark compilation
+        run: |
+          nix develop --command sbcl --noinform --no-userinit --no-sysinit --non-interactive \
+            --eval '(require :asdf)' \
+            --eval '(load "tools/bootstrap.lisp")' \
+            --eval '(let* ((root (truename "./"))
+                           (output (merge-pathnames
+                                    "cl-chip8-realtime-bench-check.fasl"
+                                    (uiop:temporary-directory))))
+                      (configure-local-source-registry root)
+                      (asdf:load-asd (merge-pathnames "cl-chip8.asd" root))
+                      ;; Load project and benchmark dependencies before entering the warning gate.
+                      (asdf:load-system "cl-chip8" :force t)
+                      (require :sb-sprof)
+                      (unwind-protect
+                           (run-with-compilation-warning-gate
+                            root
+                            (lambda ()
+                              (multiple-value-bind (fasl warnings-p failure-p)
+                                  (compile-file
+                                   (merge-pathnames "bench/realtime.lisp" root)
+                                   :output-file output)
+                                (declare (ignore warnings-p))
+                                (unless fasl
+                                  (error "Realtime benchmark compilation produced no FASL."))
+                                (when failure-p
+                                  (error "Realtime benchmark compilation failed."))
+                                (format t "Realtime benchmark compilation passed without warnings.~%"))))
+                        (when (probe-file output)
+                          (delete-file output))))'
+
       # Keep the measured runtime-coverage baseline as a separate, visible
       # gate.  The coverage script also checks its executable-span classifier
       # and preserves the expression/branch floors documented in tools/coverage.lisp.

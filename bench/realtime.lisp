@@ -1,4 +1,4 @@
-(progn (require :asdf) (require :sb-sprof))
+(eval-when (:load-toplevel :execute) (require :asdf) (require :sb-sprof))
   (let* ((script-path *load-truename*)
          (root (truename
                 (merge-pathnames #p"../"
@@ -53,6 +53,78 @@
     (/ (* 2d0 cl-chip8::+audio-frames-per-write+)
        cl-chip8::+audio-sample-rate+)
     "Two nominal PCM block intervals define one 20 ms interruption."))
+
+(defun validate-and-build-trial-report
+    (&key result pcm-completions pcm-nonzero-completions record-event
+          snapshot-events ticks lock-mode mode audio-worker-failure pcm-frames
+          record-only recorded-blocks recorded-frames recorded-nonzero-samples
+          seconds label sink captured backend nonzero-pcm-samples)
+  (let* ((run-start (getf result :run-start))
+         (run-finish (getf result :run-finish))
+         (pcm-gaps nil)
+         (interruption-times nil)
+         (measured-pcm-blocks 0)
+         (measured-nonzero-blocks 0)
+         (events nil))
+    (multiple-value-setq
+        (pcm-gaps interruption-times measured-pcm-blocks
+         measured-nonzero-blocks)
+      (aggregate-trial-pcm pcm-completions pcm-nonzero-completions
+                           run-start run-finish record-event))
+    (setf events (funcall snapshot-events))
+    (required-event-count events :advance ticks)
+    (required-event-count events :render ticks)
+    (required-event-count events :deadline-sleep ticks)
+    (required-event-count events :wake-overshoot ticks)
+    (when (eq lock-mode :timing)
+      (unless (and (plusp (length (gethash :display-lock-wait events)))
+                   (plusp (length (gethash :display-lock-hold events))))
+        (error "Display/audio lock timing measurements are missing.")))
+    (when (member mode '(:render :tty :recording :hardware))
+      (required-event-count events :write-string
+                            (getf result :changed-frames))
+      (required-event-count events :finish-output
+                            (getf result :changed-frames)))
+    (unless (null audio-worker-failure)
+      (error "Audio worker failed: ~A" audio-worker-failure))
+    (when (member mode '(:recording :hardware))
+      (unless (and (plusp pcm-frames)
+                   (plusp measured-nonzero-blocks))
+        (error "Selected audio workload produced no nonzero PCM blocks."))
+      (when (and (not (bench-report-only-p))
+                 (< measured-pcm-blocks
+                    (minimum-pcm-block-count run-start run-finish)))
+        (error "Selected audio workload produced too few PCM blocks."))
+      (when record-only
+        (unless (and (plusp recorded-blocks)
+                     (plusp recorded-frames)
+                     (plusp recorded-nonzero-samples))
+          (error "Recording backend produced no valid nonzero PCM.")))
+      (required-event-count events :pcm-block-gap (length pcm-gaps)))
+    (let* ((misses (length (gethash :deadline-miss events)))
+           (dropped-slots
+             (reduce #'+ (event-values events :frame-drop)
+                     :initial-value 0))
+           (target-met
+             (trial-target-met-p
+              mode result seconds misses dropped-slots measured-pcm-blocks
+              run-start run-finish interruption-times)))
+      (list :label label :mode mode :lock-mode lock-mode
+            :lock-count (when (eq lock-mode :count)
+                          cl-chip8::*display-audio-lock-acquisition-count*)
+            :seconds seconds :ticks ticks :result result :sink sink
+            :captured captured :backend backend :pcm-frames pcm-frames
+            :pcm-blocks measured-pcm-blocks :pcm-gaps pcm-gaps
+            :audio-nonzero-blocks measured-nonzero-blocks
+            :audio-interruptions (length interruption-times)
+            :underflow "UNAVAILABLE" :recorded-blocks recorded-blocks
+            :recorded-frames recorded-frames
+            :nonzero-pcm-samples nonzero-pcm-samples
+            :recorded-nonzero-samples recorded-nonzero-samples
+            :audio-worker-failure audio-worker-failure :trial-total nil
+            :gc-count (getf result :gc-count) :gc-time (getf result :gc-time)
+            :events events :misses misses :dropped-slots dropped-slots
+            :target-met target-met :queue-metrics "NOT-PRESENT"))))
 
 (progn
   (defun bench-mode ()
@@ -333,7 +405,7 @@
                         (maximum-ms overlap-overshoots)
                         (percentile-ms other-overshoots 0.50d0)
                         (percentile-ms other-overshoots 0.95d0)
-                        (maximum-ms other-overshoots))))))))
+                        (maximum-ms other-overshoots)))))))))
 
   (defun print-event-report (events &optional wall-elapsed)
     (dolist (event '(:advance :render :write-string :finish-output
@@ -348,7 +420,7 @@
               (gethash :spin-wall events)
               (gethash :spin-cpu events))
       (print-wait-report events wall-elapsed))
-    (print-scheduler-wake-overlap events)))))
+    (print-scheduler-wake-overlap events))))
 
   (progn
     (defun gap-interruption-times (measured-gaps run-start run-finish)
@@ -602,8 +674,6 @@
                (recorded-chunks nil) (recorded-blocks 0) (recorded-frames 0)
                (recorded-nonzero-samples 0)
                (pcm-completions '()) (pcm-nonzero-completions '())
-               (pcm-gaps '()) (interruption-times '())
-               (measured-pcm-blocks 0) (measured-nonzero-blocks 0)
                (pcm-frames 0) (nonzero-pcm-samples 0)
                (audio-worker-failure nil) (result nil) (sink nil) (captured nil)
                (record-only (eq mode :recording))
@@ -703,73 +773,28 @@
                  (setf pcm-completions (nreverse pcm-completions)
                        pcm-nonzero-completions
                        (nreverse pcm-nonzero-completions))
-                 (let* ((run-start (getf result :run-start))
-                        (run-finish (getf result :run-finish)))
-                   (multiple-value-setq
-                       (pcm-gaps interruption-times measured-pcm-blocks
-                        measured-nonzero-blocks)
-                     (aggregate-trial-pcm pcm-completions
-                                          pcm-nonzero-completions
-                                          run-start run-finish record-event))
-                   (setf snapshot-events (funcall snapshot-events))
-                   (required-event-count snapshot-events :advance ticks)
-                   (required-event-count snapshot-events :render ticks)
-                   (required-event-count snapshot-events :deadline-sleep ticks)
-                   (required-event-count snapshot-events :wake-overshoot ticks)
-                   (when (eq lock-mode :timing)
-                     (unless (and (plusp (length (gethash :display-lock-wait snapshot-events)))
-                                  (plusp (length (gethash :display-lock-hold snapshot-events))))
-                       (error "Display/audio lock timing measurements are missing.")))
-                   (when (member mode '(:render :tty :recording :hardware))
-                     (required-event-count snapshot-events :write-string
-                                           (getf result :changed-frames))
-                     (required-event-count snapshot-events :finish-output
-                                           (getf result :changed-frames)))
-                   (unless (null audio-worker-failure)
-                     (error "Audio worker failed: ~A" audio-worker-failure))
-                   (when (member mode '(:recording :hardware))
-                     (unless (and (plusp pcm-frames)
-                                  (plusp measured-nonzero-blocks))
-                       (error "Selected audio workload produced no nonzero PCM blocks."))
-                     (when (and (not (bench-report-only-p))
-                                (< measured-pcm-blocks
-                                   (minimum-pcm-block-count run-start run-finish)))
-                       (error "Selected audio workload produced too few PCM blocks."))
-                     (when record-only
-                       (unless (and (plusp recorded-blocks)
-                                    (plusp recorded-frames)
-                                    (plusp recorded-nonzero-samples))
-                         (error "Recording backend produced no valid nonzero PCM.")))
-                     (required-event-count snapshot-events :pcm-block-gap
-                                           (length pcm-gaps)))
-                   (let* ((misses
-                            (length (gethash :deadline-miss snapshot-events)))
-                          (dropped-slots
-                            (reduce #'+
-                                    (event-values snapshot-events :frame-drop)
-                                    :initial-value 0))
-                          (target-met
-                            (trial-target-met-p
-                             mode result seconds misses dropped-slots
-                             measured-pcm-blocks run-start run-finish
-                             interruption-times)))
-                     (setf trial
-                           (list :label label :mode mode :lock-mode lock-mode
-                                 :lock-count (when (eq lock-mode :count)
-                                               cl-chip8::*display-audio-lock-acquisition-count*)
-                                 :seconds seconds :ticks ticks :result result :sink sink
-                                 :captured captured :backend backend :pcm-frames pcm-frames
-                                 :pcm-blocks measured-pcm-blocks :pcm-gaps pcm-gaps
-                                 :audio-nonzero-blocks measured-nonzero-blocks
-                                 :audio-interruptions (length interruption-times)
-                                 :underflow "UNAVAILABLE" :recorded-blocks recorded-blocks
-                                 :recorded-frames recorded-frames
-                                 :nonzero-pcm-samples nonzero-pcm-samples
-                                 :recorded-nonzero-samples recorded-nonzero-samples
-                                 :audio-worker-failure audio-worker-failure :trial-total nil
-                                 :gc-count (getf result :gc-count) :gc-time (getf result :gc-time)
-                                 :events snapshot-events :misses misses :dropped-slots dropped-slots
-                                 :target-met target-met :queue-metrics "NOT-PRESENT"))))
+                 (setf trial
+                       (validate-and-build-trial-report
+                        :result result
+                        :pcm-completions pcm-completions
+                        :pcm-nonzero-completions pcm-nonzero-completions
+                        :record-event record-event
+                        :snapshot-events snapshot-events
+                        :ticks ticks
+                        :lock-mode lock-mode
+                        :mode mode
+                        :audio-worker-failure audio-worker-failure
+                        :pcm-frames pcm-frames
+                        :record-only record-only
+                        :recorded-blocks recorded-blocks
+                        :recorded-frames recorded-frames
+                        :recorded-nonzero-samples recorded-nonzero-samples
+                        :seconds seconds
+                        :label label
+                        :sink sink
+                        :captured captured
+                        :backend backend
+                        :nonzero-pcm-samples nonzero-pcm-samples))
              (unwind-protect
                   (when audio-output
                     (cl-chip8::stop-chip8-audio-output! audio-output))
