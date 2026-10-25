@@ -6,49 +6,70 @@ and CI. The implementation targets SBCL on `x86_64-linux` and
 
 ## Layout
 
-- `src/` contains machine state, CPU execution, state transitions, terminal I/O, and rendering.
-- `t/` contains the test system.
+- `src/` contains machine state, platform profiles, CPU execution, ROM metadata, state transitions, terminal I/O, audio, and rendering.
+- `t/` contains the test system, including Timendus checks and chip8Archive corpus compatibility checks.
 - `run-tests.lisp` is the direct test entry point.
 - `tools/coverage.lisp` runs coverage.
+- `tools/generate-rom-database.lisp` regenerates the checked-in ROM database data.
 - `bench/` contains the rendering benchmark.
 - `docs/` contains the MkDocs site.
 
 ## Tests and checks
 
-Run the direct suite with an explicit time limit:
+Enter the development shell to load the project dependencies and tools:
 
 ```sh
-timeout 900 sbcl --script run-tests.lisp
+nix develop
 ```
 
-The Timendus ROM directory is supplied through `CHIP8_TIMENDUS_DIR`. When
-dependencies are outside the Nix shell, set `CL_SOURCE_REGISTRY` to the parent
-tree containing the checkout and its sibling systems:
+The direct test runner is:
 
 ```sh
-CHIP8_TIMENDUS_DIR=/path/to/timendus timeout 900 sbcl --script run-tests.lisp
+sbcl --script run-tests.lisp
 ```
 
-Run coverage with a time limit:
+The Timendus conformance specs require `CHIP8_TIMENDUS_DIR` to point at the
+suite's `bin` directory. The Nix flake pins the
+[Timendus v4.2 suite](https://github.com/Timendus/chip8-test-suite/tree/v4.2).
+For a direct run, set the suite and optional chip8Archive paths:
 
 ```sh
-timeout 1800 sbcl --script tools/coverage.lisp
+CHIP8_TIMENDUS_DIR=/path/to/timendus/bin \
+CL_CHIP8_ROM_CORPUS=/path/to/chip8Archive \
+sbcl --script run-tests.lisp
 ```
 
-Coverage currently reports 78.02% expression coverage and 65.00% branch
-coverage, with stable integer floors of 78% and 65%. The current run reports
-439 tracked executable gaps across 28 measured source reports. The runtime
-terminal loop is outside the automated test scope; key handling is verified by
-in-process tests. The detailed per-form gap classification and the opcode
-macro-expansion evidence are maintained in `tools/coverage.lisp`; the coverage
-log prints every tracked gap.
-The aggregate floors are the CI gate.
+`CHIP8_TIMENDUS_SKIP=1` explicitly skips the conformance specs for local runs
+that are not checking conformance. The chip8Archive compatibility spec is
+optional for a direct run. When enabled, it runs each discovered `.ch8` ROM
+for 600 frames and reports compatibility faults. The test suite also runs
+synthetic corpus discovery and fault-classification checks without an external
+corpus.
 
-Run the flake checks and documentation build with:
+The Nix flake check supplies both ROM collections, runs the test suite,
+regenerates the database from its pinned source, and compares the result with
+`src/rom-database-data.lisp`. It also runs the source parser check and package
+build:
 
 ```sh
-timeout 1800 nix flake check
-timeout 900 nix build .#docs
+nix flake check
+```
+
+Run coverage with:
+
+```sh
+sbcl --script tools/coverage.lisp
+```
+
+The coverage gate uses expression and branch floors defined by the coverage
+script. The runtime terminal loop is outside the automated test scope; key
+handling is verified by in-process tests. The script's report describes the
+measured forms and tracked gaps.
+
+Build the documentation with:
+
+```sh
+nix build .#docs
 ```
 
 The documentation build uses MkDocs strict mode, so broken links and missing
@@ -56,11 +77,12 @@ navigation entries fail the build.
 
 ## Benchmark
 
-The renderer benchmark compares serial and concurrent output as well as timing:
+The renderer benchmark compares serial and concurrent output and records
+host-specific timings:
 
 ```sh
-timeout 900 sbcl --script bench/render.lisp
+sbcl --script bench/render.lisp
 ```
 
-Treat timings as host-specific measurements. A useful change must preserve the
-renderer output comparison as well as the measured performance.
+This guide documents the command, not benchmark results. Keep measurements
+with the host and revision used to produce them before making comparisons.

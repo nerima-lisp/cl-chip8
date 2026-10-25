@@ -5,9 +5,10 @@
 [![Documentation](https://img.shields.io/badge/docs-MkDocs%20Material-0a7a5a)](https://nerima-lisp.github.io/cl-chip8/)
 
 `cl-chip8` is an SBCL-only [CHIP-8](https://en.wikipedia.org/wiki/CHIP-8)
-interpreter for the terminal. Version 0.2.1 provides a typed machine-state
-API, a terminal application, configurable compatibility profiles, TOML
-configuration, logging, metrics, and headless execution helpers.
+interpreter for the terminal. The current development tree supports CHIP-8,
+SUPER-CHIP, and XO-CHIP platform profiles, ROM-specific compatibility data,
+TOML configuration, structured logging, metrics, PCM or terminal-bell audio,
+and headless execution helpers.
 
 Full documentation is published at <https://nerima-lisp.github.io/cl-chip8/>.
 The source for that site lives in [docs/src/](docs/src/).
@@ -20,10 +21,12 @@ From a checkout with Nix installed:
 nix run .#cl-chip8 -- path/to/rom.ch8
 ```
 
-The emulator runs in the terminal until Escape or Ctrl-C. Use
-`--clock-hz <positive-integer>` to choose the instruction rate. Delay and sound
-timers continue at the CHIP-8 rate of 60 Hz. Use `--help` to list all command
-line options, including `--quirks`, `--config`, and `--log`.
+The emulator runs in the terminal until Escape or Ctrl-C. Use `--platform` to
+select a machine profile, `--quirks` to select compatibility behavior, and
+`--clock-hz` to set the instruction rate. Delay and sound timers continue at
+60 Hz. `--audio` selects PCM, terminal-bell, automatic fallback, or no audio;
+`--colors-pixels` overrides the pixel palette. Use `--config` for TOML settings
+and `--help` to list every command-line option.
 
 The flake provides packages for `x86_64-linux` and `aarch64-darwin`. On other
 systems, build and run through SBCL and ASDF directly or use a Nix remote
@@ -35,7 +38,7 @@ separate binary archive.
 
 ## Install
 
-Consume the released tag from another flake:
+Consume the latest released tag from another flake:
 
 ```nix
 inputs.cl-chip8 = {
@@ -50,13 +53,15 @@ For development against an unreleased change, use
 The library system is `cl-chip8`. Load it with ASDF and call `cl-chip8:run`:
 
 ```lisp
+(require :asdf)
 (asdf:load-system "cl-chip8")
 (cl-chip8:run :rom-path #p"path/to/rom.ch8")
 ```
 
-`run` accepts keyword arguments, including `:rom-path`, `:clock-hz`,
-`:quirks`, and `:stream`. It creates and initializes a machine, loads the ROM,
-then enters a raw-mode terminal session on the alternate screen. It returns a
+`run` accepts keyword arguments including `:rom-path`, `:clock-hz`, `:platform`,
+`:quirks`, `:audio-mode`, and `:stream`. It creates and initializes a machine,
+loads the ROM, then enters a raw-mode terminal session on the alternate screen.
+The Lisp API defaults audio to `:off`; the CLI defaults to `auto`. It returns a
 `chip8-app` after the session ends. Runtime errors captured by the application
 are available through `cl-chip8:chip8-app-error`; ROM loading errors occur
 before the terminal session starts.
@@ -64,23 +69,23 @@ before the terminal session starts.
 ## Documentation
 
 - [Getting Started](https://nerima-lisp.github.io/cl-chip8/getting-started/)
+- [Core Concepts](https://nerima-lisp.github.io/cl-chip8/guide/core-concepts/)
+- [Terminal Guide](https://nerima-lisp.github.io/cl-chip8/guide/terminal/)
 - [API Reference](https://nerima-lisp.github.io/cl-chip8/reference/api/)
 - [Architecture](https://nerima-lisp.github.io/cl-chip8/reference/architecture/)
 - [Compatibility](https://nerima-lisp.github.io/cl-chip8/reference/compatibility/)
+- [Changelog](CHANGELOG.md)
 
 ## Development
 
 ```shell
-nix develop
-nix run .#test
-nix build .#docs --print-build-logs
-nix flake check --print-build-logs
+nix flake check
+nix build .#docs
 nix fmt
-git diff --check
 ```
 
-The direct test runner is `sbcl --script run-tests.lisp`; the coverage
-workflow is `sbcl --script tools/coverage.lisp`. See the
+The suite includes Timendus conformance checks and optional chip8Archive ROM
+corpus compatibility checks. See the
 [development guide](docs/src/project/development.md) for source layout,
 dependency setup, and verification details.
 

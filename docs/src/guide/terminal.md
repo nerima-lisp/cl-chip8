@@ -1,32 +1,83 @@
 # Terminal Guide
 
 See [Getting Started](../getting-started.md) for Nix and ASDF launch
-instructions.
-Use `cl-chip8` from `PATH` for these commands. From a checkout, replace the
-leading `cl-chip8` with `nix run .#cl-chip8 --`.
+instructions. Use `cl-chip8` from `PATH` for these commands. From a checkout,
+replace the leading `cl-chip8` with `nix run .#cl-chip8 --`.
 
 ```sh
 cl-chip8 path/to/rom.ch8
-cl-chip8 path/to/rom.ch8 --audio pcm
+cl-chip8 path/to/rom.ch8 --platform xo-chip --audio off
 ```
 
-`--clock-hz` controls the instruction rate and defaults to 700. Delay and
-sound timers continue at 60 Hz. The `--quirks` option accepts `modern`,
-`cosmac-vip`, `schip`, `schip-legacy`, and `xo-chip`. `--audio` selects audio
-output and defaults to `auto`.
-`--config` loads a TOML configuration file and `--log` writes JSON log records
-to the specified file. `--help` prints the command-line interface and
-`--version` prints the version recorded in the ASDF system definition. If ASDF
-cannot find that definition, it prints `0.0.0`.
+`--platform` selects one of `cosmac-vip`, `modern`, `schip`, `schip-legacy`,
+or `xo-chip`. `--quirks` accepts the same names and selects a compatibility
+profile. Both can be used together: platform selects machine defaults and
+capabilities, while quirks selects instruction behavior. See the
+[Compatibility reference](../reference/compatibility.md) for details.
+`--config` loads TOML, `--log` writes JSON log records to a file,
+`--colors-pixels` overrides the pixel palette, `--help` prints usage, and
+`--version` prints the version from the ASDF system definition.
+
+## Configuration priority
+
+For machine platform selection, values are resolved in this order: CLI
+`--platform`, TOML `chip8.platform`, the first supported platform identified
+for the ROM by the bundled ROM database, a supplied application default, then
+`modern`. The quirk profile follows CLI `--quirks`, TOML `chip8.quirks`,
+application defaults, then the selected platform's default. For a database
+record, its profile-specific quirk overrides are applied before individual
+TOML settings.
+
+If a recognized ROM lists only upstream platforms that cl-chip8 does not
+implement, startup signals `chip8-unsupported-platform` before opening the
+terminal. An explicit CLI `--platform` or `--quirks` bypasses that check. TOML
+settings do not bypass it.
+
+`--clock-hz` controls CPU instructions per second. The value is selected from
+CLI, TOML `chip8.clock_hz`, a ROM-specific database tickrate multiplied by 60,
+the database platform tickrate multiplied by 60, the selected platform's
+default tickrate multiplied by 60, then the 700 instructions-per-second
+fallback. Delay and sound timers always continue at 60 Hz.
+
+The pixel palette priority is CLI `--colors-pixels`, TOML `colors.pixels`, a
+matched ROM database palette, then built-in colors. CLI values are two or four
+comma-separated `#RRGGBB` colors. The TOML form uses two or four strings.
+
+## Audio
+
+`--audio` selects audio output and defaults to `auto`. PCM output is provided
+through `cl-audio-kit`; the TOML configuration has no audio setting.
 
 | `--audio` value | Behavior |
 |---|---|
-| `auto` | Use PCM output from the system default device. If it cannot be opened, fall back to the terminal bell and emit a WARN message on standard error. When a log path is configured, also record one structured `audio-fallback` entry. |
-| `pcm` | Require PCM output from the system default device. The program exits with an error if it cannot open the device. |
-| `bell` | Use the terminal bell. |
-| `off` | Disable audio output. |
+| `auto` | Try PCM on the system's default output device. If opening the device reports an audio error, fall back to the terminal bell and write a WARN message to standard error. With a log path, also write one structured `audio-fallback` entry. |
+| `pcm` | Require PCM on the system's default output device. Exit with an error if the device cannot be opened. |
+| `bell` | Use the terminal bell while the sound timer is active. |
+| `off` | Disable sound output. The on-screen sound-timer indicator remains visible. |
 
-The TOML configuration file does not provide an audio setting.
+The Common Lisp `run` function uses the keyword `:audio-mode` and defaults to
+`:off`. Its accepted values are `:auto`, `:pcm`, `:bell`, and `:off`.
+
+## Check audio output
+
+Before testing PCM output, verify that the system's default output device can
+play audio. Select that device in the operating system's sound settings and
+follow the [cl-audio-kit manual audio check](https://nerima-lisp.github.io/cl-audio-kit/guide/manual-audio-check/)
+to play a one-second tone. Skip this step if the output device has already
+been verified.
+
+Download the [Timendus `7-beep.ch8` ROM](https://github.com/Timendus/chip8-test-suite/raw/v4.2/bin/7-beep.ch8)
+and run it with PCM enabled:
+
+```sh
+cl-chip8 path/to/7-beep.ch8 --audio pcm
+```
+
+Listen for the SOS sequence. The ROM's speaker icon and the upper-left
+reverse-video border cell indicate ROM and sound-timer activity, but neither
+confirms that sound reached the output device. If the tone test succeeds and
+the indicators appear but the SOS is silent, report it as an emulator audio
+output issue with the ROM and command used.
 
 ## Exit codes
 
@@ -61,41 +112,27 @@ Letter controls accept either case:
 | Backspace | Reset machine state and resume execution. |
 | Escape or Ctrl-C | Quit the application. |
 
-## Display and sound
+## Adaptive display
 
-The 64x32 framebuffer is rendered as a 64-column by 16-row playfield. Each
-terminal cell represents two vertical pixels with a Unicode half-block
-character. A one-cell border surrounds the playfield. While the sound timer is
-active, the upper-left border cell is shown in reverse video. The terminal bell
-sounds periodically in `bell` mode and when `auto` falls back because the PCM
-device could not be opened.
-The upper-left timer indicator remains visible in every mode, including `off`.
+The application selects a renderer from the machine resolution and terminal
+size. A one-cell border surrounds the playfield. Low-resolution mode requires
+at least 66 columns by 18 rows. XO-CHIP low-resolution output uses half-block
+cells and the configured palette; other low-resolution profiles use
+monochrome half-block characters.
 
-## Check audio output
+For a high-resolution display, the application chooses the first mode whose
+minimum size fits:
 
-Before testing PCM output from `cl-chip8`, verify that the system's default
-output device can play audio. Select that device in your operating system's
-sound settings and follow the [cl-audio-kit manual audio
-check](https://nerima-lisp.github.io/cl-audio-kit/guide/manual-audio-check/) to
-play a one-second tone. Skip this step if you have already verified the device.
+| Renderer | Minimum terminal size | Pixel representation | Colors |
+|---|---:|---|---|
+| Half-block | 130 columns × 34 rows | One column and two rows per cell | All four palette colors |
+| Quarter-block | 66 columns × 34 rows | Two columns and two rows per cell | On and off only |
+| Braille | 66 columns × 18 rows | Two columns and four rows per cell | On and off only |
 
-Download the [Timendus `7-beep.ch8` ROM](https://github.com/Timendus/chip8-test-suite/raw/v4.2/bin/7-beep.ch8)
-and run it with PCM enabled:
-
-```sh
-cl-chip8 path/to/7-beep.ch8 --audio pcm
-```
-
-Listen for the SOS beep sequence. The ROM flashes a speaker icon, and the
-upper-left reverse-video border cell indicates that the sound timer is active.
-Neither confirms that audio reached the output device. If the SOS is silent,
-repeat the one-second tone check above. If that tone is silent too, select or
-check the system's default output device, then repeat the tone check and rerun
-the ROM. If the ROM's speaker icon or border indicator does not appear, verify
-that the command above names the downloaded `7-beep.ch8` and that the emulator
-display has started, then rerun the test. If the tone is audible and both
-indicators appear but the SOS remains silent, treat it as an emulator
-audio-output issue and include the ROM and command when reporting it.
+Below the minimum for the current resolution, the application displays a
+terminal-size message and pauses instruction stepping. Execution resumes when
+the terminal is resized to a supported size. The upper-left border cell
+indicates an active sound timer in every audio mode.
 
 ## Configuration
 
@@ -116,8 +153,11 @@ For example, `config.toml` can contain:
 
 ```toml
 [chip8]
-quirks = "cosmac-vip"
-clock_hz = 500
+platform = "xo-chip"
+quirks = "xo-chip"
+clock_hz = 6000
+lores_sprite = "16x16"
+collision = "flag"
 
 [logging]
 path = "/tmp/cl-chip8.log"
@@ -126,18 +166,13 @@ path = "/tmp/cl-chip8.log"
 pixels = ["#000000", "#00FF00", "#FFFF00", "#FFFFFF"]
 ```
 
-The `chip8` table supports `quirks`,
-`clock_hz`, `display_wait`, `clipping`, `shift_source`, `bnnn_register`,
-`fx0a_completion`, `memory_i`, and `vf_reset`. The `logging` table supports
-`path`. The `colors` table supports `pixels`, with two or four `#RRGGBB`
-strings. Palette indices follow framebuffer values 0 through 3. With two
-colors, the second color fills indices 1 through 3. The renderer maps each
-color to a terminal 256-color entry. High-resolution half-block rendering uses
-all four colors when the terminal has at least 130 columns and 34 rows.
-Otherwise, high-resolution output uses quarter-block mode at 66 columns by 34
-rows or larger, or braille mode at 66 columns by 18 rows or larger. These modes
-use only indices 0 and 1. Low-resolution rendering does not use this palette.
-
-The palette order is command line, TOML, ROM database, then built-in defaults.
-The ROM database supplies a matched ROM's colors when neither the command line
-nor TOML specifies them.
+The `[chip8]` table supports `platform`, `quirks`, `clock_hz`, `display_wait`,
+`clipping`, `shift_source`, `bnnn_register`, `fx0a_completion`, `memory_i`,
+`vf_reset`, `lores_sprite`, `collision`, `lores_scroll`, and
+`mode_switch_clear`. `display_wait` accepts a boolean or `"lores-only"`;
+`mode_switch_clear` accepts a boolean. `[logging]` supports `path`.
+`[colors]` supports `pixels` as two or four `#RRGGBB` strings. Palette indices
+follow framebuffer values 0 through 3. With two colors, the second color
+fills indices 1 through 3. The renderer maps each color to a terminal
+256-color entry. Only half-block mode uses all four colors; quarter-block and
+braille use the on/off colors.
