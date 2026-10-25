@@ -467,16 +467,16 @@
     "cl-tty-kit": {
       "flake": false,
       "locked": {
-        "lastModified": 1792900686,
-        "narHash": "sha256-epB8rRYoIcFS80NueNnD+/ZXNJilDYZk2hEHAwH9TaU=",
+        "lastModified": 1792930510,
+        "narHash": "sha256-w0AUBrO6xR7AEgzaRetdOxnVQLx/VEt5YHekNXmiCM8=",
         "owner": "nerima-lisp",
         "repo": "cl-tty-kit",
-        "rev": "689a810d66027f06d64ccc4522ede9d6a6219e4e",
+        "rev": "a1bbaf2a67abc28e7dafdae650b500031b4b9fec",
         "type": "github"
       },
       "original": {
         "owner": "nerima-lisp",
-        "ref": "v1.6.2",
+        "ref": "v1.7.0",
         "repo": "cl-tty-kit",
         "type": "github"
       }
