@@ -200,7 +200,7 @@
                     :default timeout-marker)
                    timeout-marker))
              (run-bounded (function)
-               (let ((failure nil)
+               (let* ((failure nil)
                      (cleanup-thread
                        (sb-thread:make-thread
                         (lambda ()
@@ -228,16 +228,17 @@
                    (funcall
                     (chip8-audio-output-abort-stream-function output)
                     stream)))
-              (if abort-timed-out-p
-                  (record-stop-condition nil "aborting the stream")
-                  (progn
-                    (when abort-failure
-                      (record-stop-condition abort-failure "aborting the stream"))
-                    (if (join-thread-with-timeout thread)
+              (progn
+                (if abort-timed-out-p
+                    (record-stop-condition nil "aborting the stream")
+                    (progn
+                      (when abort-failure
+                        (record-stop-condition abort-failure "aborting the stream"))
+                      (when (join-thread-with-timeout thread)
                         (record-stop-condition
                          nil
-                         "stopping the audio worker after abort")
-                        (close-stream-bounded))))))
+                         "stopping the audio worker after abort"))))
+                (close-stream-bounded))))
           (close-stream-bounded)))
   output))
 (defun %cleanup-chip8-audio-resources! (audio-output audio-stream)
