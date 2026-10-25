@@ -192,12 +192,92 @@
         (error "Missing benchmark measurement ~A: expected ~D, got ~D."
                event expected actual))))
 
-  (defun print-event-report (events)
-    (dolist (event '(:advance :render :write-string :finish-output
-                     :deadline-sleep :wake-overshoot :deadline-miss
-                     :frame-drop :display-lock-wait :display-lock-hold
-                     :pcm-block-gap))
-      (print-phase-metric event (gethash event events))))
+  (progn
+    (defun run-tick-loop-with-wait-metrics
+    (mode state advance render stop stream record-event)
+  (if (eq mode :advance)
+      (let* ((sleep-symbol 'cl-tty-kit::*tick-loop-sleeper*)
+             (spin-symbol 'cl-tty-kit::*tick-loop-spinner*)
+             (sleep-function (symbol-value sleep-symbol))
+             (spin-function (when (boundp spin-symbol)
+                              (symbol-value spin-symbol)))
+             (sleep-wrapper
+               (lambda (seconds)
+                 (funcall record-event :sleep-request 0 seconds)
+                 (let ((started (monotonic-seconds)))
+                   (prog1 (funcall sleep-function seconds)
+                     (funcall record-event
+                              :sleep-actual 0
+                              (- (monotonic-seconds) started)))))
+             (spin-wrapper
+               (when spin-function
+                 (lambda (deadline)
+                   (let ((wall-start (monotonic-seconds))
+                         (cpu-start (get-internal-run-time)))
+                     (prog1 (funcall spin-function deadline)
+                       (funcall record-event
+                                :spin-wall 0
+                                (- (monotonic-seconds) wall-start))
+                       (funcall record-event
+                                :spin-cpu 0
+                                (/ (- (get-internal-run-time) cpu-start)
+                                   internal-time-units-per-second)))))))
+             (symbols (if spin-function
+                          (list sleep-symbol spin-symbol)
+                          (list sleep-symbol)))
+             (values (if spin-function
+                         (list sleep-wrapper spin-wrapper)
+                         (list sleep-wrapper))))
+        (progv symbols values
+          (cl-tty-kit:tick-loop-run-realtime
+           state advance render stop
+           :stream stream :interval +bench-interval+
+           :on-timing record-event)))
+      (cl-tty-kit:tick-loop-run-realtime
+       state advance render stop
+       :stream stream :interval +bench-interval+
+       :on-timing record-event))))
+    (defun print-wait-report (events wall-elapsed)
+      (let* ((requested (event-values events :sleep-request))
+             (actual (event-values events :sleep-actual))
+             (spin-wall (event-values events :spin-wall))
+             (spin-cpu (event-values events :spin-cpu))
+             (requested-total (float (total requested) 1d0))
+             (actual-total (float (total actual) 1d0))
+             (spin-wall-total (float (total spin-wall) 1d0))
+             (spin-cpu-total (float (total spin-cpu) 1d0)))
+        (unless (= (length requested) (length actual))
+          (error "Sleep request and elapsed-time sample counts differ."))
+        (unless (= (length spin-wall) (length spin-cpu))
+          (error "Spin wall-time and CPU-time sample counts differ."))
+        (dolist (event '(:sleep-request :sleep-actual :spin-wall :spin-cpu))
+          (print-phase-metric
+           event
+           (mapcar (lambda (value) (cons 0 value))
+                   (event-values events event))))
+        (format t "~&WAIT-REPORT sleep-request-count=~D requested-sleep-total=~,6Fs actual-sleep-total=~,6Fs actual/requested=~A spin-wall=~,6Fs spin-process-cpu=~,6Fs process-cpu-of-run=~A%/one-core~%"
+                (length requested)
+                requested-total
+                actual-total
+                (if (plusp requested-total)
+                    (format nil "~,3Fx" (/ actual-total requested-total))
+                    "NA")
+                spin-wall-total
+                spin-cpu-total
+                (if (and wall-elapsed (plusp wall-elapsed))
+                    (format nil "~,3F" (* 100d0 (/ spin-cpu-total wall-elapsed)))
+                    "NA"))))
+    (defun print-event-report (events &optional wall-elapsed)
+      (dolist (event '(:advance :render :write-string :finish-output
+                       :deadline-sleep :wake-overshoot :deadline-miss
+                       :frame-drop :display-lock-wait :display-lock-hold
+                       :pcm-block-gap))
+        (print-phase-metric event (gethash event events)))
+      (when (or (gethash :sleep-request events)
+                (gethash :sleep-actual events)
+                (gethash :spin-wall events)
+                (gethash :spin-cpu events))
+        (print-wait-report events wall-elapsed))))
 
   (progn
     (defun gap-interruption-times (measured-gaps run-start run-finish)
@@ -253,10 +333,8 @@
                (gc-time-before sb-ext:*gc-run-time*)
                (started (monotonic-seconds)))
           (progn
-            (cl-tty-kit:tick-loop-run-realtime
-             app #'advance #'render #'stop
-             :stream stream :interval +bench-interval+
-             :on-timing record-event)
+            (run-tick-loop-with-wait-metrics
+             mode app #'advance #'render #'stop stream record-event)
             (let ((app-error (cl-chip8::chip8-app-error app)))
               (when app-error
                 (error app-error))))
@@ -625,33 +703,7 @@
       trial))
   (defun print-trial (trial)
     (let ((result (getf trial :result)))
-      (format t "~&TRIAL label=~A mode=~A ticks=~D instructions=~D instruction-per-frame=~D render-calls=~D rendered-frames=~D changed-frames=~D tick-rate=~,3F/s wall-rate=~,3F instructions/s measured-run=~,6Fs trial-total=~,6Fs gc-count=~D gc-time=~,6Fs missed-deadlines=~D dropped-slots=~D pcm-blocks-measured/required=~A pcm-frames=~D pcm-gaps=~D audio-nonzero-blocks=~D audio-interruptions=~D backend=~A backend-underflow=~A recorded-blocks=~D recorded-frames=~D recorded-nonzero-samples=~D queue-metrics=~A target=~A~%"
-              (getf trial :label) (string-upcase (symbol-name (getf trial :mode)))
-              (getf result :ticks) (getf result :instructions)
-              (getf result :instructions-per-frame)
-              (getf result :render-calls) (getf result :actual-renders)
-              (getf result :changed-frames) (getf result :tick-rate)
-              (getf result :wall-rate) (getf result :wall-elapsed)
-              (getf trial :trial-total) (getf trial :gc-count)
-              (getf trial :gc-time) (getf trial :misses)
-              (getf trial :dropped-slots) (format nil "~D/~A"
-                                                  (getf trial :pcm-blocks)
-                                                  (if (member (getf trial :mode)
-                                                              (quote (:recording :hardware)))
-                                                      (minimum-pcm-block-count
-                                                       0 (getf result :wall-elapsed))
-                                                    "NA"))
-              (getf trial :pcm-frames) (length (getf trial :pcm-gaps))
-              (getf trial :audio-nonzero-blocks)
-              (getf trial :audio-interruptions) (getf trial :backend)
-              (getf trial :underflow) (getf trial :recorded-blocks)
-              (getf trial :recorded-frames)
-              (getf trial :recorded-nonzero-samples)
-              (getf trial :queue-metrics)
-              (cond ((getf trial :target-met) "MET")
-                    ((bench-report-only-p) "REPORT-ONLY")
-                    (t "NOT-MET")))
-      (print-event-report (getf trial :events))
+      (print-event-report (getf trial :events) (getf result :wall-elapsed))
       (progn
         (format t "~&PCM gaps p50=~A p95=~A p99=~A max=~A~%"
                 (if (getf trial :pcm-gaps)
