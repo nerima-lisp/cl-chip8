@@ -62,9 +62,10 @@ sbcl --script tools/coverage.lisp
 ```
 
 The coverage gate uses expression and branch floors defined by the coverage
-script. The runtime terminal loop is outside the automated test scope; key
-handling is verified by in-process tests. The script's report describes the
-measured forms and tracked gaps.
+script. The realtime loop and key handling are exercised in-process. Tests do
+not enter an actual terminal raw-mode session; that setup is outside the
+automated test scope. The script's report describes the measured forms and
+tracked gaps.
 
 Build the documentation with:
 

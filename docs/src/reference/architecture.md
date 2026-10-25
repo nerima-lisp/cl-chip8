@@ -23,7 +23,10 @@ Continuation-passing style (CPS) is used only at interruption boundaries such
 as `FX0A`, display wait, and resume.
 
 Headless execution returns a `chip8-run-result` with status, executed count,
-machine, and any continuation. The terminal application builds on this API,
-selects a renderer from the machine resolution and current terminal size, and
-passes logical framebuffer snapshots to the renderer. Renderers keep their
-own row-diff state and do not mutate machine state.
+machine, and any continuation. The terminal application shares the machine
+and instruction implementation with the headless API, but has its own tick
+and control loop. It advances timers, executes instructions, and handles app
+control state directly. The app selects a display mode based on machine
+resolution and terminal size, then passes logical framebuffer snapshots to
+the renderer. Renderers keep their own row-diff state and do not mutate
+machine state.

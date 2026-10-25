@@ -60,7 +60,9 @@ definitions. `chip8-machine-resolution`,
 `chip8-machine-logical-height`, `chip8-machine-plane-mask`, and
 `set-chip8-machine-plane-mask!` inspect or change display state. The physical
 framebuffer stores 2-bit pixels; snapshots use the current logical size and
-the selected planes. `chip8-wait-state-pc` reads a wait state's saved PC.
+return each pixel's full 2-bit value (bit 0 for plane 1 and bit 1 for plane 2)
+without applying the selected plane mask. `chip8-wait-state-pc` reads a wait
+state's saved PC.
 
 `chip8-quirks`, `chip8-quirks-p`, `make-chip8-quirks`, `merge-chip8-quirks`,
 `chip8-quirks-profile`, `chip8-quirks-vf-behavior`,

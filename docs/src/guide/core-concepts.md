@@ -62,11 +62,14 @@ The headless helpers make waits observable without opening a terminal:
     (cl-chip8:chip8-run-result-status result)))
 ```
 
-`chip8-run-instructions` executes up to a requested instruction count.
-`chip8-run-ticks` advances timers and executes instructions for a requested
-number of ticks. Both return a `chip8-run-result` with a status, the number of
-instructions executed, the machine, and a continuation when execution is
-waiting. The status is `:completed`, `:waiting`, or `:halted`.
+`chip8-run-instructions` executes up to a requested instruction count,
+returning early if the machine halts or enters a wait state.
+`chip8-run-ticks` advances timers and executes instructions for up to the
+requested number of ticks. It resumes display waits on the next tick, but
+stops earlier if the machine halts or waits for key input. Both return a
+`chip8-run-result` with a status, the number of instructions executed, the
+machine, and a continuation when execution is waiting. The status is
+`:completed`, `:waiting`, or `:halted`.
 
 For example, this loads `LD V0, 1` and executes one instruction:
 
