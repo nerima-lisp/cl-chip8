@@ -419,33 +419,38 @@
            (*standard-input* (make-string-input-stream "")))
       (load-rom machine #(#xa3 #x00 #xd0 #x11 #x60 #x01))
       (setf (aref (chip8-machine-memory machine) #x300) #x80)
-      (cl-tty-kit:tick-loop-run-realtime
-       app
-       (lambda (state) (cl-chip8::%advance-chip8! state 130 34))
-       (lambda (state)
-         (incf render-count)
-         (let ((frame (cl-chip8::%render-chip8-app! state)))
-           (when (= render-count 2)
-             (setf waiting-state
-                   (chip8-control-state (chip8-app-state-machine state))
-                   waiting-kind
-                   (cl-chip8::chip8-wait-state-kind
-                    (chip8-machine-waiting machine))
-                   waiting-pc (chip8-machine-pc machine)
-                   waiting-instructions (chip8-machine-instructions machine)
-                   waiting-cell
-                   (cl-tty-kit:cell-char
-                    (cl-tty-kit:screen-cell
-                     (cl-tty-kit:renderer-screen renderer)
-                     cl-chip8::+playfield-origin-x+
-                     cl-chip8::+playfield-origin-y+))
-                   waiting-frame frame))
-           frame))
-       (lambda (state)
-         (declare (ignore state))
-         (>= render-count 3))
-       :stream stream
-       :interval 1/1000)
+      (handler-case
+          (sb-ext:with-timeout 10
+            (cl-tty-kit:tick-loop-run-realtime
+             app
+             (lambda (state) (cl-chip8::%advance-chip8! state 130 34))
+             (lambda (state)
+               (incf render-count)
+               (let ((frame (cl-chip8::%render-chip8-app! state)))
+                 (when (= render-count 2)
+                   (setf waiting-state
+                         (chip8-control-state (chip8-app-state-machine state))
+                         waiting-kind
+                         (cl-chip8::chip8-wait-state-kind
+                          (chip8-machine-waiting machine))
+                         waiting-pc (chip8-machine-pc machine)
+                         waiting-instructions (chip8-machine-instructions machine)
+                         waiting-cell
+                         (cl-tty-kit:cell-char
+                          (cl-tty-kit:screen-cell
+                           (cl-tty-kit:renderer-screen renderer)
+                           cl-chip8::+playfield-origin-x+
+                           cl-chip8::+playfield-origin-y+))
+                         waiting-frame frame))
+                 frame))
+             (lambda (state)
+               (declare (ignore state))
+               (>= render-count 3))
+             :stream stream
+             :interval 1/1000))
+        (sb-ext:timeout ()
+          (error "Timed out waiting for predicate (>= render-count 3); last render-count was ~D."
+                 render-count)))
       (expect render-count :to-be 3)
       (expect waiting-state :to-equal "waiting-display")
       (expect waiting-kind :to-be :display)
