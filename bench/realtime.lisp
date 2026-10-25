@@ -572,9 +572,11 @@
                      (error "Audio worker failed: ~A" audio-worker-failure))
                    (when (member mode '(:recording :hardware))
                      (unless (and (plusp pcm-frames)
-                                  (plusp measured-nonzero-blocks)
-                                  (>= measured-pcm-blocks
-                                      (minimum-pcm-block-count run-start run-finish)))
+                                  (plusp measured-nonzero-blocks))
+                       (error "Selected audio workload produced no nonzero PCM blocks."))
+                     (when (and (not (bench-report-only-p))
+                                (< measured-pcm-blocks
+                                   (minimum-pcm-block-count run-start run-finish)))
                        (error "Selected audio workload produced too few PCM blocks."))
                      (when record-only
                        (unless (and (plusp recorded-blocks)
