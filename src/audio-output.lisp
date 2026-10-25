@@ -16,6 +16,7 @@
   (sb-thread:with-mutex ((chip8-audio-output-lock output))
     (values (chip8-audio-output-stopped-p output)
             (chip8-audio-output-phase-reset-generation output))))
+
 (defun %synthesize-machine-audio-frames (machine frame-count bit-phase)
   (multiple-value-bind (platform sound-timer pattern pitch)
       (%chip8-machine-audio-snapshot machine)
