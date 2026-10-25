@@ -89,20 +89,28 @@
            (audio-events nil))
       (values
        (lambda (event tick value)
-         (let ((events
-                 (cond ((eq sb-thread:*current-thread* main-thread)
-                        main-events)
-                       ((and audio-thread
-                             (eq sb-thread:*current-thread* audio-thread))
-                        audio-events)
-                       (t
-                        (error "Timing event came from an unregistered thread.")))))
-           (push (cons tick value) (gethash event events))))
+         (let ((current-thread sb-thread:*current-thread*))
+           (let ((events
+                   (cond
+                     ((eq current-thread main-thread) main-events)
+                     ((and audio-thread (eq current-thread audio-thread))
+                      audio-events)
+                     ((equal (sb-thread:thread-name current-thread)
+                             "cl-chip8-audio")
+                      (when audio-thread
+                        (error "A second audio worker thread emitted timing events."))
+                      (setf audio-thread current-thread
+                            audio-events (make-hash-table :test #'eq))
+                      audio-events)
+                     (t
+                      (error "Timing event came from an unregistered thread.")))))
+             (push (cons tick value) (gethash event events)))))
        (lambda (thread)
-         (when audio-thread
-           (error "An audio worker thread is already registered."))
-         (setf audio-thread thread
-               audio-events (make-hash-table :test #'eq))
+         (if audio-thread
+             (unless (eq audio-thread thread)
+               (error "A different audio worker thread is already registered."))
+             (setf audio-thread thread
+                   audio-events (make-hash-table :test #'eq)))
          thread)
        (lambda ()
          (let ((copy (make-hash-table :test #'eq)))
@@ -176,11 +184,12 @@
             (t "unavailable"))))
 
   (defun print-environment ()
-    (format t "~&ENV os=~A os-version=~A arch=~A nix-system=~A sbcl=~A pty-size=~A load-average=~A~%"
+    (format t "~&ENV os=~A os-version=~A arch=~A nix-system=~A sbcl=~A cpu-count=~A pty-size=~A load-average=~A~%"
             (software-type)
             (command-output-or-unavailable '("sw_vers" "-productVersion"))
             (machine-type) (nix-system-name)
             (lisp-implementation-version)
+            (command-output-or-unavailable '("sysctl" "-n" "hw.ncpu"))
             (command-output-or-unavailable '("sh" "-c" "stty size </dev/tty"))
             (command-output-or-unavailable '("sysctl" "-n" "vm.loadavg"))))
   (defun bench-gc-count ()
@@ -194,49 +203,46 @@
 
   (progn
     (defun run-tick-loop-with-wait-metrics
-        (mode state advance render stop stream record-event)
-      (if (eq mode :advance)
-          (let* ((sleep-symbol 'cl-tty-kit::*tick-loop-sleeper*)
-                 (spin-symbol 'cl-tty-kit::*tick-loop-spinner*)
-                 (sleep-function (symbol-value sleep-symbol))
-                 (spin-function (when (boundp spin-symbol)
-                                  (symbol-value spin-symbol)))
-                 (sleep-wrapper
-                  (lambda (seconds)
-                    (funcall record-event :sleep-request 0 seconds)
-                    (let ((started (monotonic-seconds)))
-                      (prog1 (funcall sleep-function seconds)
-                        (funcall record-event
-                                 :sleep-actual 0
-                                 (- (monotonic-seconds) started))))))
-                 (spin-wrapper
-                  (when spin-function
-                    (lambda (deadline)
-                      (let ((wall-start (monotonic-seconds))
-                            (cpu-start (get-internal-run-time)))
-                        (prog1 (funcall spin-function deadline)
-                          (funcall record-event
-                                   :spin-wall 0
-                                   (- (monotonic-seconds) wall-start))
-                          (funcall record-event
-                                   :spin-cpu 0
-                                   (/ (- (get-internal-run-time) cpu-start)
-                                      internal-time-units-per-second)))))))
-                 (symbols (if spin-function
-                              (list sleep-symbol spin-symbol)
-                            (list sleep-symbol)))
-                 (values (if spin-function
-                             (list sleep-wrapper spin-wrapper)
-                           (list sleep-wrapper))))
-            (progv symbols values
-              (cl-tty-kit:tick-loop-run-realtime
-               state advance render stop
-               :stream stream :interval +bench-interval+
-               :on-timing record-event)))
-        (cl-tty-kit:tick-loop-run-realtime
-         state advance render stop
-         :stream stream :interval +bench-interval+
-         :on-timing record-event)))
+    (mode state advance render stop stream record-event)
+      (declare (ignore mode))
+      (let* ((sleep-symbol 'cl-tty-kit::*tick-loop-sleeper*)
+             (spin-symbol 'cl-tty-kit::*tick-loop-spinner*)
+             (sleep-function (symbol-value sleep-symbol))
+             (spin-function (when (boundp spin-symbol)
+                              (symbol-value spin-symbol)))
+             (sleep-wrapper
+               (lambda (seconds)
+                 (funcall record-event :sleep-request 0 seconds)
+                 (let ((started (monotonic-seconds)))
+                   (prog1 (funcall sleep-function seconds)
+                     (let ((finished (monotonic-seconds)))
+                       (funcall record-event :main-sleep-wake-time 0 finished)
+                       (funcall record-event :sleep-actual 0 (- finished started)))))))
+             (spin-wrapper
+               (when spin-function
+                 (lambda (deadline)
+                   (let ((wall-start (monotonic-seconds))
+                         (cpu-start (get-internal-run-time)))
+                     (funcall record-event :main-spin-start 0 wall-start)
+                     (prog1 (funcall spin-function deadline)
+                       (let ((wall-finish (monotonic-seconds)))
+                         (funcall record-event :main-spin-end 0 wall-finish)
+                         (funcall record-event :spin-wall 0
+                                  (- wall-finish wall-start))
+                         (funcall record-event :spin-cpu 0
+                                  (/ (- (get-internal-run-time) cpu-start)
+                                     internal-time-units-per-second))))))))
+             (symbols (if spin-function
+                          (list sleep-symbol spin-symbol)
+                          (list sleep-symbol)))
+             (values (if spin-function
+                         (list sleep-wrapper spin-wrapper)
+                         (list sleep-wrapper))))
+        (progv symbols values
+          (cl-tty-kit:tick-loop-run-realtime
+           state advance render stop
+           :stream stream :interval +bench-interval+
+           :on-timing record-event))))
     (defun print-wait-report (events wall-elapsed)
       (let* ((requested (event-values events :sleep-request))
              (actual (event-values events :sleep-actual))
@@ -267,17 +273,82 @@
                 (if (and wall-elapsed (plusp wall-elapsed))
                     (format nil "~,3F" (* 100d0 (/ spin-cpu-total wall-elapsed)))
                     "NA"))))
-    (defun print-event-report (events &optional wall-elapsed)
-      (dolist (event '(:advance :render :write-string :finish-output
-                       :deadline-sleep :wake-overshoot :deadline-miss
-                       :frame-drop :display-lock-wait :display-lock-hold
-                       :pcm-block-gap))
-        (print-phase-metric event (gethash event events)))
-      (when (or (gethash :sleep-request events)
-                (gethash :sleep-actual events)
-                (gethash :spin-wall events)
-                (gethash :spin-cpu events))
-        (print-wait-report events wall-elapsed))))
+    (progn
+  (defun print-scheduler-wake-overlap (events)
+    (let ((audio-wake-times
+            (nreverse (event-values events :audio-sleep-wake-time)))
+          (audio-overshoots
+            (nreverse (event-values events :audio-sleep-wake-overshoot))))
+      (when audio-wake-times
+        (let* ((main-wake-times (event-values events :main-sleep-wake-time))
+               (spin-starts (sort (event-values events :main-spin-start) #'<))
+               (spin-ends (sort (event-values events :main-spin-end) #'<))
+               (overlap-overshoots '())
+               (other-overshoots '()))
+          (unless (= (length audio-wake-times) (length audio-overshoots))
+            (error "Audio sleep wake timestamps and overshoot samples differ."))
+          (unless (= (length spin-starts) (length spin-ends))
+            (error "Main-thread spin start and end samples differ."))
+          (let ((spin-intervals
+                  (loop for start in spin-starts
+                        for end in spin-ends
+                        do (unless (<= start end)
+                             (error "Main-thread spin interval is reversed."))
+                        collect (cons start end))))
+            (loop for wake-time in audio-wake-times
+                  for overshoot in audio-overshoots
+                  do (if (some (lambda (interval)
+                                 (<= (car interval) wake-time (cdr interval)))
+                               spin-intervals)
+                         (push overshoot overlap-overshoots)
+                         (push overshoot other-overshoots)))
+            (setf overlap-overshoots (nreverse overlap-overshoots)
+                  other-overshoots (nreverse other-overshoots))
+            (flet ((percentile-ms (samples percentile)
+                     (if samples
+                         (format nil "~,3F"
+                                 (* 1000 (percentile-value samples percentile)))
+                         "NA"))
+                   (maximum-ms (samples)
+                     (if samples
+                         (format nil "~,3F" (* 1000 (maximum samples)))
+                         "NA")))
+              (let ((coincident-main-wakes
+                      (count-if
+                       (lambda (main-wake)
+                         (some (lambda (audio-wake)
+                                 (<= (abs (- main-wake audio-wake)) 0.001d0))
+                               audio-wake-times))
+                       main-wake-times)))
+                (format t "~&SCHEDULER-WAKE main-sleep-wakes=~D audio-sleep-wakes=~D main-wakes-with-audio-within-1ms=~D audio-wakes-during-main-spin=~D/~D (~,1F%) audio-overshoot-ms-during-spin p50=~A p95=~A max=~A outside-spin p50=~A p95=~A max=~A~%"
+                        (length main-wake-times)
+                        (length audio-wake-times)
+                        coincident-main-wakes
+                        (length overlap-overshoots)
+                        (length audio-wake-times)
+                        (* 100d0 (/ (length overlap-overshoots)
+                                    (length audio-wake-times)))
+                        (percentile-ms overlap-overshoots 0.50d0)
+                        (percentile-ms overlap-overshoots 0.95d0)
+                        (maximum-ms overlap-overshoots)
+                        (percentile-ms other-overshoots 0.50d0)
+                        (percentile-ms other-overshoots 0.95d0)
+                        (maximum-ms other-overshoots))))))))
+
+  (defun print-event-report (events &optional wall-elapsed)
+    (dolist (event '(:advance :render :write-string :finish-output
+                     :deadline-sleep :wake-overshoot :spin-window
+                     :sleep-wake-overshoot :audio-sleep-request
+                     :audio-sleep-actual :audio-sleep-wake-overshoot
+                     :deadline-miss :frame-drop :display-lock-wait
+                     :display-lock-hold :pcm-block-gap))
+      (print-phase-metric event (gethash event events)))
+    (when (or (gethash :sleep-request events)
+              (gethash :sleep-actual events)
+              (gethash :spin-wall events)
+              (gethash :spin-cpu events))
+      (print-wait-report events wall-elapsed))
+    (print-scheduler-wake-overlap events)))))
 
   (progn
     (defun gap-interruption-times (measured-gaps run-start run-finish)
@@ -408,38 +479,46 @@
                     (run-loop app stream mode target-ticks record-event)))
             (values result :tty nil)))))
 
-  (defun make-trial-audio-writer (record-only record-pcm-completion)
-    (let ((deadline nil))
-      (lambda (stream samples)
-        (unless (= (length samples) cl-chip8::+audio-frames-per-write+)
-          (error "Invalid PCM block size: ~D." (length samples)))
-        (let ((written (cl-audio-kit:write-frames stream samples)))
-          (unless (= written cl-chip8::+audio-frames-per-write+)
-            (error "Incomplete PCM block write: ~D of ~D."
-                   written cl-chip8::+audio-frames-per-write+))
-          (funcall record-pcm-completion (monotonic-seconds) samples)
-          (when record-only
-            (setf deadline
-                  (+ (or deadline (monotonic-seconds))
-                     (/ written cl-chip8::+audio-sample-rate+)))
-            (loop for remaining = (- deadline (monotonic-seconds))
-                  while (plusp remaining)
-                  do (sleep remaining)))
-          written))))
+  (defun make-trial-audio-writer (record-only record-event record-pcm-completion)
+      (let ((deadline nil))
+        (lambda (stream samples)
+          (unless (= (length samples) cl-chip8::+audio-frames-per-write+)
+            (error "Invalid PCM block size: ~D." (length samples)))
+          (let ((written (cl-audio-kit:write-frames stream samples)))
+            (unless (= written cl-chip8::+audio-frames-per-write+)
+              (error "Incomplete PCM block write: ~D of ~D."
+                     written cl-chip8::+audio-frames-per-write+))
+            (funcall record-pcm-completion (monotonic-seconds) samples)
+            (when record-only
+              (setf deadline
+                    (+ (or deadline (monotonic-seconds))
+                       (/ written cl-chip8::+audio-sample-rate+)))
+              (loop for sleep-start = (monotonic-seconds)
+                    for remaining = (- deadline sleep-start)
+                    while (plusp remaining)
+                    do (sleep remaining)
+                       (let* ((sleep-finish (monotonic-seconds))
+                              (actual (- sleep-finish sleep-start)))
+                         (funcall record-event :audio-sleep-request 0 remaining)
+                         (funcall record-event :audio-sleep-actual 0 actual)
+                         (funcall record-event :audio-sleep-wake-time 0 sleep-finish)
+                         (funcall record-event :audio-sleep-wake-overshoot 0
+                                  (max 0 (- actual remaining))))))
+            written))))
 
-  (defun make-trial-audio-output (audio-stream record-only
-                                  record-pcm-completion
-                                  register-audio-thread app)
-    (let ((audio-output
-            (cl-chip8::start-chip8-audio-output
-             audio-stream
-             (cl-chip8::chip8-app-machine app)
-             :writer
-             (make-trial-audio-writer record-only
-                                      record-pcm-completion))))
-      (funcall register-audio-thread
-               (cl-chip8::chip8-audio-output-thread audio-output))
-      audio-output))
+  (defun make-trial-audio-output (audio-stream record-only record-event
+                                    record-pcm-completion
+                                    register-audio-thread app)
+      (let ((audio-output
+              (cl-chip8::start-chip8-audio-output
+               audio-stream
+               (cl-chip8::chip8-app-machine app)
+               :writer
+               (make-trial-audio-writer record-only record-event
+                                        record-pcm-completion))))
+        (funcall register-audio-thread
+                 (cl-chip8::chip8-audio-output-thread audio-output))
+        audio-output))
 
     (defun install-trial-lock-timing-hook (record-event lock-mode)
       (let ((prior-hook cl-chip8::*display-audio-lock-timing-hook*))
@@ -555,7 +634,7 @@
                               :channels 1 :sample-format :float32)))
                    (setf audio-output
                          (make-trial-audio-output
-                          audio-stream record-only
+                          audio-stream record-only record-event
                           (lambda (completed-at samples)
                             (let ((nonzero
                                     (count-if
