@@ -330,7 +330,105 @@
                     (run-loop app stream mode target-ticks record-event)))
             (values result :tty nil)))))
 
-  (defun run-trial (label mode seconds)
+  (defun make-trial-audio-writer (record-only record-pcm-completion)
+    (let ((deadline nil))
+      (lambda (stream samples)
+        (unless (= (length samples) cl-chip8::+audio-frames-per-write+)
+          (error "Invalid PCM block size: ~D." (length samples)))
+        (let ((written (cl-audio-kit:write-frames stream samples)))
+          (unless (= written cl-chip8::+audio-frames-per-write+)
+            (error "Incomplete PCM block write: ~D of ~D."
+                   written cl-chip8::+audio-frames-per-write+))
+          (funcall record-pcm-completion (monotonic-seconds) samples)
+          (when record-only
+            (setf deadline
+                  (+ (or deadline (monotonic-seconds))
+                     (/ written cl-chip8::+audio-sample-rate+)))
+            (loop for remaining = (- deadline (monotonic-seconds))
+                  while (plusp remaining)
+                  do (sleep remaining)))
+          written))))
+
+  (defun make-trial-audio-output (audio-stream record-only
+                                  record-pcm-completion
+                                  register-audio-thread app)
+    (let ((audio-output
+            (cl-chip8::start-chip8-audio-output
+             audio-stream
+             (cl-chip8::chip8-app-machine app)
+             :writer
+             (make-trial-audio-writer record-only
+                                      record-pcm-completion))))
+      (funcall register-audio-thread
+               (cl-chip8::chip8-audio-output-thread audio-output))
+      audio-output))
+
+    (defun install-trial-lock-timing-hook (record-event lock-mode)
+      (let ((prior-hook cl-chip8::*display-audio-lock-timing-hook*))
+        (ecase lock-mode
+          (:off
+           (setf cl-chip8::*display-audio-lock-timing-hook* nil)
+           (values prior-hook nil))
+          (:count
+           (setf cl-chip8::*display-audio-lock-acquisition-count* 0
+                 cl-chip8::*display-audio-lock-timing-hook* :count-only)
+           (values prior-hook nil))
+          (:timing
+           (let ((active-p t))
+             (setf cl-chip8::*display-audio-lock-timing-hook*
+                   (lambda (kind value)
+                     (when active-p
+                       (funcall record-event
+                                (ecase kind
+                                  (:wait :display-lock-wait)
+                                  (:hold :display-lock-hold))
+                                0 value))))
+             (values prior-hook (lambda () (setf active-p nil))))))))
+
+  (defun restore-trial-lock-timing-hook (prior-hook deactivate-hook)
+    (when deactivate-hook
+      (funcall deactivate-hook))
+    (setf cl-chip8::*display-audio-lock-timing-hook* prior-hook))
+
+  (defun aggregate-trial-pcm (pcm-completions pcm-nonzero-completions
+                              run-start run-finish record-event)
+    (let* ((measured-gaps
+             (loop for previous in pcm-completions
+                   for next in (cdr pcm-completions)
+                   for gap = (- next previous)
+                   when (and (< previous run-finish) (> next run-start))
+                     collect (cons next gap)))
+           (pcm-gaps (mapcar #'cdr measured-gaps))
+           (measured-pcm-blocks
+             (count-if (lambda (time)
+                         (and (>= time run-start) (<= time run-finish)))
+                       pcm-completions))
+           (measured-nonzero-blocks
+             (count-if (lambda (time)
+                         (and (>= time run-start) (<= time run-finish)))
+                       pcm-nonzero-completions))
+           (interruption-times
+             (gap-interruption-times measured-gaps run-start run-finish)))
+      (dolist (gap pcm-gaps)
+        (funcall record-event :pcm-block-gap 0 gap))
+      (values pcm-gaps interruption-times measured-pcm-blocks
+              measured-nonzero-blocks)))
+
+  (defun trial-target-met-p (mode result seconds misses dropped-slots
+                             measured-pcm-blocks run-start run-finish
+                             interruption-times)
+    (and (member mode '(:recording :hardware))
+         (>= (getf result :tick-rate) 60d0)
+         (>= (getf result :wall-rate) 60000d0)
+         (>= (getf result :wall-elapsed) seconds)
+         (zerop misses)
+         (and (zerop dropped-slots)
+              (>= measured-pcm-blocks
+                  (minimum-pcm-block-count run-start run-finish)))
+         (sliding-interruption-limit-met-p
+          (sort (copy-list interruption-times) #'<))))
+
+  (defun run-trial (label mode seconds lock-mode)
     (let ((trial-start (monotonic-seconds))
           (trial nil))
       (unless (plusp (length (make-bench-rom)))
@@ -348,13 +446,14 @@
                (recorded-nonzero-samples 0)
                (pcm-completions '()) (pcm-nonzero-completions '())
                (pcm-gaps '()) (interruption-times '())
+               (measured-pcm-blocks 0) (measured-nonzero-blocks 0)
                (pcm-frames 0) (nonzero-pcm-samples 0)
                (audio-worker-failure nil) (result nil) (sink nil) (captured nil)
                (record-only (eq mode :recording))
                (backend (if record-only "recording-device"
                             (if (eq mode :hardware) "default-output" "none")))
                (prior-lock-hook cl-chip8::*display-audio-lock-timing-hook*)
-               (lock-measurement-active-p t))
+               (deactivate-lock-hook nil))
           (multiple-value-bind (new-recorder new-register-thread event-snapshot)
               (make-event-recorder)
             (setf record-event new-recorder
@@ -377,55 +476,24 @@
                               :sample-rate cl-chip8::+audio-sample-rate+
                               :channels 1 :sample-format :float32)))
                    (setf audio-output
-                         (cl-chip8::start-chip8-audio-output
-                          audio-stream
-                          (cl-chip8::chip8-app-machine app)
-                          :writer
-                          (let ((deadline nil))
-                            (lambda (stream samples)
-                              (unless (= (length samples)
-                                         cl-chip8::+audio-frames-per-write+)
-                                (error "Invalid PCM block size: ~D."
-                                       (length samples)))
-                              (let ((written
-                                      (cl-audio-kit:write-frames stream samples)))
-                                (unless (= written
-                                           cl-chip8::+audio-frames-per-write+)
-                                  (error "Incomplete PCM block write: ~D of ~D."
-                                         written
-                                         cl-chip8::+audio-frames-per-write+))
-                                (let* ((completed-at (monotonic-seconds))
-                                       (nonzero
-                                         (count-if
-                                          (lambda (sample)
-                                            (not (zerop sample)))
-                                          samples)))
-                                  (incf nonzero-pcm-samples nonzero)
-                                  (push completed-at pcm-completions)
-                                  (when (plusp nonzero)
-                                    (push completed-at
-                                          pcm-nonzero-completions)))
-                                (when record-only
-                                  (setf deadline
-                                        (+ (or deadline (monotonic-seconds))
-                                           (/ written
-                                              cl-chip8::+audio-sample-rate+)))
-                                  (loop for remaining =
-                                          (- deadline (monotonic-seconds))
-                                        while (plusp remaining)
-                                        do (sleep remaining)))
-                                written)))))
-                   (funcall register-audio-thread (cl-chip8::chip8-audio-output-thread audio-output))
+                         (make-trial-audio-output
+                          audio-stream record-only
+                          (lambda (completed-at samples)
+                            (let ((nonzero
+                                    (count-if
+                                     (lambda (sample)
+                                       (not (zerop sample)))
+                                     samples)))
+                              (incf nonzero-pcm-samples nonzero)
+                              (push completed-at pcm-completions)
+                              (when (plusp nonzero)
+                                (push completed-at
+                                      pcm-nonzero-completions))))
+                          register-audio-thread app))
                    (setf audio-stream nil
                          (cl-chip8::chip8-app-audio-output app) audio-output))
-                 (setf cl-chip8::*display-audio-lock-timing-hook*
-                       (lambda (kind value)
-                         (when lock-measurement-active-p
-                           (funcall record-event
-                                    (ecase kind
-                                      (:wait :display-lock-wait)
-                                      (:hold :display-lock-hold))
-                                    0 value))))
+                 (multiple-value-setq (prior-lock-hook deactivate-lock-hook)
+                   (install-trial-lock-timing-hook record-event lock-mode))
                  (progn
                   (format t "~&TRIAL-LOAD label=~A phase=before value=~A~%"
                           label
@@ -435,8 +503,8 @@
                   (unwind-protect
                       (multiple-value-setq (result sink captured)
                         (run-output app mode ticks record-event))
-                    (setf lock-measurement-active-p nil
-                          cl-chip8::*display-audio-lock-timing-hook* prior-lock-hook)
+                    (restore-trial-lock-timing-hook
+                     prior-lock-hook deactivate-lock-hook)
                     (format t "~&TRIAL-LOAD label=~A phase=after value=~A~%"
                             label
                             (command-output-or-unavailable
@@ -479,42 +547,22 @@
                        pcm-nonzero-completions
                        (nreverse pcm-nonzero-completions))
                  (let* ((run-start (getf result :run-start))
-                        (run-finish (getf result :run-finish))
-                        (measured-gaps
-                          (loop for previous in pcm-completions
-                                for next in (cdr pcm-completions)
-                                for gap = (- next previous)
-                                when (and (< previous run-finish) (> next run-start))
-                                  collect (cons next gap)))
-                        (pcm-gaps (mapcar #'cdr measured-gaps))
-                        (measured-pcm-blocks
-                          (count-if (lambda (time)
-                                      (and (>= time run-start)
-                                           (<= time run-finish)))
-                                    pcm-completions))
-                        (measured-nonzero-blocks
-                          (count-if (lambda (time)
-                                      (and (>= time run-start)
-                                           (<= time run-finish)))
-                                    pcm-nonzero-completions)))
-                   (setf interruption-times
-                         (gap-interruption-times measured-gaps
-                                                 run-start
-                                                 run-finish))
-                   (dolist (gap pcm-gaps)
-                     (funcall record-event :pcm-block-gap 0 gap))
+                        (run-finish (getf result :run-finish)))
+                   (multiple-value-setq
+                       (pcm-gaps interruption-times measured-pcm-blocks
+                        measured-nonzero-blocks)
+                     (aggregate-trial-pcm pcm-completions
+                                          pcm-nonzero-completions
+                                          run-start run-finish record-event))
                    (setf snapshot-events (funcall snapshot-events))
                    (required-event-count snapshot-events :advance ticks)
                    (required-event-count snapshot-events :render ticks)
                    (required-event-count snapshot-events :deadline-sleep ticks)
                    (required-event-count snapshot-events :wake-overshoot ticks)
-                   (unless (and (plusp (length
-                                       (gethash :display-lock-wait
-                                                snapshot-events)))
-                                (plusp (length
-                                       (gethash :display-lock-hold
-                                                snapshot-events))))
-                     (error "Display/audio lock timing measurements are missing."))
+                   (when (eq lock-mode :timing)
+                     (unless (and (plusp (length (gethash :display-lock-wait snapshot-events)))
+                                  (plusp (length (gethash :display-lock-hold snapshot-events))))
+                       (error "Display/audio lock timing measurements are missing.")))
                    (when (member mode '(:render :tty :recording :hardware))
                      (required-event-count snapshot-events :write-string
                                            (getf result :changed-frames))
@@ -524,10 +572,10 @@
                      (error "Audio worker failed: ~A" audio-worker-failure))
                    (when (member mode '(:recording :hardware))
                      (unless (and (plusp pcm-frames)
-                                (plusp measured-nonzero-blocks)
-                                (>= measured-pcm-blocks
-                                    (minimum-pcm-block-count run-start run-finish)))
-                     (error "Selected audio workload produced too few PCM blocks."))
+                                  (plusp measured-nonzero-blocks)
+                                  (>= measured-pcm-blocks
+                                      (minimum-pcm-block-count run-start run-finish)))
+                       (error "Selected audio workload produced too few PCM blocks."))
                      (when record-only
                        (unless (and (plusp recorded-blocks)
                                     (plusp recorded-frames)
@@ -541,52 +589,36 @@
                             (reduce #'+
                                     (event-values snapshot-events :frame-drop)
                                     :initial-value 0))
-                          (target-mode
-                            (member mode '(:recording :hardware)))
                           (target-met
-                            (and target-mode
-                                 (>= (getf result :tick-rate) 60d0)
-                                 (>= (getf result :wall-rate) 60000d0)
-                                 (>= (getf result :wall-elapsed) seconds)
-                                 (zerop misses)
-                                 (and (zerop dropped-slots)
-                                      (>= measured-pcm-blocks
-                                          (minimum-pcm-block-count run-start run-finish)))
-                                 (sliding-interruption-limit-met-p
-                                  (sort (copy-list interruption-times) #'<)))))
+                            (trial-target-met-p
+                             mode result seconds misses dropped-slots
+                             measured-pcm-blocks run-start run-finish
+                             interruption-times)))
                      (setf trial
-                           (list :label label :mode mode :seconds seconds
-                                 :ticks ticks :result result :sink sink
-                                 :captured captured :backend backend
-                                 :pcm-frames pcm-frames
-                                 :pcm-blocks measured-pcm-blocks
-                                 :pcm-gaps pcm-gaps
+                           (list :label label :mode mode :lock-mode lock-mode
+                                 :lock-count (when (eq lock-mode :count)
+                                               cl-chip8::*display-audio-lock-acquisition-count*)
+                                 :seconds seconds :ticks ticks :result result :sink sink
+                                 :captured captured :backend backend :pcm-frames pcm-frames
+                                 :pcm-blocks measured-pcm-blocks :pcm-gaps pcm-gaps
                                  :audio-nonzero-blocks measured-nonzero-blocks
-                                 :audio-interruptions
-                                 (length interruption-times)
-                                 :underflow "UNAVAILABLE"
-                                 :recorded-blocks recorded-blocks
+                                 :audio-interruptions (length interruption-times)
+                                 :underflow "UNAVAILABLE" :recorded-blocks recorded-blocks
                                  :recorded-frames recorded-frames
                                  :nonzero-pcm-samples nonzero-pcm-samples
-                                 :recorded-nonzero-samples
-                                 recorded-nonzero-samples
-                                 :audio-worker-failure audio-worker-failure
-                                 :trial-total nil
-                                 :gc-count (getf result :gc-count)
-                                 :gc-time (getf result :gc-time)
-                                 :events snapshot-events
-                                 :misses misses
-                                 :dropped-slots dropped-slots
-                                 :target-met target-met
-                                 :queue-metrics "NOT-PRESENT"))))
+                                 :recorded-nonzero-samples recorded-nonzero-samples
+                                 :audio-worker-failure audio-worker-failure :trial-total nil
+                                 :gc-count (getf result :gc-count) :gc-time (getf result :gc-time)
+                                 :events snapshot-events :misses misses :dropped-slots dropped-slots
+                                 :target-met target-met :queue-metrics "NOT-PRESENT"))))
              (unwind-protect
                   (when audio-output
                     (cl-chip8::stop-chip8-audio-output! audio-output))
                (unwind-protect
                     (when audio-stream
                       (cl-audio-kit:close-output-stream audio-stream))
-                 (setf lock-measurement-active-p nil
-                       cl-chip8::*display-audio-lock-timing-hook* prior-lock-hook)))))))
+                 (restore-trial-lock-timing-hook
+                  prior-lock-hook deactivate-lock-hook)))))))
       (setf (getf trial :trial-total) (- (monotonic-seconds) trial-start))
       trial))
   (defun print-trial (trial)
@@ -601,12 +633,12 @@
               (getf trial :trial-total) (getf trial :gc-count)
               (getf trial :gc-time) (getf trial :misses)
               (getf trial :dropped-slots) (format nil "~D/~A"
-                      (getf trial :pcm-blocks)
-                      (if (member (getf trial :mode)
-                                  (quote (:recording :hardware)))
-                          (minimum-pcm-block-count
-                           0 (getf result :wall-elapsed))
-                          "NA"))
+                                                  (getf trial :pcm-blocks)
+                                                  (if (member (getf trial :mode)
+                                                              (quote (:recording :hardware)))
+                                                      (minimum-pcm-block-count
+                                                       0 (getf result :wall-elapsed))
+                                                    "NA"))
               (getf trial :pcm-frames) (length (getf trial :pcm-gaps))
               (getf trial :audio-nonzero-blocks)
               (getf trial :audio-interruptions) (getf trial :backend)
@@ -618,27 +650,46 @@
                     ((bench-report-only-p) "REPORT-ONLY")
                     (t "NOT-MET")))
       (print-event-report (getf trial :events))
-      (format t "~&PCM gaps p50=~A p95=~A p99=~A max=~A~%"
-              (if (getf trial :pcm-gaps)
-                  (percentile-value (getf trial :pcm-gaps) 0.50d0) "NA")
-              (if (getf trial :pcm-gaps)
-                  (percentile-value (getf trial :pcm-gaps) 0.95d0) "NA")
-              (if (getf trial :pcm-gaps)
-                  (percentile-value (getf trial :pcm-gaps) 0.99d0) "NA")
-              (if (getf trial :pcm-gaps)
-                  (maximum (getf trial :pcm-gaps)) "NA"))))
+      (progn
+        (format t "~&PCM gaps p50=~A p95=~A p99=~A max=~A~%"
+                (if (getf trial :pcm-gaps)
+                    (percentile-value (getf trial :pcm-gaps) 0.50d0) "NA")
+                (if (getf trial :pcm-gaps)
+                    (percentile-value (getf trial :pcm-gaps) 0.95d0) "NA")
+                (if (getf trial :pcm-gaps)
+                    (percentile-value (getf trial :pcm-gaps) 0.99d0) "NA")
+                (if (getf trial :pcm-gaps)
+                    (maximum (getf trial :pcm-gaps)) "NA"))
+        (when (numberp (getf trial :lock-count))
+          (let ((count (getf trial :lock-count))
+                (ticks (getf result :ticks)))
+            (format t "~&LOCK-COUNT mode=~A total=~D ticks=~D per-tick=~,3F~%"
+                    (string-upcase (symbol-name (getf trial :lock-mode)))
+                    count ticks (/ count ticks)))))))
   (defun main ()
     (let* ((mode (bench-mode))
+           (lock-mode
+            (let ((value (string-downcase
+                          (or (host-kit:getenv "CL_CHIP8_BENCH_LOCK_MODE")
+                              "timing"))))
+              (cond ((string= value "off") :off)
+                    ((string= value "timing") :timing)
+                    ((string= value "count") :count)
+                    (t (error "Unsupported lock hook mode: ~A" value)))))
            (seconds (bench-integer-env "CL_CHIP8_BENCH_SECONDS" 10 10))
            (runs (bench-integer-env "CL_CHIP8_BENCH_RUNS" 3 2))
            (warmups (bench-integer-env "CL_CHIP8_BENCH_WARMUP" 1 0))
            (report-only (bench-report-only-p))
            (results '()))
-      (when (and (not report-only)
-                 (not (member mode '(:recording :hardware))))
-        (error "Qualification requires recording or hardware mode."))
-      (format t "~&P5 FR-014 mode=~A seconds=~D runs=~D warmups=~D report-only=~A sample-rate=~D block-frames=~D block-interval=~,3Fms interruption-gap>=~,3Fms interruption-window=gap-overlap-and-crossing-before-end timestamp=clamped-at-start basis=2*~D/~D s one-missed-block-allowance=1-block~%"
-              (string-upcase (symbol-name mode)) seconds runs warmups
+      (when (or (and (not report-only)
+                     (not (member mode '(:recording :hardware))))
+                (and (eq lock-mode :count)
+                     (not (eq mode :advance))))
+        (error "Qualification requires recording or hardware mode; count mode requires advance mode."))
+      (format t "~&P5 FR-014 mode=~A lock-hook=~A seconds=~D runs=~D warmups=~D report-only=~A sample-rate=~D block-frames=~D block-interval=~,3Fms interruption-gap>=~,3Fms interruption-window=gap-overlap-and-crossing-before-end timestamp=clamped-at-start basis=2*~D/~D s one-missed-block-allowance=1-block~%"
+              (string-upcase (symbol-name mode))
+              (string-upcase (symbol-name lock-mode))
+              seconds runs warmups
               (if report-only "YES" "NO")
               cl-chip8::+audio-sample-rate+
               cl-chip8::+audio-frames-per-write+
@@ -650,10 +701,9 @@
               cl-chip8::+audio-sample-rate+)
       (print-environment)
       (dotimes (index warmups)
-        (run-trial (format nil "WARMUP-~D" (1+ index)) mode seconds))
+        (run-trial (format nil "WARMUP-~D" (1+ index)) mode seconds lock-mode))
       (dotimes (index runs)
-        (let ((trial (run-trial (format nil "RUN-~D" (1+ index))
-                                mode seconds)))
+        (let ((trial (run-trial (format nil "RUN-~D" (1+ index)) mode seconds lock-mode)))
           (push trial results)
           (print-trial trial)))
       (setf results (nreverse results))
