@@ -19,13 +19,14 @@ needed.
 | `schip-legacy` | 4 KiB | Low and high | CHIP-8, SUPER-CHIP large | 30 instructions per frame |
 | `xo-chip` | 64 KiB | Low and high | CHIP-8, SUPER-CHIP large | 100 instructions per frame |
 
-Any platform can be constructed with an explicit memory size of 4 KiB or 64
-KiB. All machines use a 128 by 64 physical two-plane display. Low resolution
-uses 64 by 32 logical pixels; high resolution uses 128 by 64. The platform
-profile ticks are converted to CPU instructions per second by multiplying by
-60. Delay and sound timers always run at 60 Hz. An explicit CLI or TOML clock
-overrides these defaults; see the [Terminal guide](../guide/terminal.md) for
-the complete clock and configuration precedence.
+Any platform accepts an explicit `:memory-size` of 4 KiB or 64 KiB in
+`make-chip8-machine`; this overrides that platform's default. All machines use
+a 128 by 64 physical two-plane display. Low resolution uses 64 by 32 logical
+pixels; high resolution uses 128 by 64. The platform profile ticks are
+converted to CPU instructions per second by multiplying by 60. Delay and sound
+timers always run at 60 Hz. An explicit CLI or TOML clock overrides these
+defaults; see the [Terminal guide](../guide/terminal.md) for the complete clock
+and configuration precedence.
 
 ## Quirk profiles
 
@@ -86,10 +87,20 @@ tickrate, and pixel colors. Recognized upstream platforms map as follows:
 
 Records identifying only `hybridVIP`, `megachip8`, or `chip8x` are known but
 unsupported. cl-chip8 signals `chip8-unsupported-platform` before starting the
-terminal session for such a matched ROM. Explicit CLI `--platform` or
-`--quirks` bypasses this check so a user can choose how to run the ROM. TOML
-platform or quirks settings do not bypass it. An unmatched ROM uses the
-ordinary defaults.
+terminal session for such a matched ROM. CLI `--platform` or `--quirks` bypasses
+this check. TOML platform or quirks settings do not bypass it. `--quirks`
+selects instruction behavior, not a platform; with only `--quirks` supplied,
+platform selection still follows the rules below.
+
+Platform selection follows CLI `--platform`, TOML `chip8.platform`, the first
+supported platform from a matched ROM database record, size inference for an
+unmatched ROM, an embedding application's supplied default, then `modern`.
+Size inference applies
+only when neither CLI nor TOML sets a platform and the ROM is longer than the
+4 KiB machine's available ROM space (3,584 bytes). It selects `xo-chip`; the
+startup log's `platform_source` field is set to `"rom-size"`. An unmatched ROM
+of 3,584 bytes or less uses an embedding application's supplied default, then
+`modern`.
 
 ## Conformance checks
 

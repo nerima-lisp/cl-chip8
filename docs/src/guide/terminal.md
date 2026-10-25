@@ -22,16 +22,25 @@ capabilities, while quirks selects instruction behavior. See the
 
 For machine platform selection, values are resolved in this order: CLI
 `--platform`, TOML `chip8.platform`, the first supported platform identified
-for the ROM by the bundled ROM database, a supplied application default, then
-`modern`. The quirk profile follows CLI `--quirks`, TOML `chip8.quirks`,
-application defaults, then the selected platform's default. For a database
-record, its profile-specific quirk overrides are applied before individual
-TOML settings.
+for the ROM by the bundled ROM database, `xo-chip` inferred for an unmatched
+ROM longer than the 4 KiB machine's available ROM space (3,584 bytes), an
+embedding application's supplied default platform, then `modern`. Size
+inference applies only when neither CLI nor TOML sets a platform. When it
+selects the platform, the startup log's `platform_source` field is set to
+`"rom-size"`. Unmatched ROMs of 3,584 bytes or less use the embedding
+application's supplied default platform or `modern`.
+
+The base quirk profile follows CLI `--quirks`, TOML `chip8.quirks`, an
+embedding application's supplied default profile, then the selected platform's
+default. For a matched ROM, database quirk overrides for the selected platform
+are applied to that profile, followed by individual TOML quirk keys. Those
+TOML keys can override profile and database values.
 
 If a recognized ROM lists only upstream platforms that cl-chip8 does not
 implement, startup signals `chip8-unsupported-platform` before opening the
-terminal. An explicit CLI `--platform` or `--quirks` bypasses that check. TOML
-settings do not bypass it.
+terminal. CLI `--platform` selects a platform and bypasses that check. CLI
+`--quirks` also bypasses the check but does not select a platform; platform
+selection still follows the priority above. TOML settings do not bypass it.
 
 `--clock-hz` controls CPU instructions per second. The value is selected from
 CLI, TOML `chip8.clock_hz`, a ROM-specific database tickrate multiplied by 60,
@@ -52,7 +61,8 @@ Audio synthesis uses the selected platform's default sound. Platforms other
 than XO-CHIP use the built-in 500 Hz square wave until the ROM executes `F002`
 or `FX3A`; then the machine's XO-CHIP pattern and pitch control its sound, even
 if ROM database lookup selected another platform. Pass `--platform xo-chip`
-when an unrecognized ROM also needs XO-CHIP memory and platform defaults.
+when an unmatched ROM of 3,584 bytes or less also needs XO-CHIP memory and
+platform defaults.
 
 | `--audio` value | Behavior |
 |---|---|
@@ -82,8 +92,9 @@ cl-chip8 path/to/7-beep.ch8 --audio pcm
 Listen for the SOS sequence. The ROM's speaker icon and the upper-left
 reverse-video border cell indicate ROM and sound-timer activity, but neither
 confirms that sound reached the output device. If the tone test succeeds and
-the indicators appear but the SOS is silent, report it as an emulator audio
-output issue with the ROM and command used.
+the indicators appear but the SOS is silent, [report an emulator audio-output
+issue](https://github.com/nerima-lisp/cl-chip8/issues) with the ROM and command
+used.
 
 ## Exit codes
 
@@ -137,8 +148,7 @@ minimum size fits:
 
 Below the minimum for the current resolution, the application displays a
 terminal-size message and pauses instruction stepping. Execution resumes when
-the terminal is resized to a supported size. The upper-left border cell
-indicates an active sound timer in every audio mode.
+the terminal is resized to a supported size.
 
 ## Configuration
 

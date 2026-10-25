@@ -132,6 +132,61 @@ signals none instead."
               (cl-chip8:chip8-config-platform defaults-only))
              (cl-chip8:chip8-config-clock-hz defaults-only))
        :to-equal '(:xo-chip :xo-chip 333 :schip :schip 420 :cosmac-vip 900))))
+  (it "infers XO-CHIP by ROM size after higher-priority platform sources"
+    (let* ((threshold (- cl-chip8::+memory-size+
+                         cl-chip8::+rom-load-address+))
+           (rom-size (1+ threshold))
+           (at-threshold
+             (cl-chip8:make-chip8-config-from-sources
+              :defaults '(:platform "cosmac-vip")
+              :rom-size threshold))
+           (inferred
+             (cl-chip8:make-chip8-config-from-sources
+              :defaults '(:platform "cosmac-vip")
+              :rom-size rom-size))
+           (cli-config
+             (cl-chip8:make-chip8-config-from-sources
+              :defaults '(:platform "cosmac-vip")
+              :cli '(:platform "modern")
+              :rom-size rom-size))
+           (db-config
+             (cl-chip8:make-chip8-config-from-sources
+              :defaults '(:platform "cosmac-vip")
+              :rom-record '(:platforms (:modern-chip8))
+              :rom-size rom-size)))
+      (expect threshold :to-be 3584)
+      (expect
+       (list (cl-chip8:chip8-platform-name
+              (cl-chip8:chip8-config-platform at-threshold))
+             (cl-chip8:chip8-config-platform-source at-threshold))
+       :to-equal '(:cosmac-vip "defaults"))
+      (expect
+       (list (cl-chip8:chip8-platform-name
+              (cl-chip8:chip8-config-platform inferred))
+             (cl-chip8:chip8-config-platform-source inferred)
+             (cl-chip8:chip8-config-clock-hz inferred))
+       :to-equal '(:xo-chip "rom-size" 6000))
+      (expect
+       (list (cl-chip8:chip8-platform-name
+              (cl-chip8:chip8-config-platform cli-config))
+             (cl-chip8:chip8-config-platform-source cli-config))
+       :to-equal '(:modern "cli"))
+      (expect
+       (list (cl-chip8:chip8-platform-name
+              (cl-chip8:chip8-config-platform db-config))
+             (cl-chip8:chip8-config-platform-source db-config))
+       :to-equal '(:modern "db"))
+      (%with-toml-file (path "[chip8]~%platform = ~S" "schip")
+        (let ((toml-config
+                (cl-chip8:make-chip8-config-from-sources
+                 :defaults '(:platform "cosmac-vip")
+                 :toml-path path
+                 :rom-size rom-size)))
+          (expect
+           (list (cl-chip8:chip8-platform-name
+                  (cl-chip8:chip8-config-platform toml-config))
+                 (cl-chip8:chip8-config-platform-source toml-config))
+           :to-equal '(:schip "toml"))))))
   (it "resolves clock precedence and platform tickrates"
     (expect
      (list (cl-chip8:resolve-chip8-clock-hz

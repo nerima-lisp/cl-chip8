@@ -49,7 +49,8 @@ enter its terminal session."
              (rom-record (find-rom-record rom-sha1))
              (config (make-chip8-config-from-sources
                       :toml-path config-path :cli cli
-                      :rom-record rom-record :rom-sha1 rom-sha1)))
+                      :rom-record rom-record :rom-sha1 rom-sha1
+                      :rom-size (length rom-bytes))))
         (let ((logger (make-chip8-logger :path (chip8-config-log-path config))))
           (unwind-protect
                (let ((metrics (make-chip8-metrics)))

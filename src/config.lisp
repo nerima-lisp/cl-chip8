@@ -279,7 +279,7 @@
 
 (defun merge-chip8-config (&key defaults toml cli source-name
                                   db-rom-tickrate db-platform-tickrate
-                                  rom-record rom-sha1)
+                                  rom-record rom-sha1 rom-size)
   (%validate-keys defaults (quote ("rom" "clock_hz" "quirks" "platform"))
                   "defaults" nil)
   (%validate-keys cli (quote ("rom" "clock_hz" "quirks" "platform" "log"
@@ -321,6 +321,12 @@
            (cond (cli-platform-p :cli)
                  (toml-platform-p :toml)
                  (db-supported :db)
+                 ((and (not cli-platform-p)
+                       (not toml-platform-p)
+                       (null rom-record)
+                       rom-size
+                       (> rom-size (- +memory-size+ +rom-load-address+)))
+                  :rom-size)
                  (defaults-platform-p :defaults)
                  (t :default)))
          (platform-value
@@ -328,6 +334,7 @@
                  (toml-platform-p toml-platform)
                  (db-supported
                   (string-downcase (symbol-name (third db-supported))))
+                 ((eq platform-source :rom-size) "xo-chip")
                  (defaults-platform-p defaults-platform)
                  (t "modern"))))
     (when (and unsupported (not unsupported-bypass))
@@ -370,7 +377,7 @@
              (or (find-chip8-platform platform-value)
                  (%config-error "unknown platform" :key :platform)))
            (platform-default-tickrate
-             (when (member platform-source (quote (:cli :toml :defaults))
+             (when (member platform-source (quote (:cli :toml :rom-size :defaults))
                            :test (function eq))
                (chip8-platform-default-tickrate platform)))
            (rom-path (%value (list defaults toml cli) "rom"))
@@ -492,19 +499,23 @@
 
 (defun load-chip8-config-file (pathname &key defaults cli
                                          db-rom-tickrate db-platform-tickrate
-                                         rom-record rom-sha1)
-  (merge-chip8-config :defaults defaults :toml (%parse-toml-file pathname) :cli cli
+                                         rom-record rom-sha1 rom-size)
+  (merge-chip8-config :defaults defaults
+                      :toml (%parse-toml-file pathname) :cli cli
                       :db-rom-tickrate db-rom-tickrate
                       :db-platform-tickrate db-platform-tickrate
                       :rom-record rom-record :rom-sha1 rom-sha1
+                      :rom-size rom-size
                       :source-name (namestring pathname)))
 
 (defun make-chip8-config-from-sources (&key defaults toml-path cli
                                             db-rom-tickrate db-platform-tickrate
-                                            rom-record rom-sha1)
+                                            rom-record rom-sha1 rom-size)
   (merge-chip8-config :defaults defaults
-                      :toml (when toml-path (%parse-toml-file toml-path)) :cli cli
+                      :toml (when toml-path (%parse-toml-file toml-path))
+                      :cli cli
                       :db-rom-tickrate db-rom-tickrate
                       :db-platform-tickrate db-platform-tickrate
                       :rom-record rom-record :rom-sha1 rom-sha1
+                      :rom-size rom-size
                       :source-name (and toml-path (namestring toml-path))))
