@@ -4,7 +4,7 @@
 ;; The clock default is defined before this file's merge function because ASDF
 ;; loads configuration before the application structure.
 (defconstant +default-clock-hz+ 700)
-(defparameter +default-chip8-render-colors+
+(defparameter *default-chip8-render-colors*
   '("#000000" "#00FF00" "#FFFF00" "#FFFFFF"))
 
 ;; Each entry is (TOML-NAME TYPE). TYPE supplies both validation and the
@@ -142,11 +142,12 @@
                               (let ((color (string-trim trim-characters color)))
                                 (and (= (length color) 7)
                                      (char= (char color 0) #\#)
-                                     (loop for index from 1 below 7
-                                           for digit = (char color index)
-                                           always (or (char<= #\0 digit #\9)
-                                                      (char<= #\A digit #\F)
-                                                      (char<= #\a digit #\f)))))))
+                                     (every
+                                      (lambda (digit)
+                                        ;; Keep #RRGGBB ASCII; DIGIT-CHAR-P also accepts Unicode digits.
+                                        (and (< (char-code digit) 128)
+                                             (digit-char-p digit 16)))
+                                      (subseq color 1))))))
                        pixels))
            (%config-error "expected two or four #RRGGBB colors"
                           :source-name source-name :path path :key key))
@@ -408,7 +409,7 @@
                                        (%source-value db-colors-table "pixels")
                                        "ROM database")))
                     (default-colors
-                      (copy-list +default-chip8-render-colors+)))
+                      (copy-list *default-chip8-render-colors*)))
                (cond (cli-colors-p cli-colors)
                      (toml-colors-p toml-colors)
                      (db-colors-p db-colors)

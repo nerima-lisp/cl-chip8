@@ -3,21 +3,17 @@
 
 (declaim (inline half-block-character)
          (ftype (function (bit bit) character) half-block-character))
-(progn
-  (defparameter *chip8-render-palette*
-    (vector (cl-tty-kit:rgb-to-256 0 0 0)
-            (cl-tty-kit:rgb-to-256 0 255 0)
-            (cl-tty-kit:rgb-to-256 255 255 0)
-            (cl-tty-kit:rgb-to-256 255 255 255)))
-  (defstruct (chip8-render-palette-snapshot
-              (:constructor %make-chip8-render-palette-snapshot
-                  (generation colors)))
-    (generation 0 :type (integer 0 *))
-    (colors #(nil nil nil nil) :type (simple-array t (4))))
-  (defvar *chip8-render-palette-lock* (sb-thread:make-mutex))
-  (defvar *chip8-render-palette-snapshot*
-    (%make-chip8-render-palette-snapshot
-     0 (copy-seq *chip8-render-palette*))))
+(defun %chip8-render-color-to-256 (color)
+  (unless (and (stringp color)
+               (= (length color) 7)
+               (char= (char color 0) #\#)
+               (loop for index from 1 below 7
+                     always (digit-char-p (char color index) 16)))
+    (error "Expected a #RRGGBB color string, got ~S." color))
+  (cl-tty-kit:rgb-to-256
+   (parse-integer color :start 1 :end 3 :radix 16)
+   (parse-integer color :start 3 :end 5 :radix 16)
+   (parse-integer color :start 5 :end 7 :radix 16)))
 
 (defun half-block-character (top-pixel bottom-pixel)
   (declare (type bit top-pixel bottom-pixel))
@@ -43,17 +39,19 @@
        (t
         (values :too-small 66 18))))))
 
-(defun %chip8-render-color-to-256 (color)
-  (unless (and (stringp color)
-               (= (length color) 7)
-               (char= (char color 0) #\#)
-               (loop for index from 1 below 7
-                     always (digit-char-p (char color index) 16)))
-    (error "Expected a #RRGGBB color string, got ~S." color))
-  (cl-tty-kit:rgb-to-256
-   (parse-integer color :start 1 :end 3 :radix 16)
-   (parse-integer color :start 3 :end 5 :radix 16)
-   (parse-integer color :start 5 :end 7 :radix 16)))
+(progn
+  (defparameter *chip8-render-palette*
+    (map 'vector #'%chip8-render-color-to-256
+         *default-chip8-render-colors*))
+  (defstruct (chip8-render-palette-snapshot
+              (:constructor %make-chip8-render-palette-snapshot
+                  (generation colors)))
+    (generation 0 :type (integer 0 *))
+    (colors #(nil nil nil nil) :type (simple-array t (4))))
+  (defvar *chip8-render-palette-lock* (sb-thread:make-mutex))
+  (defvar *chip8-render-palette-snapshot*
+    (%make-chip8-render-palette-snapshot
+     0 (copy-seq *chip8-render-palette*))))
 
 (progn
   (defun %publish-chip8-render-palette! (palette)
