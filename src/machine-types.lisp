@@ -30,3 +30,34 @@
   (quirks (make-chip8-quirks) :type chip8-quirks)
   (waiting (make-chip8-wait-state) :type chip8-wait-state)
   (instructions 0 :type (unsigned-byte 64)))
+
+(progn
+  (defvar *display-audio-lock-timing-hook* nil)
+
+  (defmacro with-display-audio-lock (lock-form &body body)
+    (let ((hook (gensym "HOOK"))
+          (wait-start (gensym "WAIT-START"))
+          (hold-start (gensym "HOLD-START"))
+          (hold-end (gensym "HOLD-END"))
+          (results (gensym "RESULTS")))
+      `(let ((,hook *display-audio-lock-timing-hook*))
+         (if ,hook
+             (let ((,wait-start (get-internal-real-time))
+                   (,hold-start nil)
+                   (,hold-end nil)
+                   (,results nil))
+               (setf ,results
+                     (multiple-value-list
+                      (with-lock-held ,lock-form
+                        (setf ,hold-start (get-internal-real-time))
+                        (multiple-value-prog1 (progn ,@body)
+                          (setf ,hold-end (get-internal-real-time))))))
+               (funcall ,hook :wait
+                        (/ (- ,hold-start ,wait-start)
+                           internal-time-units-per-second))
+               (funcall ,hook :hold
+                        (/ (- ,hold-end ,hold-start)
+                           internal-time-units-per-second))
+               (values-list ,results))
+             (with-lock-held ,lock-form
+               ,@body))))))
