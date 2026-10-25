@@ -1,4 +1,4 @@
-(require :asdf)
+(progn (require :asdf) (require :sb-sprof))
   (let* ((script-path *load-truename*)
          (root (truename
                 (merge-pathnames #p"../"
@@ -679,8 +679,12 @@
                     ((string= value "count") :count)
                     (t (error "Unsupported lock hook mode: ~A" value)))))
            (seconds (bench-integer-env "CL_CHIP8_BENCH_SECONDS" 10 10))
-           (runs (bench-integer-env "CL_CHIP8_BENCH_RUNS" 3 2))
-           (warmups (bench-integer-env "CL_CHIP8_BENCH_WARMUP" 1 0))
+           (runs (bench-integer-env "CL_CHIP8_BENCH_RUNS"
+                                 (if (host-kit:getenv "CL_CHIP8_BENCH_PROFILE") 1 3)
+                                 (if (host-kit:getenv "CL_CHIP8_BENCH_PROFILE") 1 2)))
+           (warmups (bench-integer-env "CL_CHIP8_BENCH_WARMUP"
+                                    (if (host-kit:getenv "CL_CHIP8_BENCH_PROFILE") 0 1)
+                                    0))
            (report-only (bench-report-only-p))
            (results '()))
       (when (or (and (not report-only)
@@ -726,8 +730,17 @@
                 (if report-only "YES" "NO") misses drops interruptions
                 (if target-met "MET" "NOT-MET"))
         (finish-output)
-        (host-kit:quit
-         (if (or report-only (and target-met (zerop misses) (zerop drops)))
-             0 1)))))
+        (if (or report-only (and target-met (zerop misses) (zerop drops))) 0 1))))
 
-  (main))
+  (let ((profile (host-kit:getenv "CL_CHIP8_BENCH_PROFILE")))
+    (cond
+      ((null profile)
+       (host-kit:quit (main)))
+      ((string-equal profile "cpu")
+       (host-kit:quit
+        (sb-sprof:with-profiling
+            (:mode :cpu :sample-interval 0.01d0
+             :max-samples 3000 :report :flat)
+          (main))))
+      (t
+       (error "Unsupported profile mode: ~A" profile)))))
