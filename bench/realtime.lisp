@@ -194,49 +194,49 @@
 
   (progn
     (defun run-tick-loop-with-wait-metrics
-    (mode state advance render stop stream record-event)
-  (if (eq mode :advance)
-      (let* ((sleep-symbol 'cl-tty-kit::*tick-loop-sleeper*)
-             (spin-symbol 'cl-tty-kit::*tick-loop-spinner*)
-             (sleep-function (symbol-value sleep-symbol))
-             (spin-function (when (boundp spin-symbol)
-                              (symbol-value spin-symbol)))
-             (sleep-wrapper
-               (lambda (seconds)
-                 (funcall record-event :sleep-request 0 seconds)
-                 (let ((started (monotonic-seconds)))
-                   (prog1 (funcall sleep-function seconds)
-                     (funcall record-event
-                              :sleep-actual 0
-                              (- (monotonic-seconds) started)))))
-             (spin-wrapper
-               (when spin-function
-                 (lambda (deadline)
-                   (let ((wall-start (monotonic-seconds))
-                         (cpu-start (get-internal-run-time)))
-                     (prog1 (funcall spin-function deadline)
-                       (funcall record-event
-                                :spin-wall 0
-                                (- (monotonic-seconds) wall-start))
-                       (funcall record-event
-                                :spin-cpu 0
-                                (/ (- (get-internal-run-time) cpu-start)
-                                   internal-time-units-per-second)))))))
-             (symbols (if spin-function
-                          (list sleep-symbol spin-symbol)
-                          (list sleep-symbol)))
-             (values (if spin-function
-                         (list sleep-wrapper spin-wrapper)
-                         (list sleep-wrapper))))
-        (progv symbols values
-          (cl-tty-kit:tick-loop-run-realtime
-           state advance render stop
-           :stream stream :interval +bench-interval+
-           :on-timing record-event)))
-      (cl-tty-kit:tick-loop-run-realtime
-       state advance render stop
-       :stream stream :interval +bench-interval+
-       :on-timing record-event))))
+        (mode state advance render stop stream record-event)
+      (if (eq mode :advance)
+          (let* ((sleep-symbol 'cl-tty-kit::*tick-loop-sleeper*)
+                 (spin-symbol 'cl-tty-kit::*tick-loop-spinner*)
+                 (sleep-function (symbol-value sleep-symbol))
+                 (spin-function (when (boundp spin-symbol)
+                                  (symbol-value spin-symbol)))
+                 (sleep-wrapper
+                  (lambda (seconds)
+                    (funcall record-event :sleep-request 0 seconds)
+                    (let ((started (monotonic-seconds)))
+                      (prog1 (funcall sleep-function seconds)
+                        (funcall record-event
+                                 :sleep-actual 0
+                                 (- (monotonic-seconds) started))))))
+                 (spin-wrapper
+                  (when spin-function
+                    (lambda (deadline)
+                      (let ((wall-start (monotonic-seconds))
+                            (cpu-start (get-internal-run-time)))
+                        (prog1 (funcall spin-function deadline)
+                          (funcall record-event
+                                   :spin-wall 0
+                                   (- (monotonic-seconds) wall-start))
+                          (funcall record-event
+                                   :spin-cpu 0
+                                   (/ (- (get-internal-run-time) cpu-start)
+                                      internal-time-units-per-second)))))))
+                 (symbols (if spin-function
+                              (list sleep-symbol spin-symbol)
+                            (list sleep-symbol)))
+                 (values (if spin-function
+                             (list sleep-wrapper spin-wrapper)
+                           (list sleep-wrapper))))
+            (progv symbols values
+              (cl-tty-kit:tick-loop-run-realtime
+               state advance render stop
+               :stream stream :interval +bench-interval+
+               :on-timing record-event)))
+        (cl-tty-kit:tick-loop-run-realtime
+         state advance render stop
+         :stream stream :interval +bench-interval+
+         :on-timing record-event)))
     (defun print-wait-report (events wall-elapsed)
       (let* ((requested (event-values events :sleep-request))
              (actual (event-values events :sleep-actual))
