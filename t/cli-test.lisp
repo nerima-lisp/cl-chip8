@@ -109,7 +109,7 @@
 
 (describe "bounded CLI child process waits"
   (it "reports when a child exceeds its exit deadline"
-    (let* ((argv (list "/bin/sleep" "10"))
+    (let* ((argv (list (%cli-sbcl-program) "--noinform" "--eval" "(sleep 10)"))
            (process (sb-ext:run-program (first argv) (rest argv) :wait nil))
            (failure nil)
            (status nil)
