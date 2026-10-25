@@ -11,16 +11,87 @@
       (expect (cl-chip8::%read-available-string stream) :to-equal "abc")
       (expect (cl-chip8::%read-available-string stream) :to-equal "")))
   (it
-    "polls a decoder with available input and with an explicit EOF chunk"
-    (let ((decoder (cl-tty-kit:make-input-decoder)))
+    "polls a decoder with available input and with an explicit empty chunk"
+    (let* ((now 0)
+           (decoder (cl-tty-kit:make-input-decoder))
+           (app (make-chip8-app
+                 :machine (make-chip8-machine)
+                 :decoder decoder
+                 :input-clock (lambda () now))))
       (with-open-stream (stream (make-string-input-stream "q"))
-        (let ((events (cl-chip8::%poll-input-events decoder stream)))
+        (let ((events (cl-chip8::%poll-input-events app stream)))
           (expect (length events) :to-be 1)
           (expect (cl-chip8::key-event-type (first events)) :to-be :character)
           (expect (cl-chip8::key-event-code (first events)) :to-be #\q)))
-      (expect (cl-chip8::%poll-input-events decoder
-                                             (make-string-input-stream ""))
+      (expect (cl-chip8::%poll-input-events
+               app (make-string-input-stream ""))
               :to-equal nil)))
+  (it
+    "quits after flushing a lone Escape after the decoder timeout"
+    (let* ((now 0)
+           (timeout (ceiling internal-time-units-per-second 10))
+           (machine (make-chip8-machine))
+           (app (make-chip8-app
+                 :machine machine
+                 :state-machine (cl-chip8::make-chip8-control-state-machine)
+                 :decoder (cl-tty-kit:make-input-decoder)
+                 :input-clock (lambda () now))))
+      (load-rom machine #(#x12 #x00))
+      (let ((*standard-input*
+              (make-string-input-stream (string (code-char 27)))))
+        (cl-chip8::%advance-chip8! app))
+      (expect (chip8-app-quit-p app) :to-be nil)
+      (setf now (1- timeout))
+      (let ((*standard-input* (make-string-input-stream "")))
+        (cl-chip8::%advance-chip8! app))
+      (expect (chip8-app-quit-p app) :to-be nil)
+      (setf now timeout)
+      (let ((*standard-input* (make-string-input-stream "")))
+        (cl-chip8::%advance-chip8! app))
+      (expect (chip8-app-quit-p app) :to-be t)
+      (expect (chip8-control-state (chip8-app-state-machine app))
+              :to-equal "finished")
+      (expect (cl-chip8::%chip8-app-finished-p app) :to-be t)))
+  (it
+    "quits immediately for Kitty CSI-u Escape with flags 10"
+    (let* ((now 0)
+           (machine (make-chip8-machine))
+           (app (make-chip8-app
+                 :machine machine
+                 :state-machine (cl-chip8::make-chip8-control-state-machine)
+                 :decoder (cl-tty-kit:make-input-decoder)
+                 :input-clock (lambda () now)))
+           (input (map 'string #'code-char '(27 91 50 55 59 49 58 49 117))))
+      (load-rom machine #(#x12 #x00))
+      (let ((*standard-input* (make-string-input-stream input)))
+        (cl-chip8::%advance-chip8! app))
+      (expect (chip8-app-quit-p app) :to-be t)
+      (expect (chip8-control-state (chip8-app-state-machine app))
+              :to-equal "finished")
+      (expect (cl-chip8::%chip8-app-finished-p app) :to-be t)))
+  (it
+    "keeps an incomplete Kitty CSI-u Escape sequence buffered before timeout"
+    (let* ((now 0)
+           (machine (make-chip8-machine))
+           (app (make-chip8-app
+                 :machine machine
+                 :state-machine (cl-chip8::make-chip8-control-state-machine)
+                 :decoder (cl-tty-kit:make-input-decoder)
+                 :input-clock (lambda () now))))
+      (load-rom machine #(#x12 #x00))
+      (let ((*standard-input*
+              (make-string-input-stream
+               (map 'string #'code-char '(27 91 50 55 59)))))
+        (cl-chip8::%advance-chip8! app))
+      (expect (chip8-app-quit-p app) :to-be nil)
+      (setf now (floor internal-time-units-per-second 20))
+      (let ((*standard-input*
+              (make-string-input-stream
+               (map 'string #'code-char '(49 58 49 117)))))
+        (cl-chip8::%advance-chip8! app))
+      (expect (chip8-app-quit-p app) :to-be t)
+      (expect (chip8-control-state (chip8-app-state-machine app))
+              :to-equal "finished")))
   (it-each ((#\1 1) (#\Q 4) (#\v #xf))
       "maps keypad character ~C to CHIP-8 key ~D"
       (character expected)

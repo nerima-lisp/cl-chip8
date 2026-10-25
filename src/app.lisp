@@ -9,11 +9,23 @@
     (loop for character = (read-char-no-hang stream nil nil)
           while character do (write-char character out))))
 
-(defun %poll-input-events (decoder stream)
-  (let ((input (%read-available-string stream)))
+(defun %poll-input-events (app stream)
+  (let* ((decoder (chip8-app-decoder app))
+         (input (%read-available-string stream))
+         (now (funcall (chip8-app-input-clock app))))
     (if (plusp (length input))
-        (decode-input-chunk decoder input)
-        (decode-input-chunk decoder "" :eof nil))))
+        (progn
+          (setf (chip8-app-last-input-time app) now)
+          (decode-input-chunk decoder input))
+        (let ((events (decode-input-chunk decoder "" :eof nil))
+              (last-input-time (chip8-app-last-input-time app)))
+          (if (and last-input-time
+                   (>= (- now last-input-time)
+                       (ceiling internal-time-units-per-second 10)))
+              (progn
+                (setf (chip8-app-last-input-time app) nil)
+                (append events (cl-tty-kit:flush-input-decoder decoder)))
+              events)))))
 
 (defun %instructions-per-tick (app)
   (multiple-value-bind (instructions remainder)
@@ -163,8 +175,7 @@
                     app (or terminal-columns 0) (or terminal-rows 0)))))))
     (refresh-display)
     (let ((resolution (chip8-machine-resolution (chip8-app-machine app))))
-      (%apply-key-events! app (%poll-input-events (chip8-app-decoder app)
-                                                   *standard-input*))
+      (%apply-key-events! app (%poll-input-events app *standard-input*))
       (unless (eq resolution
                   (chip8-machine-resolution (chip8-app-machine app)))
         (refresh-display)))

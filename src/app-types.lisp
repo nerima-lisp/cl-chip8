@@ -15,4 +15,6 @@
   (audio-mode :off :type (member :auto :pcm :bell :off))
   (last-audio-sound-timer 0 :type integer)
   (last-audio-bell-time nil :type (or null integer))
+  (input-clock #'get-internal-real-time :type function)
+  (last-input-time nil :type (or null integer))
   stream started-at)
