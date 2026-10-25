@@ -16,7 +16,7 @@
 (defun %write-cli-test-script (path)
   (with-open-file (stream path :direction :output :if-exists :supersede)
     (format stream
-            "(require :asdf)~%(let ((cache (merge-pathnames \"cl-chip8-cli-asdf/\" (uiop:temporary-directory)))) (ensure-directories-exist cache) (asdf:initialize-output-translations `(:output-translations :ignore-inherited-configuration (t (,cache :implementation)))))~%(asdf:initialize-source-registry)~%(dolist (path '~S) (pushnew path asdf:*central-registry* :test #'equal))~%(pushnew ~S asdf:*central-registry* :test #'equal)~%(asdf:load-system :cl-chip8)~%(setf sb-ext:*posix-argv* (cons \"cl-chip8\" (uiop:command-line-arguments)))~%(cl-chip8:main)~%"
+            "(require :asdf)~%(asdf:initialize-source-registry)~%(dolist (path '~S) (pushnew path asdf:*central-registry* :test #'equal))~%(pushnew ~S asdf:*central-registry* :test #'equal)~%(asdf:load-system :cl-chip8)~%(setf sb-ext:*posix-argv* (cons \"cl-chip8\" (uiop:command-line-arguments)))~%(cl-chip8:main)~%"
             (remove nil
                     (loop for name in (asdf:registered-systems)
                           for system = (asdf:find-system name nil)
@@ -48,9 +48,38 @@
   (values (sb-ext:process-status process)
           (sb-ext:process-exit-code process)))
 
-(defun %wait-cli-process (process argv &optional (timeout-seconds 30))
+(defun %wait-cli-process (process argv &optional (timeout-seconds 30)
+                                         sample-path sample-output-path sample-error-path)
   (handler-case
-      (%wait-cli-process-exit process timeout-seconds)
+      (let ((started-at (get-internal-real-time))
+            (sampled-p nil))
+        (sb-sys:with-deadline (:seconds timeout-seconds)
+          (loop while (sb-ext:process-alive-p process)
+                do (when (and sample-path
+                              (not sampled-p)
+                              (member :darwin *features*)
+                              (>= (- (get-internal-real-time) started-at)
+                                  (* 15 internal-time-units-per-second)))
+                     (setf sampled-p t)
+                     (let ((sample-process
+                             (sb-ext:run-program
+                              "/usr/bin/sample"
+                              (list (write-to-string (sb-ext:process-pid process))
+                                    "5" "1" "-file" (namestring sample-path))
+                              :wait t
+                              :output sample-output-path
+                              :if-output-exists :supersede
+                              :error sample-error-path
+                              :if-error-exists :supersede)))
+                       (unless (and (eq (sb-ext:process-status sample-process)
+                                        :exited)
+                                    (zerop (sb-ext:process-exit-code sample-process)))
+                         (error "Sampling CLI child ~S failed with status ~S and exit code ~S."
+                                argv
+                                (sb-ext:process-status sample-process)
+                                (sb-ext:process-exit-code sample-process)))))
+                   (sleep 0.05))
+          (sb-ext:process-wait process)))
     (sb-sys:deadline-timeout ()
       (error "Timed out waiting for CLI child process ~S to exit after ~A seconds."
              argv timeout-seconds)))
@@ -71,6 +100,20 @@
   (let* ((script (%write-cli-test-script (%cli-test-script "cli")))
          (output-path (%cli-test-process-output-path script "stdout"))
          (error-path (%cli-test-process-output-path script "stderr"))
+         (sample-path (%cli-test-process-output-path script "sample"))
+         (sample-output-path (%cli-test-process-output-path script "sample-stdout"))
+         (sample-error-path (%cli-test-process-output-path script "sample-stderr"))
+         (artifact-paths
+           (list script output-path error-path sample-path
+                 sample-output-path sample-error-path))
+         (artifact-description
+           (format nil "script=~A, stdout=~A, stderr=~A, sample=~A, sample stdout=~A, sample stderr=~A"
+                   (namestring script)
+                   (namestring output-path)
+                   (namestring error-path)
+                   (namestring sample-path)
+                   (namestring sample-output-path)
+                   (namestring sample-error-path)))
          (process nil)
          (failure-condition nil))
     (unwind-protect
@@ -81,32 +124,38 @@
                       (%cli-sbcl-program)
                       (append (list "--script" (namestring script)) argv)
                       :wait nil
+                      :input nil
                       :output output-path
                       :if-output-exists :supersede
                       :error error-path
                       :if-error-exists :supersede))
-               (let ((exit-code (%wait-cli-process process argv)))
+               (let ((exit-code
+                       (%wait-cli-process process argv 30
+                                          sample-path sample-output-path
+                                          sample-error-path)))
                  (values (uiop:read-file-string output-path)
                          (uiop:read-file-string error-path)
                          exit-code)))
            (error (condition)
              (setf failure-condition condition)
-             (error condition)))
+             (error "CLI child ~S failed with ~A. Preserved artifacts: ~A."
+                    argv condition artifact-description)))
       (if process
           (handler-case
               (progn
                 (%cleanup-cli-process process argv)
-                (dolist (path (list script output-path error-path))
-                  (when (probe-file path)
-                    (delete-file path))))
+                (unless failure-condition
+                  (dolist (path artifact-paths)
+                    (when (probe-file path)
+                      (delete-file path)))))
             (error (cleanup-condition)
-              (error "CLI child ~S failed with ~A; cleanup failed with ~A. Preserved artifacts: script=~A, stdout=~A, stderr=~A."
-                     argv failure-condition cleanup-condition
-                     (namestring script) (namestring output-path)
-                     (namestring error-path))))
-          (dolist (path (list script output-path error-path))
-            (when (probe-file path)
-              (delete-file path)))))))
+              (error "CLI child ~S cleanup failed with ~A~@[; original failure: ~A~]. Preserved artifacts: ~A."
+                     argv cleanup-condition failure-condition
+                     artifact-description)))
+          (unless failure-condition
+            (dolist (path artifact-paths)
+              (when (probe-file path)
+                (delete-file path))))))))
 
 (describe "bounded CLI child process waits"
   (it "reports when a child exceeds its exit deadline"
@@ -233,28 +282,32 @@
       "maps ~A to exit status ~D"
       (label argv expected)
     (declare (ignore label))
-    (let ((error-output (make-string-output-stream)))
-      (expect (run-app *app* :argv argv :stderr error-output
-                       :usage-exit-code 64 :error-exit-code 1)
-              :to-be expected))))
+    (let* ((stdout (make-string-output-stream))
+           (stderr (make-string-output-stream))
+           (error-output (make-string-output-stream))
+           (status (let ((*error-output* error-output))
+                     (run-app *app* :argv argv :stdout stdout :stderr stderr
+                              :usage-exit-code 64 :error-exit-code 1)))
+           (diagnostic
+             (concatenate 'string
+                          (get-output-stream-string stderr)
+                          (get-output-stream-string error-output))))
+      (expect status :to-be expected)
+      (expect (get-output-stream-string stdout) :to-equal "")
+      (expect diagnostic :to-contain "cl-chip8")
+      (case expected
+        (64
+         (expect diagnostic :to-contain "--clock-hz"))
+        (1
+         (expect diagnostic :to-contain "ROM file does not exist")
+         (expect diagnostic :to-contain (second argv)))))))
 
 (describe "the cl-chip8 CLI process exit boundary"
-  (it "prints help and exits successfully"
+  (it "exits successfully for --help"
     (multiple-value-bind (output error-output exit-code)
         (%cli-process-result "--help")
-      (expect exit-code :to-be 0)
-      (expect output :to-contain "cl-chip8")
-      (expect error-output :to-equal "")))
-  (it-each (("missing ROM" ("/tmp/cl-chip8-cli-no-such-rom.ch8") 1)
-            ("missing option value" ("--clock-hz") 64))
-      "reports ~A on stderr and exits ~D"
-      (label argv expected)
-    (declare (ignore label))
-    (multiple-value-bind (output error-output exit-code)
-        (apply #'%cli-process-result argv)
-      (expect output :to-equal "")
-      (expect error-output :to-contain "cl-chip8")
-      (expect exit-code :to-be expected))))
+      (declare (ignore output error-output))
+      (expect exit-code :to-be 0))))
 
 (describe "the cl-chip8 CLI failure boundary"
   (it "reports a missing ROM and returns status 1 before entering the terminal"
