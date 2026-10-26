@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] - 2026-10-26
 
 ### Added
 
@@ -16,30 +16,41 @@ All notable changes to this project are documented here. The format follows
   support both `:lores` and `:hires` and report the `:chip8` and `:schip-large`
   font sets. Default tickrates, in instructions per frame, are 15 for
   `:cosmac-vip`, 12 for `:modern`, 30 for `:schip` and `:schip-legacy`, and
-  100 for `:xo-chip`. Multiply by 60 to get instructions per second; 700
-  instructions per second is the final fallback when no higher-priority clock
-  source applies.
+  100 for `:xo-chip`. Multiply by 60 to get instructions per second. CPU-rate
+  precedence is CLI, TOML, ROM-specific metadata, ROM database platform
+  metadata, then the selected platform's tickrate. An embedding application's
+  supplied default applies after these; otherwise the final fallback is 700
+  instructions per second.
 - Added SHA-1 ROM database lookup and supported-platform mappings for
   `originalChip8`, `modernChip8`, `chip48`, `superchip1`, `superchip`, and
   `xochip`. Matched records can provide platform-specific quirks, tickrate,
   and pixel colors. Unsupported upstream platforms signal
   `chip8-unsupported-platform` before the terminal session starts unless the
-  CLI explicitly supplies `--platform` or `--quirks`.
+  CLI explicitly supplies `--platform` or `--quirks`. `--platform` selects
+  machine defaults and capabilities; `--quirks` selects instruction behavior
+  and does not change the selected platform.
 - Added CLI `--platform`, `--quirks`, `--config`, `--clock-hz`, `--audio`, and
   `--colors-pixels` behavior for platform profiles, TOML configuration, audio
   output, and palette selection. TOML adds `platform`, `lores_sprite`,
   `collision`, `lores_scroll`, and `mode_switch_clear` settings alongside the
   existing quirk controls.
-- Added PCM audio through `cl-audio-kit`, with CLI modes `auto`, `pcm`,
-  `bell`, and `off`. CLI `auto` falls back to the terminal bell if the output
-  device cannot be opened. Direct Common Lisp calls default to audio off.
+- Added PCM audio through `cl-audio-kit` v0.1.1, with CLI modes `auto`,
+  `pcm`, `bell`, and `off`. CLI `auto` falls back to the terminal bell if the
+  output device cannot be opened. Audio worker stop, stream abort, and stream
+  close use one-second waits; streams are closed after an abort. Direct Common
+  Lisp calls default to audio off.
 - Added adaptive terminal rendering for low and high resolutions. High
   resolution selects half-block, quarter-block, or braille output from the
   available terminal size; the application pauses instruction stepping while
-  the terminal is below the minimum size for the selected resolution.
+  the terminal is below the minimum size for the selected resolution. The
+  [Terminal guide](docs/src/guide/terminal.md) lists each renderer's minimum
+  terminal size.
 - Added Timendus conformance coverage and optional chip8Archive corpus
   compatibility checks. The Nix check supplies both ROM sets and verifies
   generated ROM database data against the checked-in file.
+- Added a realtime pacing benchmark and CI jobs for realtime measurements.
+  Measurement jobs run only on pushes to `verify/**` and `workflow_dispatch` events.
+  CI also compiles `bench/realtime.lisp` under a compiler-warning gate.
 - Added the `chip8-platform` type, `chip8-platform-p`, `find-chip8-platform`, and
   the `chip8-platform-name`, `chip8-platform-memory-size`,
   `chip8-platform-resolutions`, `chip8-platform-font-sets`,
@@ -53,6 +64,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Updated `cl-tty-kit` to v1.7.3 for deadline pacing, hybrid waiting, and
+  adaptive spinning.
+- Unmatched ROMs larger than the 4 KiB machine's 3,584-byte ROM capacity now
+  infer XO-CHIP unless CLI or TOML explicitly selects a platform.
 - **Breaking:** `make-chip8-machine` accepts `:platform` (`:cosmac-vip`, `:modern`, `:schip`,
   `:schip-legacy`, or `:xo-chip`) and optional `:memory-size` of 4096 or 65536;
   either size can override any platform's default. `:quirks` still overrides
@@ -70,12 +85,13 @@ All notable changes to this project are documented here. The format follows
   `(machine address span)`. Replace fixed 4096-byte checks with
   `chip8-machine-memory-size`; ROMs loaded at `+rom-load-address+` can use at
   most the machine capacity minus `#x200`. `check-memory-access`'s `span` is
-  the access length in bytes. `+memory-size+` remains 4096.
+  the access length in bytes. The exported `+memory-size+` remains 4096; use
+  `chip8-machine-memory-size` for the selected machine's capacity.
 - **Breaking:** The `chip8-framebuffer` type now describes a two-dimensional
-  `(unsigned-byte 2)` array. `chip8-framebuffer` and
-  `chip8-framebuffer-snapshot` return a two-dimensional snapshot sized for the
-  current logical resolution, with plane 1 in bit 0 and plane 2 in bit 1.
-  `chip8-machine-framebuffer` exposes the physical 128×64 array;
+  `(unsigned-byte 2)` array. The `chip8-framebuffer` and
+  `chip8-framebuffer-snapshot` functions return a two-dimensional snapshot
+  sized for the current logical resolution, with plane 1 in bit 0 and plane 2
+  in bit 1. `chip8-machine-framebuffer` exposes the physical 128×64 array;
   `+physical-display-width+` and
   `+physical-display-height+` report its dimensions.
   `chip8-machine-resolution` and `set-chip8-machine-resolution!` read and set
@@ -92,6 +108,12 @@ All notable changes to this project are documented here. The format follows
   array. `+display-width+` and
   `+display-height+`
   remain the 64×32 lores dimensions.
+
+### Fixed
+
+- Flush pending Escape input when no more input arrives for 100 ms, so a lone
+  Escape key exits after the decoder timeout.
+- Fixed a test hang on Darwin in the CLI timeout regression test.
 
 ## [0.2.1] - 2026-10-02
 

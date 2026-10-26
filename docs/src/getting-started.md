@@ -23,19 +23,24 @@ nix run .#cl-chip8 -- path/to/rom.ch8
 
 Select a machine with `--platform modern`, `--platform cosmac-vip`,
 `--platform schip`, `--platform schip-legacy`, or `--platform xo-chip`.
-`--quirks` accepts the same five profile names and selects instruction
-compatibility behavior. `--clock-hz` sets the positive CPU instruction rate;
+`--platform` selects machine defaults and capabilities; `--quirks` accepts the
+same five names and selects instruction compatibility behavior without
+changing the platform. `--clock-hz` sets the positive CPU instruction rate;
 the timers remain at 60 Hz. `--config` loads a TOML configuration file,
 `--colors-pixels` overrides the display palette, `--audio` selects audio
 output, and `--log` writes JSON log records to a file. See the
 [Terminal guide](guide/terminal.md) for source priority, controls, rendering,
 audio behavior, and exit codes.
 
-For a ROM recognized by the bundled ROM database, the database supplies a
-supported platform and profile when no higher-priority platform is selected.
-If its known upstream platform is unsupported, startup reports that platform
-unless `--platform` or `--quirks` was supplied explicitly. Database settings
-also provide ROM-specific quirks, clock metadata, and colors where applicable.
+For a ROM recognized by the bundled ROM database, its supported platform is
+used unless `--platform` or TOML `platform` selects one. Otherwise, an
+unmatched ROM larger than 3,584 bytes infers `xo-chip`; other unmatched ROMs
+default to `modern`. If a recognized ROM lists only unsupported upstream
+platforms, startup reports that platform unless CLI `--platform` or
+`--quirks` was supplied. `--quirks` bypasses this error but does not select a
+platform. Database settings also provide ROM-specific quirks, clock metadata,
+and colors where applicable. See the [Terminal guide](guide/terminal.md) for
+the full selection priority.
 
 ## Add the flake input
 
@@ -43,13 +48,15 @@ From a consuming flake, point at the latest released tag:
 
 ```nix
 inputs.cl-chip8 = {
-  url = "github:nerima-lisp/cl-chip8/v0.2.1";
+  url = "github:nerima-lisp/cl-chip8/v0.3.0";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
 
-While developing against an unreleased change, use
-`path:../cl-chip8` and point it at a local checkout.
+Expose `cl-chip8.packages.${system}.cl-chip8` from your consuming flake's
+`packages` output, then run `nix run .#cl-chip8 -- path/to/rom.ch8`. For local
+development, replace the URL with `path:../cl-chip8`, relative to the
+consuming flake.
 
 ## Load the system with ASDF
 
@@ -83,7 +90,7 @@ ASDF package-qualified forms. You can configure the same registry from Lisp:
 (asdf:initialize-source-registry
  '(:source-registry
    (:tree "/path/to/checkouts/")
-   :ignore-inherited-configuration))
+   :inherit-configuration))
 ```
 
 The direct runtime dependencies include `cl-tty-kit`, `cl-dataflow-kit`,

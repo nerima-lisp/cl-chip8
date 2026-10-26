@@ -42,13 +42,25 @@ Consume the latest released tag from another flake:
 
 ```nix
 inputs.cl-chip8 = {
-  url = "github:nerima-lisp/cl-chip8/v0.2.1";
+  url = "github:nerima-lisp/cl-chip8/v0.3.0";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
 
-For development against an unreleased change, use
-`path:../cl-chip8` and point it at a local checkout.
+Expose the package from a consuming flake and run it with Nix:
+
+```nix
+outputs = { nixpkgs, cl-chip8, ... }: {
+  packages.x86_64-linux.cl-chip8 =
+    cl-chip8.packages.x86_64-linux.cl-chip8;
+  packages.aarch64-darwin.cl-chip8 =
+    cl-chip8.packages.aarch64-darwin.cl-chip8;
+};
+```
+
+Then run `nix run .#cl-chip8 -- path/to/rom.ch8`. For an unreleased local
+checkout, replace the URL with `path:../cl-chip8`, relative to the consuming
+flake.
 
 The library system is `cl-chip8`. Load it with ASDF and call `cl-chip8:run`:
 
@@ -62,9 +74,8 @@ The library system is `cl-chip8`. Load it with ASDF and call `cl-chip8:run`:
 `:quirks`, `:audio-mode`, and `:stream`. It creates and initializes a machine,
 loads the ROM, then enters a raw-mode terminal session on the alternate screen.
 The Lisp API defaults audio to `:off`; the CLI defaults to `auto`. It returns a
-`chip8-app` after the session ends. Runtime errors captured by the application
-are available through `cl-chip8:chip8-app-error`; ROM loading errors occur
-before the terminal session starts.
+`chip8-app` after the session ends. For ASDF source registry and dependency
+setup, see [Getting Started](https://nerima-lisp.github.io/cl-chip8/getting-started/).
 
 ## Documentation
 

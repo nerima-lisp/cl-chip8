@@ -11,7 +11,7 @@ and CI. The implementation targets SBCL on `x86_64-linux` and
 - `run-tests.lisp` is the direct test entry point.
 - `tools/coverage.lisp` runs coverage.
 - `tools/generate-rom-database.lisp` regenerates the checked-in ROM database data.
-- `bench/` contains the rendering benchmark.
+- `bench/` contains the rendering and realtime benchmarks.
 - `docs/` contains the MkDocs site.
 
 ## Tests and checks
@@ -85,5 +85,25 @@ host-specific timings:
 sbcl --script bench/render.lisp
 ```
 
-This guide documents the command, not benchmark results. Keep measurements
-with the host and revision used to produce them before making comparisons.
+### Realtime recording trials
+
+The recording trials enabled display and audio and ran on a `macos-15` CI VM
+with 3 CPUs, Darwin 15.7.9, ARM64, and SBCL 2.6.7. Their instruction rates are
+estimates from 602 ticks and wall time; each tick executes 1,000 instructions.
+
+| Trial | Estimated instructions/s | Misses | Dropped slots | 60,000 instr/s target |
+|---|---:|---:|---:|---|
+| 1 | 56,688 | 29 | 54 | Not met |
+| 2 | 56,238 | 36 | 63 | Not met |
+| 3 | 53,579 | 62 | 112 | Not met |
+
+Across the three trials, the run recorded 127 misses, 229 dropped slots, and
+608 audio interruptions. The 1-, 5-, and 15-minute load averages during the
+recording interval ranged from 18.09 to 19.78, 15.66 to 16.23, and 10.47 to
+10.89, respectively. A low-load measurement on physical hardware has not been
+performed.
+
+“Misses” counts missed frame deadlines; “Dropped slots” sums frame-drop event
+values; “Audio interruptions” counts PCM gaps of at least 20 ms. The CI job runs
+the recording benchmark with `nix develop --command sbcl --script
+bench/realtime.lisp` in a 130-column-by-34-row pseudo-terminal.
