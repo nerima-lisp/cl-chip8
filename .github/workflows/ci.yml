@@ -109,7 +109,6 @@ jobs:
       - name: Run realtime benchmark
         shell: bash
         timeout-minutes: 10
-        continue-on-error: true
         env:
           CL_CHIP8_BENCH_MODE: ${{ matrix.mode }}
           CL_CHIP8_BENCH_LOCK_MODE: timing
@@ -151,7 +150,6 @@ jobs:
       - name: Count display/audio lock acquisitions
         shell: bash
         timeout-minutes: 10
-        continue-on-error: true
         env:
           CL_CHIP8_BENCH_MODE: advance
           CL_CHIP8_BENCH_LOCK_MODE: count
@@ -167,7 +165,6 @@ jobs:
       - name: Compare timing hook off and on in ABBA order
         shell: bash
         timeout-minutes: 10
-        continue-on-error: true
         env:
           CL_CHIP8_BENCH_MODE: recording
           CL_CHIP8_BENCH_SECONDS: "10"
@@ -219,7 +216,6 @@ jobs:
       - name: Profile one advance trial with sb-sprof
         shell: bash
         timeout-minutes: 10
-        continue-on-error: true
         env:
           CL_CHIP8_BENCH_MODE: advance
           CL_CHIP8_BENCH_LOCK_MODE: off

@@ -535,7 +535,9 @@
   (defun run-output (app mode target-ticks record-event)
     (if (member mode '(:advance :render))
         (let ((stream (make-broadcast-stream)))
-          (values (run-loop app stream mode target-ticks record-event)
+          ;; Synthetic modes have no keyboard input; do not poll the runner's stdin.
+          (values (with-input-from-string (*standard-input* "")
+                    (run-loop app stream mode target-ticks record-event))
                   :discard nil))
         (progn
           (unless (and (interactive-stream-p *standard-input*)
