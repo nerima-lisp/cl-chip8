@@ -52,3 +52,37 @@
                (load-rom-file (make-chip8-machine) path)))
         (when (probe-file path)
           (delete-file path))))))
+
+(describe "ROM file size limits"
+  (it "accepts a 65024-byte ROM file"
+    (let ((path (merge-pathnames
+                 (format nil "cl-chip8-size-limit-~D.ch8" (random 1000000))
+                 #p"/tmp/")))
+      (unwind-protect
+           (progn
+             (with-open-file (stream path :direction :output :if-exists :supersede
+                                     :element-type '(unsigned-byte 8))
+               (write-sequence (make-array 65024 :element-type '(unsigned-byte 8)
+                                                   :initial-element 0)
+                               stream))
+             (expect (length (cl-chip8::%read-rom-file path)) :to-be 65024))
+        (when (probe-file path)
+          (delete-file path)))))
+  (it "rejects a 65025-byte ROM file"
+    (let ((path (merge-pathnames
+                 (format nil "cl-chip8-size-limit-~D.ch8" (random 1000000))
+                 #p"/tmp/")))
+      (unwind-protect
+           (progn
+             (with-open-file (stream path :direction :output :if-exists :supersede
+                                     :element-type '(unsigned-byte 8))
+               (write-sequence (make-array 65025 :element-type '(unsigned-byte 8)
+                                                   :initial-element 0)
+                               stream))
+             (signals chip8-rom-too-large
+               (cl-chip8::%read-rom-file path)))
+        (when (probe-file path)
+          (delete-file path)))))
+  (it "rejects an extremely large reported ROM size without a file"
+    (signals chip8-rom-too-large
+      (cl-chip8::%check-rom-size (expt 2 128)))))

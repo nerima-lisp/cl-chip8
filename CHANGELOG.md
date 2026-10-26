@@ -114,6 +114,7 @@ All notable changes to this project are documented here. The format follows
 - Flush pending Escape input when no more input arrives for 100 ms, so a lone
   Escape key exits after the decoder timeout.
 - Fixed a test hang on Darwin in the CLI timeout regression test.
+- Reject ROM files larger than 65,024 bytes before allocating the ROM buffer.
 
 ## [0.2.1] - 2026-10-02
 
