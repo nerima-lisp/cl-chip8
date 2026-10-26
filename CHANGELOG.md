@@ -115,6 +115,7 @@ All notable changes to this project are documented here. The format follows
   Escape key exits after the decoder timeout.
 - Fixed a test hang on Darwin in the CLI timeout regression test.
 - Reject ROM files larger than 65,024 bytes before allocating the ROM buffer.
+- Check ROM file type on the opened descriptor and reject non-regular inputs without waiting on FIFOs.
 
 ## [0.2.1] - 2026-10-02
 

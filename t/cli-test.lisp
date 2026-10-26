@@ -318,7 +318,8 @@
                      (let ((*error-output* stream))
                        (expect (cl-chip8::%run-handler invocation) :to-be 1)))))
       (expect (search "cl-chip8:" output) :to-be-truthy)
-      (expect (search path output) :to-be-truthy)))
+      (expect (search (format nil "ROM file does not exist: ~A" path) output)
+              :to-be-truthy)))
 
   (it "returns status 1 with a diagnostic when PCM initialization fails"
     (let* ((rom-path (format nil "/tmp/cl-chip8-cli-pcm-~D.ch8" (random 1000000)))
@@ -343,7 +344,30 @@
                (expect selected-audio-mode :to-be :pcm)
                (expect diagnostic :to-contain "cl-chip8:")))
         (setf (symbol-function 'cl-chip8:run) original-run)
-        (when (probe-file rom-path) (delete-file rom-path))))))
+        (when (probe-file rom-path) (delete-file rom-path)))))
+
+  (it "preserves the permission diagnostic and returns status 1 for an unreadable ROM"
+    (let* ((path (format nil "/tmp/cl-chip8-cli-unreadable-rom-~D-~D.ch8"
+                         (get-universal-time) (random 1000000)))
+           (invocation (parse-argv *app* (list "cl-chip8" path))))
+      (unwind-protect
+           (progn
+             (with-open-file (stream path :direction :output :if-exists :supersede
+                                     :element-type '(unsigned-byte 8))
+               (write-byte 0 stream))
+             (sb-posix:chmod (namestring path) #o000)
+             (let* ((exit-code nil)
+                    (output (with-output-to-string (stream)
+                              (let ((*error-output* stream))
+                                (setf exit-code
+                                      (cl-chip8::%run-handler invocation))))))
+               (expect exit-code :to-be 1)
+               (expect output :to-contain "cl-chip8:")
+               (expect (string-downcase output) :to-contain "permission denied")))
+        (when (probe-file path)
+          (sb-posix:chmod (namestring path) #o600)
+          (delete-file path))))))
+
 
 (describe "the cl-chip8 CLI termination boundary"
   (it "logs run metrics and PCM output statistics"

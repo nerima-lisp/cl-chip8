@@ -86,3 +86,29 @@
   (it "rejects an extremely large reported ROM size without a file"
     (signals chip8-rom-too-large
       (cl-chip8::%check-rom-size (expt 2 128)))))
+(describe "ROM file open boundaries"
+  (it "signals file-error for a missing ROM path"
+    (let ((path (merge-pathnames
+                 (format nil "cl-chip8-missing-rom-~D-~D.ch8"
+                         (get-universal-time) (random 1000000))
+                 (uiop:temporary-directory))))
+      (signals file-error
+        (load-rom-file (make-chip8-machine) path))))
+  (it "rejects a directory as a ROM file"
+    (signals chip8-rom-not-regular-file
+      (cl-chip8::%read-rom-file (uiop:temporary-directory))))
+  (it "rejects a FIFO without waiting for a writer"
+    (let ((path (merge-pathnames
+                 (format nil "cl-chip8-rom-fifo-~D-~D"
+                         (get-universal-time) (random 1000000))
+                 (uiop:temporary-directory)))
+          (created-p nil))
+      (unwind-protect
+           (progn
+             (sb-posix:mkfifo (namestring path) #o600)
+             (setf created-p t)
+             (sb-sys:with-deadline (:seconds 2)
+               (signals chip8-rom-not-regular-file
+                 (cl-chip8::%read-rom-file path))))
+        (when created-p
+          (delete-file path))))))

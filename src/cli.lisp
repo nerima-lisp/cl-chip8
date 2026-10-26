@@ -42,9 +42,9 @@ enter its terminal session."
              (rom-path (chip8-config-rom-path path-config))
              (rom-bytes
                (progn
-                 (unless (and rom-path (probe-file rom-path))
+                 (unless rom-path
                    (error "ROM file does not exist: ~A" rom-path))
-                 (%read-rom-file rom-path)))
+                 (%read-rom-file rom-path t)))
              (rom-sha1 (%rom-sha1 rom-bytes))
              (rom-record (find-rom-record rom-sha1))
              (config (make-chip8-config-from-sources
