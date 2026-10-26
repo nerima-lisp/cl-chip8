@@ -528,7 +528,9 @@
   (it "lists --clock-hz in the help output"
     (let ((output (with-output-to-string (out)
                     (run-app *app* :argv '("cl-chip8" "--help") :stdout out))))
-      (expect (search "--clock-hz" output) :to-be-truthy)))
+      (expect (search "--clock-hz" output) :to-be-truthy)
+      (expect (search "CPU instructions per second (default: the platform's tickrate × 60)." output)
+              :to-be-truthy)))
 
   (it-each (("--quirks") ("--platform") ("--config") ("--log") ("--audio"))
       "lists ~A in the help output"

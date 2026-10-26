@@ -184,10 +184,7 @@ at https://nerima-lisp.github.io/cl-chip8/guide/terminal/ for the full table."
          (make-option :key :colors-pixels :name "colors-pixels" :kind :value
                       :description "Comma-separated two or four #RRGGBB pixel colors.")
          (make-option :key :clock-hz :name "clock-hz" :kind :value :type :integer :min 1
-                      :description
-                      (format nil "CPU instructions per second (default ~D). ~
-Timers always run at a fixed 60Hz regardless."
-                              +default-clock-hz+))
+                      :description "CPU instructions per second (default: the platform's tickrate × 60). Timers always run at a fixed 60Hz regardless.")
          (make-option :key :audio :name "audio" :kind :value
                       :choices '("auto" "pcm" "bell" "off")
                       :description (format nil "auto tries PCM and falls back to bell; ~
